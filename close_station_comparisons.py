@@ -91,7 +91,7 @@ def process_directory(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step,
 			if not df_filtered.empty:
 				stat = compute_statistics(df_filtered, mlt)
 				temp_df = pd.concat([temp_df, stat], axis=0, ignore_index=True)
-			
+
 			temp_df.set_index("MLT", inplace=True)
 			stats_df[mlat][stats] = temp_df
 
@@ -140,6 +140,7 @@ def plotting(stats, mlat):
 		plt.xlabel('MLT')
 		plt.ylabel(param)
 		plt.xticks(xticks, labels=xtick_labels)
+		plt.legend()
 
 	plt.savefig(f'plots/station_comparison_mlat_{mlat}.png')
 
@@ -152,15 +153,16 @@ def main():
 		with open(f'outputs/stations_dict_{mlat_step}_MLAT.pkl', 'rb') as f:
 			stations_dict = pickle.load(f)
 
-	if not os.path.exists(f'outputs/stats_df_{mlat_step}_MLAT.feather'):
+	if not os.path.exists(f'outputs/stats_dict_{mlat_step}_stats.pkl'):
 		stats_dict = process_directory(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step, mlt_step, stations_dict)
 		# stats = compute_statistics(data_frames)
 
-		with open(f'outputs/stats_dict_{mlat_step}_stats.feather', 'wb') as s:
+		with open(f'outputs/stats_dict_{mlat_step}_stats.pkl', 'wb') as s:
 			pickle.dump(stats_dict, s)
 
 	else:
-		stats_dict = pd.read_feather(f'outputs/stats_df_{mlat_step}_MLAT.feather')
+		with open(f'outputs/stats_dict_{mlat_step}_stats.pkl', 'rb') as s:
+			stats_dict = pickle.load(s)
 
 	for mlat in stats_dict.keys():
 		# Plot the results
