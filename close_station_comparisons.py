@@ -61,11 +61,11 @@ def filter_data(df, mlat_min_bin, mlat_max_bin, mlt_min_bin, mlt_max_bin):
 	return df
 
 
-def process_file(filepath, mlat_min_bin, mlat_max_bin, mlt_min_bin, mlt_max_bin):
+def process_file(df, mlat_min_bin, mlat_max_bin, mlt_min_bin, mlt_max_bin):
 	'''
 	Process a single feather file and return a filtered data frame for the degree bins.
 	'''
-	df = load_data(filepath)
+
 	df_filtered = filter_data(df, mlat_min_bin, mlat_max_bin, mlt_min_bin, mlt_max_bin)
 	df_filtered.reset_index(inplace=True, drop=True)
 
@@ -84,12 +84,13 @@ def process_directory(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step,
 				mlat_min_bin = mlat
 				mlat_max_bin = mlat + mlat_step
 				temp_df = pd.DataFrame()
+				filepath = os.path.join(data_dir, f'{stats}.feather')
+				df = load_data(filepath)
 				for mlt in np.arange(mlt_min, mlt_max, mlt_step):
 					print(f'MLAT: {mlat}' + f' MLT: {mlt}')
 					mlt_min_bin = mlt
 					mlt_max_bin = mlt + mlt_step
-					filepath = os.path.join(data_dir, f'{stats}.feather')
-					df_filtered = process_file(filepath, mlat_min_bin, mlat_max_bin, mlt_min_bin, mlt_max_bin)
+					df_filtered = process_file(df, mlat_min_bin, mlat_max_bin, mlt_min_bin, mlt_max_bin)
 					if not df_filtered.empty:
 						stat = compute_statistics(df_filtered, mlt)
 						temp_df = pd.concat([temp_df, stat], axis=0, ignore_index=True)
@@ -115,6 +116,7 @@ def compute_statistics(df_combined, mlt):
 							index=[0])
 
 	return stats_df
+
 
 def plotting(stats, mlat):
 	'''
