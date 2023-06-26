@@ -78,23 +78,24 @@ def process_directory(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step,
 	'''
 	stats_df = {}
 	for mlat in np.arange(mlat_min, mlat_max, mlat_step):
-		stats_df[mlat] = {}
-		for stats in stations_dict[f'mlat_{mlat}']:
-			mlat_min_bin = mlat
-			mlat_max_bin = mlat + mlat_step
-			temp_df = pd.DataFrame()
-			for mlt in np.arange(mlt_min, mlt_max, mlt_step):
-				print(f'MLAT: {mlat}' + f' MLT: {mlt}')
-				mlt_min_bin = mlt
-				mlt_max_bin = mlt + mlt_step
-				filepath = os.path.join(data_dir, f'{stats}.feather')
-				df_filtered = process_file(filepath, mlat_min_bin, mlat_max_bin, mlt_min_bin, mlt_max_bin)
-				if not df_filtered.empty:
-					stat = compute_statistics(df_filtered, mlt)
-					temp_df = pd.concat([temp_df, stat], axis=0, ignore_index=True)
+		if f'mlat_{mlat}' in stations_dict:
+			stats_df[mlat] = {}
+			for stats in stations_dict[f'mlat_{mlat}']:
+				mlat_min_bin = mlat
+				mlat_max_bin = mlat + mlat_step
+				temp_df = pd.DataFrame()
+				for mlt in np.arange(mlt_min, mlt_max, mlt_step):
+					print(f'MLAT: {mlat}' + f' MLT: {mlt}')
+					mlt_min_bin = mlt
+					mlt_max_bin = mlt + mlt_step
+					filepath = os.path.join(data_dir, f'{stats}.feather')
+					df_filtered = process_file(filepath, mlat_min_bin, mlat_max_bin, mlt_min_bin, mlt_max_bin)
+					if not df_filtered.empty:
+						stat = compute_statistics(df_filtered, mlt)
+						temp_df = pd.concat([temp_df, stat], axis=0, ignore_index=True)
 
-			temp_df.set_index("MLT", inplace=True)
-			stats_df[mlat][stats] = temp_df
+				temp_df.set_index("MLT", inplace=True)
+				stats_df[mlat][stats] = temp_df
 
 	return stats_df
 
