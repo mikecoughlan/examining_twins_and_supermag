@@ -34,7 +34,8 @@ def creating_dict_of_stations(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, ml
 				station = file_name.split('.')[0]
 				stats.append(station)
 
-		stations_dict[f'mlat_{mlat}'] = stats
+		if not stats:
+			stations_dict[f'mlat_{mlat}'] = stats
 
 	with open(f'outputs/stations_dict_{mlat_step}_MLAT.pkl', 'wb') as f:
 		pickle.dump(stations_dict, f)
@@ -79,18 +80,18 @@ def process_directory(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step,
 	for mlat in np.arange(mlat_min, mlat_max, mlat_step):
 		stats_df[mlat] = {}
 		for stats in stations_dict[f'mlat_{mlat}']:
-			print(f'MLAT: {mlat}' + f' MLT: {mlt}')
 			mlat_min_bin = mlat
 			mlat_max_bin = mlat + mlat_step
 			temp_df = pd.DataFrame()
 			for mlt in np.arange(mlt_min, mlt_max, mlt_step):
+				print(f'MLAT: {mlat}' + f' MLT: {mlt}')
 				mlt_min_bin = mlt
 				mlt_max_bin = mlt + mlt_step
 				filepath = os.path.join(data_dir, f'{stats}.feather')
 				df_filtered = process_file(filepath, mlat_min_bin, mlat_max_bin, mlt_min_bin, mlt_max_bin)
-			if not df_filtered.empty:
-				stat = compute_statistics(df_filtered, mlt)
-				temp_df = pd.concat([temp_df, stat], axis=0, ignore_index=True)
+				if not df_filtered.empty:
+					stat = compute_statistics(df_filtered, mlt)
+					temp_df = pd.concat([temp_df, stat], axis=0, ignore_index=True)
 
 			temp_df.set_index("MLT", inplace=True)
 			stats_df[mlat][stats] = temp_df
@@ -102,9 +103,7 @@ def compute_statistics(df_combined, mlt):
 	'''
 	Compute the statistics of the 'dbht' parameter for each degree bins.
 	'''
-	# df_combined = pd.concat(data_frames)
-	# stats = df_combined.groupby([pd.cut(df_combined['MLAT'], np.arange(mlat_min, mlat_max + mlat_step, mlat_step)),
-	# 								pd.cut(df_combined['MLT'], np.arange(mlt_min, mlt_max + mlt_step, mlt_step))])['dbht'].agg(['mean', 'std', 'count']).reset_index()
+
 	df_combined = df_combined[df_combined['dbht'].notna()]
 	stats_df = pd.DataFrame({'MLT': mlt,
 							'count':len(df_combined),
@@ -136,7 +135,7 @@ def plotting(stats, mlat):
 
 		ax = plt.subplot(2,3,i+1)
 		for stat in stats:
-			plt.plot(stats[stat][param], legend=stat)
+			plt.plot(stats[stat][param], label=stat)
 		plt.xlabel('MLT')
 		plt.ylabel(param)
 		plt.xticks(xticks, labels=xtick_labels)
