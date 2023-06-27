@@ -5,6 +5,7 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from tqdm import tqdm
 
 # Define the directory containing the CSV files
@@ -131,21 +132,26 @@ def plotting(stats, mlat):
 	# xticks = [0, 24, 48, 72, 95]
 	# xtick_labels = [0, 6, 12, 18, 24]
 
+	color_map = sns.color_palette('tab20', len(stats))
+
 	fig = plt.figure(figsize=(20,15))
-	plt.title(f'MLAT {mlat}')
-	title = 'Station counts -'
+	title = f'MLAT {mlat} station counts -'
 	for stat in stats:
 		title = title +f' {stat}:  {stats[stat]["count"].sum()},'
 	plt.title(title)
 	for i, param in enumerate(params):
 
 		ax = plt.subplot(2,2,i+1)
-		for stat in stats:
-			plt.plot(stats[stat][param], label=stat)
+		plt.title(param)
+		for col, stat in zip(color_map, stats):
+			if i ==0:
+				plt.plot(stats[stat][param], label=f'{stat} {np.round(np.log10(stats[stat]["count"].sum()), 1)}', color=col)
+			else:
+				plt.plot(stats[stat][param], label=stat, color=col)
 		plt.xlabel('MLT')
-		plt.ylabel(param)
 		# plt.xticks(xticks, labels=xtick_labels)
 		plt.legend()
+		plt.margins(x=0)
 
 	plt.savefig(f'plots/station_comparison_mlat_{mlat}.png')
 
