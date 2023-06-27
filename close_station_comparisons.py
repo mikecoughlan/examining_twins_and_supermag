@@ -140,14 +140,13 @@ def plotting(stats, mlat):
 		title = title +f' {stat}:  {stats[stat]["count"].sum()},'
 	plt.title(title)
 	fig, axs = plt.subplots(3, 2, figsize=(20,15))
-	axs = axs.flatten()
 	for i, param in enumerate(params):
 
 		# ax = plt.subplot(2,2,i+1)
 		plt.title(param)
 		for col, stat in zip(color_map, stats):
 			if i ==0:
-i				axs[(i//2), i%2].plot(stats[stat][param], label=f'{stat} {np.round(np.log10(stats[stat]["count"].sum()), 1)}', color=col)
+				axs[(i//2), i%2].plot(stats[stat][param], label=f'{stat} {np.round(np.log10(stats[stat]["count"].sum()), 1)}', color=col)
 			else:
 				axs[(i//2), i%2].plot(stats[stat][param], label=stat, color=col)
 		plt.xlabel('MLT')
