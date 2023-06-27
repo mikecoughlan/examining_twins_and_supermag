@@ -135,7 +135,7 @@ def plotting(stats, mlat):
 	plt.title(f'MLAT {mlat}')
 	title = 'Station counts -'
 	for stat in stats:
-		title = title +f' {stat}:  {stats[stat]["counts"].sum()},'
+		title = title +f' {stat}:  {stats[stat]["count"].sum()},'
 	plt.title(title)
 	for i, param in enumerate(params):
 
