@@ -126,22 +126,25 @@ def plotting(stats, mlat):
 		stats (pd.df): dataframe containing the locations and values
 	'''
 
-	params = ['mean', 'median', 'max', 'std' ,'count']
+	params = ['mean', 'median', 'max', 'std' ]
 
-	xticks = [0, 24, 48, 72, 95]
-	xtick_labels = [0, 6, 12, 18, 24]
+	# xticks = [0, 24, 48, 72, 95]
+	# xtick_labels = [0, 6, 12, 18, 24]
 
 	fig = plt.figure(figsize=(20,15))
 	plt.title(f'MLAT {mlat}')
-
+	title = 'Station counts -'
+	for stat in stats:
+		title = title +f' {stat}:  {stats[stat]["counts"].sum()},'
+	plt.title(title)
 	for i, param in enumerate(params):
 
-		ax = plt.subplot(2,3,i+1)
+		ax = plt.subplot(2,2,i+1)
 		for stat in stats:
 			plt.plot(stats[stat][param], label=stat)
 		plt.xlabel('MLT')
 		plt.ylabel(param)
-		plt.xticks(xticks, labels=xtick_labels)
+		# plt.xticks(xticks, labels=xtick_labels)
 		plt.legend()
 
 	plt.savefig(f'plots/station_comparison_mlat_{mlat}.png')
