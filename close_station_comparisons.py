@@ -134,24 +134,27 @@ def plotting(stats, mlat):
 
 	color_map = sns.color_palette('tab20', len(stats))
 
-	fig = plt.figure(figsize=(20,15))
+	# fig = plt.figure(figsize=(20,15))
 	title = f'MLAT {mlat} station counts -'
 	for stat in stats:
 		title = title +f' {stat}:  {stats[stat]["count"].sum()},'
 	plt.title(title)
+	fig, axs = plt.subplots(3, 2, figsize=(20,15))
+	axs = axs.flatten()
 	for i, param in enumerate(params):
 
-		ax = plt.subplot(2,2,i+1)
+		# ax = plt.subplot(2,2,i+1)
 		plt.title(param)
 		for col, stat in zip(color_map, stats):
 			if i ==0:
-				plt.plot(stats[stat][param], label=f'{stat} {np.round(np.log10(stats[stat]["count"].sum()), 1)}', color=col)
+i				axs[(i//2), i%2].plot(stats[stat][param], label=f'{stat} {np.round(np.log10(stats[stat]["count"].sum()), 1)}', color=col)
 			else:
-				plt.plot(stats[stat][param], label=stat, color=col)
+				axs[(i//2), i%2].plot(stats[stat][param], label=stat, color=col)
 		plt.xlabel('MLT')
 		# plt.xticks(xticks, labels=xtick_labels)
 		plt.legend()
 		plt.margins(x=0)
+	axs[2,0].plot()
 
 	plt.savefig(f'plots/station_comparison_mlat_{mlat}.png')
 
