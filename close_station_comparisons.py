@@ -143,8 +143,16 @@ def getting_solar_cycle():
 
 	return solar
 
+def getting_geo_location(stat, geo_df):
 
-def plotting(stats, mlat, mlat_step, data_dir, solar):
+	temp_df = geo_df[geo_df['IAGA'] == stat]
+	lat = temp_df['GEOLAT']
+	lon = temp_df['GEOLON']
+
+	return lat, lon
+
+
+def plotting(stats, mlat, mlat_step, data_dir, solar, geo_df):
 	'''
 	plots a heatmap of a particular parameter using imshow. First transforms the data frame into a 2d array for plotting
 
@@ -165,11 +173,11 @@ def plotting(stats, mlat, mlat_step, data_dir, solar):
 	color_map = sns.color_palette('tab20', len(stats))
 
 	# fig = plt.figure(figsize=(20,15))
-	fig, axs = plt.subplots(3, 2, figsize=(20,15))
+	fig, axs = plt.subplots(4, 2, figsize=(20,15))
 	fig.suptitle(f'MLAT: {mlat} - Stations: {str(list(stats.keys()))[1:-1]}', fontsize=25)
 	for i, param in enumerate(params):
 
-		ax = plt.subplot(3,2,i+1)
+		ax = plt.subplot(4,2,i+1)
 		plt.title(param)
 		for col, stat in zip(color_map, stats):
 			if i ==0:
@@ -180,7 +188,7 @@ def plotting(stats, mlat, mlat_step, data_dir, solar):
 		# plt.xticks(xticks, labels=xtick_labels)
 		plt.legend()
 		plt.margins(x=0)
-	ax = plt.subplot(3,1,3)
+	ax = plt.subplot(4,1,3)
 
 	plt.xlim(start_date, end_date)
 	dates = extracting_dates(data_dir, stats, mlat, mlat_step)
@@ -195,6 +203,16 @@ def plotting(stats, mlat, mlat_step, data_dir, solar):
 	plt.margins(y=0)
 	plt.yticks([])
 	plt.legend()
+
+	ax = plt.subplot(4,1,4)
+	plt.title('Station locations')
+	plt.xlim(geo_df['GEOLON'].min(), geo_df['GEOLON'].max())
+	plt.ylim(geo_df['GEOLAT'].min(), geo_df['GEOLAT'].max())
+	plt.xlabel('geolon')
+	plt.ylabel('geolat')
+	for col, stat in zip(color_map, stats):
+		lat, lon = getting_geo_location(stat, geo_df)
+		plt.scatter(lon, lat, color=col)
 
 	plt.savefig(f'plots/station_comparison_mlat_{mlat}.png')
 
@@ -223,9 +241,11 @@ def main():
 	end_date = pd.to_datetime('2019-12-31')
 	solar = solar[(solar.index > start_date) & (solar.index < end_date)]
 
+	geo_df = pd.read_csv('supermag-stations-info.csv')
+
 	for mlat in stats_dict.keys():
 		# Plot the results
-		plotting(stats_dict[mlat], mlat, mlat_step, data_dir, solar)
+		plotting(stats_dict[mlat], mlat, mlat_step, data_dir, solar, geo_df)
 
 
 
