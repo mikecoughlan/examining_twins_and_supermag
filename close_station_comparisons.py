@@ -178,7 +178,7 @@ def plotting(stats, mlat, mlat_step, data_dir, solar, geo_df):
 	for i, param in enumerate(params):
 
 		ax = plt.subplot(4,2,i+1)
-		plt.title(param)
+		plt.ylabel(param, fontsize=15)
 		for col, stat in zip(color_map, stats):
 			if i ==0:
 				plt.plot(stats[stat][param], label=f'{stat} {np.round(np.log10(stats[stat]["count"].sum()), 1)}', color=col)
@@ -206,13 +206,13 @@ def plotting(stats, mlat, mlat_step, data_dir, solar, geo_df):
 
 	ax = plt.subplot(4,1,4)
 	plt.title('Station locations')
-	plt.xlim(geo_df['GEOLON'].min(), geo_df['GEOLON'].max())
-	plt.ylim(geo_df['GEOLAT'].min(), geo_df['GEOLAT'].max())
+	plt.xlim(geo_df['GEOLON'].min()-5, geo_df['GEOLON'].max()+5)
+	plt.ylim(geo_df['GEOLAT'].min()-5, geo_df['GEOLAT'].max()+5)
 	plt.xlabel('geolon')
 	plt.ylabel('geolat')
 	for col, stat in zip(color_map, stats):
 		lat, lon = getting_geo_location(stat, geo_df)
-		plt.scatter(lon, lat, color=col)
+		plt.scatter(lon, lat, color=col, s=70)
 
 	plt.savefig(f'plots/station_comparison_mlat_{mlat}.png')
 
