@@ -53,11 +53,14 @@ def load_data(filepath):
 	return df
 
 
-def filter_data(df, mlat_min_bin, mlat_max_bin, mlt_min_bin, mlt_max_bin):
+def filter_data(df, mlat_min_bin, mlat_max_bin, mlt_min_bin=None, mlt_max_bin=None):
 	'''
 	Filter a pandas data frame to degree bins.
 	'''
-	df = df[(df['MLAT'] >= mlat_min_bin) & (df['MLAT'] < mlat_max_bin) & (df['MLT'] >= mlt_min_bin) & (df['MLT'] < mlt_max_bin)]
+	if mlt_min_bin:
+		df = df[(df['MLAT'] >= mlat_min_bin) & (df['MLAT'] < mlat_max_bin) & (df['MLT'] >= mlt_min_bin) & (df['MLT'] < mlt_max_bin)]
+	else:
+		df = df[(df['MLAT'] >= mlat_min_bin) & (df['MLAT'] < mlat_max_bin)]
 
 	return df
 
@@ -87,6 +90,7 @@ def process_directory(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step,
 				temp_df = pd.DataFrame()
 				filepath = os.path.join(data_dir, f'{stats}.feather')
 				df = load_data(filepath)
+				stats_df[mlat][f'{stats}_dates'] = df.copy().dropna().Date_UTC
 				for mlt in np.arange(mlt_min, mlt_max, mlt_step):
 					print(f'MLAT: {mlat}' + f' MLT: {mlt}')
 					mlt_min_bin = mlt
@@ -118,6 +122,17 @@ def compute_statistics(df_combined, mlt):
 
 	return stats_df
 
+def extracting_dates(data_dir, stats, mlat, mlat_step):
+
+	dates = []
+	for stat in stats:
+		df = load_data(data_dir+f'{stat}.feather')
+		df = filter_data(df, mlat, mlat+mlat_step)
+		df.dropna(inplace=True).reset_index(inplace=True, drop=True)
+		dates.append(df['Date_UTC'])
+
+	return dates
+
 
 def plotting(stats, mlat):
 	'''
@@ -142,18 +157,26 @@ def plotting(stats, mlat):
 	fig, axs = plt.subplots(3, 2, figsize=(20,15))
 	for i, param in enumerate(params):
 
-		# ax = plt.subplot(2,2,i+1)
+		ax = plt.subplot(3,2,i+1)
 		plt.title(param)
 		for col, stat in zip(color_map, stats):
 			if i ==0:
-				axs[(i//2), i%2].plot(stats[stat][param], label=f'{stat} {np.round(np.log10(stats[stat]["count"].sum()), 1)}', color=col)
+				plt.plot(stats[stat][param], label=f'{stat} {np.round(np.log10(stats[stat]["count"].sum()), 1)}', color=col)
 			else:
-				axs[(i//2), i%2].plot(stats[stat][param], label=stat, color=col)
+				plt.plot(stats[stat][param], label=stat, color=col)
 		plt.xlabel('MLT')
 		# plt.xticks(xticks, labels=xtick_labels)
 		plt.legend()
 		plt.margins(x=0)
-	axs[2,0].plot()
+	ax = plt.subplot(3,1,3)
+	start_date1 = pd.to_datetime('1995-01-01')
+	end_date1 = pd.to_datetime('2019-12-31')
+	date_rangex = pd.date_range(start=start_date1, end=end_date1)
+	datax = pd.Series(range(len(date_rangex)), index=date_rangex)
+	plt.fill_between(datax.index, 0, 0, color='blue', alpha=0.0)
+	for j, (col,stat) in enumerate(zip(color_map, stats)):
+		plt.fill_between(stats[f'{stats}_dates'], i+0.1, i+1, color=col, alpha=0.7)
+	plt.title('the other plot')
 
 	plt.savefig(f'plots/station_comparison_mlat_{mlat}.png')
 
@@ -174,8 +197,8 @@ def main():
 			pickle.dump(stats_dict, s)
 
 	else:
-		with open(f'outputs/stats_dict_{mlat_step}_stats.pkl', 'rb') as s:
-			stats_dict = pickle.load(s)
+		with open(f'outputs/stats_dict_{mlat_step}_stats.pkl', 'rb') as o:
+			stats_dict = pickle.load(o)
 
 	for mlat in stats_dict.keys():
 		# Plot the results
