@@ -1,4 +1,5 @@
 import glob
+import json
 import os
 import pickle
 
@@ -128,21 +129,35 @@ def extracting_dates(data_dir, stats, mlat, mlat_step):
 	for stat in stats:
 		df = load_data(data_dir+f'{stat}.feather')
 		df = filter_data(df, mlat, mlat+mlat_step)
-		df.dropna(inplace=True).reset_index(inplace=True, drop=True)
-		dates.append(df['Date_UTC'])
+		df.dropna(subset=['dbht'], inplace=True)
+		df.reset_index(inplace=True, drop=True)
+		dates.append(pd.to_datetime(pd.Series(df['Date_UTC'], index=df['Date_UTC'])))
 
 	return dates
 
+def getting_solar_cycle():
 
-def plotting(stats, mlat):
+	solar = pd.read_json('../data/observed-solar-cycle-indices.json')
+	solar['time-tag'] = pd.to_datetime(solar['time-tag'])
+	solar.set_index(solar['time-tag'], inplace=True)
+
+	return solar
+
+
+def plotting(stats, mlat, mlat_step, data_dir, solar):
 	'''
 	plots a heatmap of a particular parameter using imshow. First transforms the data frame into a 2d array for plotting
 
 	Args:
 		stats (pd.df): dataframe containing the locations and values
 	'''
-
-	params = ['mean', 'median', 'max', 'std' ]
+	params = ['mean', 'median', 'max', 'std']
+	twins_start = pd.to_datetime('2010-01-01')
+	twins_end = pd.to_datetime('2017-12-31')
+	start_date = pd.to_datetime('1995-01-01')
+	end_date = pd.to_datetime('2019-12-31')
+	twins_period = pd.date_range(start=twins_start, end=twins_end)
+	twins_period = pd.Series(range(len(twins_period)), index=twins_period)
 
 	# xticks = [0, 24, 48, 72, 95]
 	# xtick_labels = [0, 6, 12, 18, 24]
@@ -150,11 +165,8 @@ def plotting(stats, mlat):
 	color_map = sns.color_palette('tab20', len(stats))
 
 	# fig = plt.figure(figsize=(20,15))
-	title = f'MLAT {mlat} station counts -'
-	for stat in stats:
-		title = title +f' {stat}:  {stats[stat]["count"].sum()},'
-	plt.title(title)
 	fig, axs = plt.subplots(3, 2, figsize=(20,15))
+	fig.suptitle(f'MLAT: {mlat} - Stations: {str(list(stats.keys()))[1:-1]}', fontsize=25)
 	for i, param in enumerate(params):
 
 		ax = plt.subplot(3,2,i+1)
@@ -169,14 +181,20 @@ def plotting(stats, mlat):
 		plt.legend()
 		plt.margins(x=0)
 	ax = plt.subplot(3,1,3)
-	start_date1 = pd.to_datetime('1995-01-01')
-	end_date1 = pd.to_datetime('2019-12-31')
-	date_rangex = pd.date_range(start=start_date1, end=end_date1)
-	datax = pd.Series(range(len(date_rangex)), index=date_rangex)
-	plt.fill_between(datax.index, 0, 0, color='blue', alpha=0.0)
-	for j, (col,stat) in enumerate(zip(color_map, stats)):
-		plt.fill_between(stats[f'{stats}_dates'], i+0.1, i+1, color=col, alpha=0.7)
-	plt.title('the other plot')
+
+	plt.xlim(start_date, end_date)
+	dates = extracting_dates(data_dir, stats, mlat, mlat_step)
+	for j, (col,date, stat) in enumerate(zip(color_map, dates, stats)):
+		plt.fill_between(date.index, j+0.1, j+1, color=col, alpha=0.7, label=stat)
+		plt.yticks([])
+
+	plt.title('data availability')
+	ax2 = ax.twinx()
+	plt.fill_between(twins_period.index, 0, solar['smoothed_ssn'].max(), color='black', alpha=0.2, label='TWINS period')
+	ax2.plot(solar['smoothed_ssn'], color='black', label='Solar Cycle')
+	plt.margins(y=0)
+	plt.yticks([])
+	plt.legend()
 
 	plt.savefig(f'plots/station_comparison_mlat_{mlat}.png')
 
@@ -200,9 +218,14 @@ def main():
 		with open(f'outputs/stats_dict_{mlat_step}_stats.pkl', 'rb') as o:
 			stats_dict = pickle.load(o)
 
+	solar = getting_solar_cycle()
+	start_date = pd.to_datetime('1995-01-01')
+	end_date = pd.to_datetime('2019-12-31')
+	solar = solar[(solar.index > start_date) & (solar.index < end_date)]
+
 	for mlat in stats_dict.keys():
 		# Plot the results
-		plotting(stats_dict[mlat], mlat)
+		plotting(stats_dict[mlat], mlat, mlat_step, data_dir, solar)
 
 
 
