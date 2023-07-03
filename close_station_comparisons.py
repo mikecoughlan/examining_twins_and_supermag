@@ -99,7 +99,7 @@ def process_directory(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step,
 					mlt_max_bin = mlt + mlt_step
 					df_filtered = process_file(df, mlat_min_bin, mlat_max_bin, mlt_min_bin, mlt_max_bin)
 					if not df_filtered.empty:
-						stat = compute_statistics(df_filtered, mlt)
+						stat = compute_statistics(df_filtered, mlt, twins=True)
 						temp_df = pd.concat([temp_df, stat], axis=0, ignore_index=True)
 
 				temp_df.set_index("MLT", inplace=True)
@@ -108,11 +108,15 @@ def process_directory(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step,
 	return stats_df
 
 
-def compute_statistics(df_combined, mlt):
+def compute_statistics(df_combined, mlt, twins=False):
 	'''
 	Compute the statistics of the 'dbht' parameter for each degree bins.
 	'''
-
+	if twins:
+		twins_start = pd.to_datetime('2010-01-01')
+		twins_end = pd.to_datetime('2017-12-31')
+		df_combined.set_index('Date_UTC', inplace=True)
+		df_combined = df_combined[twins_start:twins_end]
 	df_combined = df_combined[df_combined['dbht'].notna()]
 	stats_df = pd.DataFrame({'MLT': mlt,
 							'count':len(df_combined),
@@ -228,7 +232,7 @@ def plotting(stats, mlat, mlat_step, data_dir, solar, geo_df):
 		lat, lon = getting_geo_location(stat, geo_df)
 		plt.scatter(lon, lat, color=col, s=70)
 
-	plt.savefig(f'plots/station_comparison_mlat_{mlat}.png')
+	plt.savefig(f'plots/twins_only/station_comparison_mlat_{mlat}.png')
 	plt.close()
 	gc.collect()
 
