@@ -245,15 +245,15 @@ def main():
 		with open(f'outputs/stations_dict_{mlat_step}_MLAT.pkl', 'rb') as f:
 			stations_dict = pickle.load(f)
 
-	if not os.path.exists(f'outputs/stats_dict_{mlat_step}_stats.pkl'):
+	if not os.path.exists(f'outputs/stats_dict_{mlat_step}_twins_only_stats.pkl'):
 		stats_dict = process_directory(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step, mlt_step, stations_dict)
 		# stats = compute_statistics(data_frames)
 
-		with open(f'outputs/stats_dict_{mlat_step}_stats.pkl', 'wb') as s:
+		with open(f'outputs/stats_dict_{mlat_step}_twins_only_stats.pkl', 'wb') as s:
 			pickle.dump(stats_dict, s)
 
 	else:
-		with open(f'outputs/stats_dict_{mlat_step}_stats.pkl', 'rb') as o:
+		with open(f'outputs/stats_dict_{mlat_step}_twins_only_stats.pkl', 'rb') as o:
 			stats_dict = pickle.load(o)
 
 	solar = getting_solar_cycle()
