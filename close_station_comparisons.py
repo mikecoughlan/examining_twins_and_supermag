@@ -125,13 +125,21 @@ def compute_statistics(df_combined, mlt):
 
 def extracting_dates(data_dir, stats, mlat, mlat_step):
 
+	start_date = pd.to_datetime('1995-01-01 00:00:00')
+	end_date = pd.to_datetime('2019-12-31 23:59:00')
+	time_period = pd.date_range(start=start_date, end=end_date, freq='min')
+	time_period = pd.Series(range(len(time_period)), index=time_period)
 	dates = []
 	for stat in stats:
 		df = load_data(data_dir+f'{stat}.feather')
 		df = filter_data(df, mlat, mlat+mlat_step)
 		df.dropna(subset=['dbht'], inplace=True)
 		df.reset_index(inplace=True, drop=True)
-		dates.append(pd.to_datetime(pd.Series(df['Date_UTC'], index=df['Date_UTC'])))
+		date = pd.DataFrame(index=df['Date_UTC'])
+		date['value'] = int(1)
+		temp_df = pd.merge(time_period.to_frame(), date, left_index=True, right_index=True, how='left').drop(0, axis=1)
+		temp_df.fillna(0, inplace=True)
+		dates.append(temp_df)
 
 	return dates
 
@@ -192,8 +200,8 @@ def plotting(stats, mlat, mlat_step, data_dir, solar, geo_df):
 
 	plt.xlim(start_date, end_date)
 	dates = extracting_dates(data_dir, stats, mlat, mlat_step)
-	for j, (col,date, stat) in enumerate(zip(color_map, dates, stats)):
-		plt.fill_between(date.index, j+0.1, j+1, color=col, alpha=0.7, label=stat)
+	for j, (col, date, stat) in enumerate(zip(color_map, dates, stats)):
+		plt.fill_between(date.index, (j+0.1)*date['value'], (j+1)*date['value'], color=col, alpha=0.7, label=stat)
 		plt.yticks([])
 
 	plt.title('data availability')
@@ -243,7 +251,7 @@ def main():
 
 	geo_df = pd.read_csv('supermag-stations-info.csv')
 
-	for mlat in stats_dict.keys():
+	for mlat in tqdm(stats_dict.keys()):
 		# Plot the results
 		plotting(stats_dict[mlat], mlat, mlat_step, data_dir, solar, geo_df)
 
