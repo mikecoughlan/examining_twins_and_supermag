@@ -207,7 +207,7 @@ def plotting(stats, mlat, mlat_step, data_dir, solar, geo_df):
 		plt.margins(x=0)
 	ax = plt.subplot(4,1,3)
 
-	plt.xlim(start_date, end_date)
+	plt.xlim(twins_start, twins_end)
 	dates = extracting_dates(data_dir, stats, mlat, mlat_step)
 	for col, stat in zip(color_map, stats):
 		plt.fill_between(dates.index, dates[f'{stat}_bottom'], dates[f'{stat}_top'], color=col, alpha=1, label=stat,
@@ -216,7 +216,7 @@ def plotting(stats, mlat, mlat_step, data_dir, solar, geo_df):
 
 	plt.title('data availability')
 	ax2 = ax.twinx()
-	plt.fill_between(twins_period.index, 0, solar['smoothed_ssn'].max(), color='black', alpha=0.2, label='TWINS period')
+	# plt.fill_between(twins_period.index, 0, solar['smoothed_ssn'].max(), color='black', alpha=0.2, label='TWINS period')
 	ax2.plot(solar['smoothed_ssn'], color='black', label='Solar Cycle')
 	plt.margins(y=0)
 	plt.yticks([])
