@@ -41,7 +41,7 @@ def creating_dict_of_stations(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, ml
 				station = file_name.split('.')[0]
 				stats.append(station)
 
-		if not stats:
+		if stats:
 			stations_dict[f'mlat_{mlat}'] = stats
 
 	with open(f'outputs/stations_dict_{mlat_step}_twins_only_MLAT.pkl', 'wb') as f:
