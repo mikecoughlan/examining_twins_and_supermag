@@ -133,7 +133,7 @@ def compute_statistics(df_combined, mlt, twins=False):
 
 	return stats_df
 
-def extracting_dates(data_dir, stats, mlat, mlat_step):
+def extracting_dates(data_dir, stations, mlat, mlat_step):
 
 	dates = pd.DataFrame()
 	start_date = pd.to_datetime('1995-01-01 00:00:00')
@@ -142,7 +142,7 @@ def extracting_dates(data_dir, stats, mlat, mlat_step):
 	dates['Date_UTC'] = time_period
 	dates.set_index('Date_UTC', inplace=True, drop=True)
  	# time_period = pd.Series(range(len(time_period)), index=time_period)
-	for i, stat in enumerate(stats):
+	for i, stat in enumerate(stations):
 		df = load_data(data_dir+f'{stat}.feather')
 		df = filter_data(df, mlat, mlat+mlat_step)
 		df.dropna(subset=['dbht'], inplace=True)
@@ -174,7 +174,7 @@ def getting_geo_location(stat, geo_df):
 	return lat, lon
 
 
-def plotting(stats, mlat, mlat_step, data_dir, solar, geo_df):
+def plotting(stations, stats, mlat, mlat_step, data_dir, solar, geo_df):
 	'''
 	plots a heatmap of a particular parameter using imshow. First transforms the data frame into a 2d array for plotting
 
@@ -192,16 +192,16 @@ def plotting(stats, mlat, mlat_step, data_dir, solar, geo_df):
 	# xticks = [0, 24, 48, 72, 95]
 	# xtick_labels = [0, 6, 12, 18, 24]
 
-	color_map = sns.color_palette('tab20', len(stats))
+	color_map = sns.color_palette('tab20', len(stations))
 
 	# fig = plt.figure(figsize=(20,15))
 	fig, axs = plt.subplots(4, 2, figsize=(20,15))
-	fig.suptitle(f'MLAT: {mlat} - Stations: {str(list(stats.keys()))[1:-1]}', fontsize=25)
+	fig.suptitle(f'MLAT: {mlat} - Stations: {str(stations)[1:-1]}', fontsize=25)
 	for i, param in enumerate(params):
 
 		ax = plt.subplot(4,2,i+1)
 		plt.ylabel(param, fontsize=15)
-		for col, stat in zip(color_map, stats):
+		for col, stat in zip(color_map, stations):
 			if i ==0:
 				plt.plot(stats[stat][param], label=f'{stat} {np.round(np.log10(stats[stat]["count"].sum()), 1)}', color=col)
 			else:
@@ -213,8 +213,8 @@ def plotting(stats, mlat, mlat_step, data_dir, solar, geo_df):
 	ax = plt.subplot(4,1,3)
 
 	plt.xlim(twins_start, twins_end)
-	dates = extracting_dates(data_dir, stats, mlat, mlat_step)
-	for col, stat in zip(color_map, stats):
+	dates = extracting_dates(data_dir, stations, mlat, mlat_step)
+	for col, stat in zip(color_map, stations):
 		plt.fill_between(dates.index, dates[f'{stat}_bottom'], dates[f'{stat}_top'], color=col, alpha=1, label=stat,
 							where=np.array(dates[f'{stat}_top'])>np.array(dates[f'{stat}_bottom']))
 		plt.yticks([])
@@ -233,7 +233,7 @@ def plotting(stats, mlat, mlat_step, data_dir, solar, geo_df):
 	plt.ylim(geo_df['GEOLAT'].min()-5, geo_df['GEOLAT'].max()+5)
 	plt.xlabel('geolon')
 	plt.ylabel('geolat')
-	for col, stat in zip(color_map, stats):
+	for col, stat in zip(color_map, stations):
 		lat, lon = getting_geo_location(stat, geo_df)
 		plt.scatter(lon, lat, color=col, s=70)
 
@@ -272,7 +272,7 @@ def main():
 	mlats = [key for key in stats_dict.keys()]
 	for mlat in tqdm(mlats):
 		# Plot the results
-		plotting(stats_dict[mlat], mlat, mlat_step, data_dir, solar, geo_df)
+		plotting(stations_dict[f'mlat_{mlat}'], stats_dict[mlat], mlat, mlat_step, data_dir, solar, geo_df)
 		plt.close()
 		gc.collect()
 
