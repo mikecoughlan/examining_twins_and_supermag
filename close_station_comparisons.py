@@ -3,6 +3,7 @@ import glob
 import json
 import os
 import pickle
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -100,7 +101,7 @@ def process_directory(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step,
 				twins_end = pd.to_datetime('2017-12-31')
 				df.set_index('Date_UTC', inplace=True, drop=False)
 				df = df[twins_start:twins_end]
-				stats_df[mlat][f'{stats}_dates'] = df.copy().dropna(subset='Date_UTC')
+				stats_df[mlat][f'{stats}_dates'] = df.copy()['Date_UTC'].dropna()
 				for mlt in np.arange(mlt_min, mlt_max, mlt_step):
 					print(f'MLAT: {mlat}' + f' MLT: {mlt}')
 					mlt_min_bin = mlt
@@ -252,6 +253,7 @@ def main():
 	if not os.path.exists(f'outputs/stats_dict_{mlat_step}_twins_only_stats.pkl'):
 		stats_dict = process_directory(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step, mlt_step, stations_dict)
 		# stats = compute_statistics(data_frames)
+		print('Sys size of stats_dict: '+str(sys.getsizeof(stats_dict)))
 
 		with open(f'outputs/stats_dict_{mlat_step}_twins_only_stats.pkl', 'wb') as s:
 			pickle.dump(stats_dict, s)
