@@ -132,7 +132,9 @@ dmypy.json
 outputs/
 models/
 .pylintrc
-plots/
+plots/video_plots/
+plots/videos/
+twins_data/
 videos/
 combined_dict.pkl
 geographic_combined_dict.pkl
