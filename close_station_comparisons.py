@@ -32,6 +32,10 @@ def creating_dict_of_stations(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, ml
 		mlat_max_bin = mlat + mlat_step
 		for filename in glob.glob(data_dir+'*.feather', recursive=True):
 			df = pd.read_feather(filename)
+			twins_start = pd.to_datetime('2010-01-01')
+			twins_end = pd.to_datetime('2017-12-31')
+			df.set_index('Date_UTC', inplace=True, drop=False)
+			df = df[twins_start:twins_end]
 			if df['MLAT'].between(mlat_min_bin, mlat_max_bin, inclusive='left').any():
 				file_name = os.path.basename(filename)
 				station = file_name.split('.')[0]
@@ -40,7 +44,7 @@ def creating_dict_of_stations(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, ml
 		if not stats:
 			stations_dict[f'mlat_{mlat}'] = stats
 
-	with open(f'outputs/stations_dict_{mlat_step}_MLAT.pkl', 'wb') as f:
+	with open(f'outputs/stations_dict_{mlat_step}_twins_only_MLAT.pkl', 'wb') as f:
 		pickle.dump(stations_dict, f)
 
 	return stations_dict
@@ -92,7 +96,11 @@ def process_directory(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step,
 				temp_df = pd.DataFrame()
 				filepath = os.path.join(data_dir, f'{stats}.feather')
 				df = load_data(filepath)
-				stats_df[mlat][f'{stats}_dates'] = df.copy().dropna().Date_UTC
+				twins_start = pd.to_datetime('2010-01-01')
+				twins_end = pd.to_datetime('2017-12-31')
+				df.set_index('Date_UTC', inplace=True, drop=False)
+				df = df[twins_start:twins_end]
+				stats_df[mlat][f'{stats}_dates'] = df.copy().dropna(subset='Date_UTC')
 				for mlt in np.arange(mlt_min, mlt_max, mlt_step):
 					print(f'MLAT: {mlat}' + f' MLT: {mlt}')
 					mlt_min_bin = mlt
@@ -112,11 +120,7 @@ def compute_statistics(df_combined, mlt, twins=False):
 	'''
 	Compute the statistics of the 'dbht' parameter for each degree bins.
 	'''
-	if twins:
-		twins_start = pd.to_datetime('2010-01-01')
-		twins_end = pd.to_datetime('2017-12-31')
-		df_combined.set_index('Date_UTC', inplace=True)
-		df_combined = df_combined[twins_start:twins_end]
+
 	df_combined = df_combined[df_combined['dbht'].notna()]
 	stats_df = pd.DataFrame({'MLT': mlt,
 							'count':len(df_combined),
@@ -239,10 +243,10 @@ def plotting(stats, mlat, mlat_step, data_dir, solar, geo_df):
 
 def main():
 	# Process the directory of feather files and compute the statistics for each 5 degree bin
-	if not os.path.exists(f'outputs/stations_dict_{mlat_step}_MLAT.pkl'):
+	if not os.path.exists(f'outputs/stations_dict_{mlat_step}_twins_only_MLAT.pkl'):
 		stations_dict = creating_dict_of_stations(data_dir, mlat_min, mlat_max, mlt_min, mlt_max, mlat_step, mlt_step)
 	else:
-		with open(f'outputs/stations_dict_{mlat_step}_MLAT.pkl', 'rb') as f:
+		with open(f'outputs/stations_dict_{mlat_step}_twins_only_MLAT.pkl', 'rb') as f:
 			stations_dict = pickle.load(f)
 
 	if not os.path.exists(f'outputs/stats_dict_{mlat_step}_twins_only_stats.pkl'):
