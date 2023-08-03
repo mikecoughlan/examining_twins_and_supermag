@@ -134,6 +134,7 @@ models/
 .pylintrc
 plots/video_plots/
 plots/videos/
+plots/temp_maps
 twins_data/
 videos/
 combined_dict.pkl
