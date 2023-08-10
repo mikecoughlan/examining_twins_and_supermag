@@ -133,6 +133,7 @@ def compute_statistics(df_combined, mlt, twins=False):
 
 	return stats_df
 
+
 def extracting_dates(data_dir, stations, mlat, mlat_step):
 
 	dates = pd.DataFrame()
@@ -157,6 +158,7 @@ def extracting_dates(data_dir, stations, mlat, mlat_step):
 
 	return dates
 
+
 def getting_solar_cycle():
 
 	solar = pd.read_json('../data/observed-solar-cycle-indices.json')
@@ -164,6 +166,7 @@ def getting_solar_cycle():
 	solar.set_index(solar['time-tag'], inplace=True)
 
 	return solar
+
 
 def getting_geo_location(stat, geo_df):
 

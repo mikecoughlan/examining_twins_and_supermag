@@ -7,12 +7,12 @@ from scipy.io import netcdf_file
 os.environ["CDF_LIB"] = "~/CDF/lib"
 import datetime
 import glob
-from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 import numpy as np
 import spacepy
 from spacepy import pycdf
+from tqdm import tqdm
 
 dir = '../data/twins/'
 file = 'twins_m2_ena_20090721_v02.cdf'
@@ -39,7 +39,7 @@ for files in tqdm(range(0, len(twins_files), batch_size)):
 
 	for i in range(temps.shape[0]):
 		fig = plt.figure()
-		plt.imshow(temps[i])
+		plt.imshow(temps[i], origin='lower')
 		plt.clim(vmin, vmax)
 		plt.colorbar()
 		plt.xticks([])
