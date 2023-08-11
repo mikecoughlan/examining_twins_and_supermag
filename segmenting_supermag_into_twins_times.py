@@ -33,7 +33,7 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 # Define the degree grid
 mlt_min = 0
 mlt_max = 24
-mlt_step = (1/60)
+mlt_step = (1/6)
 
 
 def loading_twins_times():
@@ -97,12 +97,13 @@ def main():
 		for stat in stations:
 			station = loading_supermag_data(stat)
 			station = segmenting_dataframe_into_twins_map_times(station, twins_times)
-			segmented[region][stat] = station
+			segmented[region][stat] = {}
+			segmented[region][stat]['dataframe'] = station
 
 			calculating = Calculating_MLT_Statistics(df=station, mlt_min=mlt_min, mlt_max=mlt_max, mlt_step=mlt_step, param='dbht')
 			statistics = calculating.process_directory()
 
-			segmented[region]['stats_df'] = statistics
+			segmented[region][stat]['statistics'] = statistics
 
 		segmented_rsd = segmenting_dataframe_into_twins_map_times(stats[region]['max_rsd'], twins_times)
 
