@@ -157,7 +157,7 @@ def calculating_correlations(regions, maps, delays):
 
 			# modify these lines to look at the max in a rolling window
 			indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=10)			# Yeah this is annoying, have to create a forward rolling indexer because it won't do it automatically.
-			combined_df[f'shifted_mean_{delay}_max'] = combined_df[f'shifted_mean_{delay}'].rolling(indexer, min_periods=1).mean()		# creates new column in the df labeling the maximum parameter value in the forecast:forecast+window time frame
+			combined_df[f'shifted_mean_{delay}_max'] = combined_df[f'shifted_mean_{delay}'].rolling(indexer, min_periods=1).max()		# creates new column in the df labeling the maximum parameter value in the forecast:forecast+window time frame
 			combined_df[f'shifted_max_{delay}_max'] = combined_df[f'shifted_max_{delay}'].rolling(indexer, min_periods=1).max()		# creates new column in the df labeling the maximum parameter value in the forecast:forecast+window time frame
 			# df.reset_index(drop=True, inplace=True)
 
