@@ -92,7 +92,7 @@ def loading_supermag(station, start_time, end_time):
 	df = pd.read_feather(supermag_dir+station+'.feather')
 
 	# limiting the analysis to the nightside
-	df = df[df['MLT']>17 | df['MLT']<7]
+	df = df[(df['MLT']>17) | (df['MLT']<7)]
 	df.set_index('Date_UTC', inplace=True, drop=True)
 	df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
 	df = df[start_time:end_time]
