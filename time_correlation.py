@@ -18,6 +18,7 @@ import datetime
 import glob
 import pickle
 
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -28,6 +29,8 @@ from tqdm import tqdm
 twins_dir = '../data/twins/'
 supermag_dir = '../data/supermag/'
 regions_dict = '../identifying_regions/outputs/twins_era_identified_regions_min_2.pkl'
+regions_stat_dict = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
+
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
@@ -108,9 +111,14 @@ def combining_regional_dfs(stations):
 
 	combined_stations = pd.DataFrame(index=twins_time_period)
 
+	mlats = []
+
 	for station in stations:
 		stat = loading_supermag(station, start_time, end_time)
+		mlats.append(stat['MLAT'].mean())
 		combined_stations = pd.concat([combined_stations, stat['dbht']], axis=1, ignore_index=False)
+
+	region_mlat = round((np.max(mlats) + np.min(mlats)) / 2, 2)
 
 	mean_dbht = combined_stations.mean(axis=1)
 	max_dbht = combined_stations.max(axis=1)
@@ -118,7 +126,7 @@ def combining_regional_dfs(stations):
 	combined_stations['mean'] = mean_dbht
 	combined_stations['max'] = max_dbht
 
-	return combined_stations
+	return combined_stations, region_mlat
 
 
 def calculating_correlations(regions, maps, delays):
@@ -126,12 +134,14 @@ def calculating_correlations(regions, maps, delays):
 	corrs_dict = {}
 
 	for region in regions:
-		combined_df = combining_regional_dfs(regions[region]['station'])
+		combined_df, region_mlat = combining_regional_dfs(regions[region]['station'])
+
 
 		mag_stats = ['max', 'mean']
 		map_stats = ['max', 'mean', 'std', 'perc']
 
 		corrs_dict[region] = {}
+		corrs_dict[region]['mlat'] = region_mlat
 
 		for mag_stat in mag_stats:
 			for map_stat in map_stats:
@@ -165,35 +175,44 @@ def plotting_corrs(corrs_dict, delays, mag_stat):
 
 	x = [i for i in range(len(delays))]
 
-	fig = plt.figure(figsize=(10,15))
+	fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10,15))
+	colormap = plt.get_cmap('magma')
+	norm_param = mcolors.Normalize(vmin=30, vmax=85)
+
 	ax1 = plt.subplot(2,2,1)
 	for region in corrs_dict.keys():
-		plt.plot(corrs_dict[region][f'{mag_stat}-mean'], label=region)
+		line, = plt.plot(corrs_dict[region][f'{mag_stat}-mean'], label=region, color=colormap(norm_param(corrs_dict[region]['mlat'])))
+
 	plt.title(f'{mag_stat}-mean')
 	plt.margins(x=0, y=0)
 	plt.xticks(x, labels=delays)
 
 	ax2 = plt.subplot(2,2,2)
 	for region in corrs_dict.keys():
-		plt.plot(corrs_dict[region][f'{mag_stat}-max'], label=region)
+		line, = plt.plot(corrs_dict[region][f'{mag_stat}-max'], label=region, color=colormap(norm_param(corrs_dict[region]['mlat'])))
 	plt.title(f'{mag_stat}-max')
 	plt.margins(x=0, y=0)
 	plt.xticks(x, labels=delays)
 
 	ax3 = plt.subplot(2,2,3)
 	for region in corrs_dict.keys():
-		plt.plot(corrs_dict[region][f'{mag_stat}-std'], label=region)
+		line, = plt.plot(corrs_dict[region][f'{mag_stat}-std'], label=region, color=colormap(norm_param(corrs_dict[region]['mlat'])))
 	plt.title(f'{mag_stat}-std')
 	plt.margins(x=0, y=0)
 	plt.xticks(x, labels=delays)
 
 	ax4 = plt.subplot(2,2,4)
 	for region in corrs_dict.keys():
-		plt.plot(corrs_dict[region][f'{mag_stat}-perc'], label=region)
+		line, = plt.plot(corrs_dict[region][f'{mag_stat}-perc'], label=region, color=colormap(norm_param(corrs_dict[region]['mlat'])))
 	plt.title(f'{mag_stat}-perc')
 	plt.margins(x=0, y=0)
 	plt.xticks(x, labels=delays)
 
+	sm = plt.cm.ScalarMappable(cmap=colormap, norm=norm_param)
+	# sm.set_array([])  # Set dummy array to create colorbar
+	cbar = plt.colorbar(sm, ax=axes, location='bottom', pad=0.1)
+
+	# plt.tight_layout()
 	plt.savefig(f'plots/{mag_stat}_delay_correlations.png')
 
 
