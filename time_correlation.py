@@ -58,7 +58,7 @@ def loading_twins_maps():
 		for i, date in enumerate(twins_map['Epoch']):
 			check = pd.to_datetime(date.strftime(format='%Y-%m-%d %H:%M:%S'), format='%Y-%m-%d %H:%M:%S')
 			if check in times.values:
-				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = twins_map['Ion_Temperature'][i]
+				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = twins_map['Ion_Temperature'][i][:,60:]
 
 	stats_df = pd.DataFrame(index=maps.keys())
 	stats_df.index = pd.to_datetime(stats_df.index)
@@ -156,7 +156,7 @@ def calculating_correlations(regions, maps, delays):
 			combined_df[f'shifted_max_{delay}'] = combined_df['max'].shift(-delay)
 
 			# modify these lines to look at the max in a rolling window
-			indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=10)			# Yeah this is annoying, have to create a forward rolling indexer because it won't do it automatically.
+			indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=60)			# Yeah this is annoying, have to create a forward rolling indexer because it won't do it automatically.
 			combined_df[f'shifted_mean_{delay}_max'] = combined_df[f'shifted_mean_{delay}'].rolling(indexer, min_periods=1).max()		# creates new column in the df labeling the maximum parameter value in the forecast:forecast+window time frame
 			combined_df[f'shifted_max_{delay}_max'] = combined_df[f'shifted_max_{delay}'].rolling(indexer, min_periods=1).max()		# creates new column in the df labeling the maximum parameter value in the forecast:forecast+window time frame
 			# df.reset_index(drop=True, inplace=True)
