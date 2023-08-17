@@ -376,18 +376,17 @@ def direct_plotting(regions, maps, delays):
 def direct_latitude_plotting(coors_dict, maps, delays):
 
 	common_index = maps['stats_df'].index.intersection(coors_dict['low_max']['delay_df'].index)
-	delay = 60
+	delay = 0
 	start = 0
 	end = 100
 	fig = plt.figure(figsize=(10,10))
-	# fig.autofmt_xdate(rotation=45)
 
 	ax1 = plt.subplot(221)
 	ax12 = ax1.twinx()
 	ax1.plot(maps['stats_df'].loc[common_index, 'mean'][start:end], color='black')
 	for coor in coors_dict.keys():
 		ax12.plot(coors_dict[coor]['delay_df'].loc[common_index, f'shifted_mean_{delay}_max'][start:end], label=coor)
-	# ax1.set_xticklabels(maps['stats_df']['mean'][15500:15700].index, rotation=45)
+	ax1.set_xticklabels(ax12.get_xticklabels(), rotation=45, ha='right')
 	plt.title('Mean')
 	plt.legend()
 
@@ -396,7 +395,7 @@ def direct_latitude_plotting(coors_dict, maps, delays):
 	ax2.plot(maps['stats_df'].loc[common_index, 'max'][start:end], color='black')
 	for coor in coors_dict.keys():
 		ax22.plot(coors_dict[coor]['delay_df'].loc[common_index, f'shifted_mean_{delay}_max'][start:end], label=coor)
-	# ax2.set_xticklabels(maps['stats_df']['max'][15500:15700].index, rotation=45)
+	ax2.set_xticklabels(ax22.get_xticklabels(), rotation=45, ha='right')
 	plt.title('Max')
 
 	ax3 = plt.subplot(223)
@@ -412,7 +411,7 @@ def direct_latitude_plotting(coors_dict, maps, delays):
 	ax4.plot(maps['stats_df'].loc[common_index, 'perc'][start:end], color='black')
 	for coor in coors_dict.keys():
 		ax42.plot(coors_dict[coor]['delay_df'].loc[common_index, f'shifted_mean_{delay}_max'][start:end], label=coor)
-	# ax4.set_xticklabels(maps['stats_df']['perc'][15500:15700].index, rotation=45)
+	ax4.set_xticklabels(ax42.get_xticklabels(), rotation=45, ha='right')
 	plt.title('Perc')
 
 	plt.savefig('plots/twins_stats_latitude.png')
