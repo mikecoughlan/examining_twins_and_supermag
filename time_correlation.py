@@ -233,7 +233,7 @@ def calculating_latitude_correlations(regions, maps, delays):
 					corr = maps['stats_df'].loc[common_index, map_stat].corr(df.loc[common_index, f'shifted_{mag_stat}_{delay}_max'])
 					corrs_dict[label][f'{mag_stat}-{map_stat}'].append(corr)
 
-		coors_dict[label]['delay_df'] = df
+		corrs_dict[label]['delay_df'] = df
 
 	return corrs_dict
 
