@@ -233,6 +233,8 @@ def calculating_latitude_correlations(regions, maps, delays):
 					corr = maps['stats_df'].loc[common_index, map_stat].corr(df.loc[common_index, f'shifted_{mag_stat}_{delay}_max'])
 					corrs_dict[label][f'{mag_stat}-{map_stat}'].append(corr)
 
+		coors_dict[label]['delay_df'] = df
+
 	return corrs_dict
 
 
@@ -370,6 +372,50 @@ def direct_plotting(regions, maps, delays):
 
 	plt.savefig('plots/twins_stats.png')
 
+
+def direct_latitude_plotting(coors_dict, maps, delays):
+
+	delay = 60
+	start = 0
+	end = 100
+	fig = plt.figure(figsize=(10,10))
+	# fig.autofmt_xdate(rotation=45)
+
+	ax1 = plt.subplot(221)
+	ax12 = ax1.twinx()
+	ax1.plot(maps['stats_df']['mean'][start:end], color='black')
+	for coor in coors_dict.keys():
+		ax12.plot(coors_dict[coor]['delay_df'][f'shifted_mean_{delay}_max'][start:end], label=coor)
+	# ax1.set_xticklabels(maps['stats_df']['mean'][15500:15700].index, rotation=45)
+	plt.title('Mean')
+	plt.legend()
+
+	ax2 = plt.subplot(222)
+	ax22 = ax2.twinx()
+	ax2.plot(maps['stats_df']['max'][start:end], color='black')
+	for coor in coors_dict.keys():
+		ax22.plot(coors_dict[coor]['delay_df'][f'shifted_mean_{delay}_max'][start:end], label=coor)
+	# ax2.set_xticklabels(maps['stats_df']['max'][15500:15700].index, rotation=45)
+	plt.title('Max')
+
+	ax3 = plt.subplot(223)
+	ax32 = ax3.twinx()
+	ax3.plot(maps['stats_df']['std'][start:end], color='black')
+	for coor in coors_dict.keys():
+		ax32.plot(coors_dict[coor]['delay_df'][f'shifted_mean_{delay}_max'][start:end], label=coor)
+	ax3.set_xticklabels(ax32.get_xticklabels(), rotation=45, ha='right')
+	plt.title('std')
+
+	ax4 = plt.subplot(224)
+	ax42 = ax4.twinx()
+	ax4.plot(maps['stats_df']['perc'][start:end], color='black')
+	for coor in coors_dict.keys():
+		ax42.plot(coors_dict[coor]['delay_df'][f'shifted_mean_{delay}_max'][start:end], label=coor)
+	# ax4.set_xticklabels(maps['stats_df']['perc'][15500:15700].index, rotation=45)
+	plt.title('Perc')
+
+	plt.savefig('plots/twins_stats_latitude.png')
+
 def main():
 
 	delays = [-20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30, 45, 60]
@@ -377,7 +423,7 @@ def main():
 	regions = loading_regions_dicts()
 	latitude_coors = calculating_latitude_correlations(regions, maps, delays)
 	plotting_corrs(latitude_coors, delays, 'mean', latitudes=True)
-	direct_plotting(regions, maps, delays)
+	direct_latitude_plotting(latitude_coors, maps, delays)
 	# corrs_dict = calculating_correlations(regions, maps, delays)
 	# plotting_corrs(corrs_dict, delays, 'mean')
 	# plotting_corrs(corrs_dict, delays, 'max')
