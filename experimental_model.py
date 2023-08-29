@@ -185,10 +185,16 @@ def preparing_data_for_modeling(combined_stations, maps, target_var, cv):
 
 	scaling_max = np.max(train_x)
 	scaling_min = np.min(train_x)
+	scaling_mean = np.mean(train_x)
+	scaling_std = np.std(train_x)
 
-	train_x = (train_x - scaling_min) / (scaling_max - scaling_min)
-	val_x = (val_x - scaling_min) / (scaling_max - scaling_min)
-	test_x = (test_x - scaling_min) / (scaling_max - scaling_min)
+	# train_x = (train_x - scaling_min) / (scaling_max - scaling_min)
+	# val_x = (val_x - scaling_min) / (scaling_max - scaling_min)
+	# test_x = (test_x - scaling_min) / (scaling_max - scaling_min)
+
+	train_x = (train_x - scaling_mean) / scaling_std
+	val_x = (val_x - scaling_mean) / scaling_std
+	test_x = (test_x - scaling_mean) / scaling_std
 
 	processed_dict = {'train_x':train_x, 'train_y':train_y,
 						'val_x':val_x, 'val_y':val_y,
@@ -230,22 +236,21 @@ def CNN(input_shape, loss='mse', early_stop_patience=20, initial_filters=32, lea
 
 	model = Sequential()						# initalizing the model
 
-	model.add(Conv2D(initial_filters, 3, padding='same',
+	model.add(Conv2D(initial_filters, 5, padding='same',
 								activation='relu', input_shape=(input_shape[1], input_shape[2], 1)))			# adding the CNN layer
 	model.add(MaxPooling2D(2))
-	model.add(Dropout(0.2))
 	model.add(Conv2D(initial_filters*2, 3, padding='same', activation='relu'))
 	model.add(MaxPooling2D(2))
-	model.add(Dropout(0.2))
-	model.add(Conv2D(initial_filters*4, 3, padding='same', activation='relu'))
+	model.add(Conv2D(initial_filters*4, 2, padding='same', activation='relu'))
 	model.add(MaxPooling2D(2))
-	model.add(Dropout(0.2))
-	model.add(Conv2D(initial_filters*4, 3, padding='same', activation='relu'))
+	model.add(Conv2D(initial_filters*4, 2, padding='same', activation='relu'))
 	model.add(MaxPooling2D(2))
 	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
 	model.add(Dense(initial_filters*4, activation='relu'))		# Adding dense layers with dropout in between
 	model.add(Dropout(0.2))
 	model.add(Dense(initial_filters*2, activation='relu'))
+	model.add(Dropout(0.2))
+	model.add(Dense(initial_filters, activation='relu'))
 	model.add(Dropout(0.2))
 	model.add(Dense(1, activation='linear'))
 	le_scheduler = tf.keras.experimental.CosineDecay(learning_rate, 1000, alpha=0.001) # learning rate scheduler
@@ -389,7 +394,7 @@ def main():
 
 			processed_dict, stats_df = preparing_data_for_modeling(combined_stations, maps, 'reg_max', cv)
 
-			MODEL, early_stop = CNN(input_shape=processed_dict['train_x'].shape, loss='mse', early_stop_patience=20, initial_filters=64, learning_rate=1e-05)
+			MODEL, early_stop = CNN(input_shape=processed_dict['train_x'].shape, loss='mse', early_stop_patience=20, initial_filters=64, learning_rate=1e-06)
 
 			if os.path.exists(f'models/delay_{delay}/CV_{cv}.h5'):
 				first_time=False
@@ -401,6 +406,10 @@ def main():
 			predicted = making_predictions(MODEL, processed_dict['test_x'], cv)
 
 			CV_dict[f'CV_{cv}'] = {'predicted':predicted, 'test_y':processed_dict['test_y']}
+
+			delay_stats_dict[f'delay_{delay}'] = CV_dict
+			with open('outputs/delay_stats_dict.pkl', 'wb') as f:
+				pickle.dump(delay_stats_dict, f)
 
 
 		CV_dict = calculating_errors(CV_dict)
