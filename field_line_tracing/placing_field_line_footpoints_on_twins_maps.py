@@ -10,6 +10,7 @@ import pyspedas
 import pyspedas.geopack as pygeo
 from dateutil import parser
 from geopack import geopack, t89
+from matplotlib.cm import ScalarMappable
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Circle, Wedge
 from spacepy import pycdf
@@ -55,7 +56,8 @@ def loading_twins_maps():
 				continue
 			check = pd.to_datetime(date.strftime(format='%Y-%m-%d %H:%M:%S'), format='%Y-%m-%d %H:%M:%S')
 			if check in times.values:
-				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = twins_map['Ion_Temperature'][i][50:140,40:100]
+				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = {}
+				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][35:125,40:130]
 
 	return maps
 
@@ -78,6 +80,38 @@ def loading_supermag(station):
 	df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
 
 	return df
+
+def combining_regional_dfs(stations, rsd, map_keys, delay=None):
+
+	start_time = pd.to_datetime('2009-07-20')
+	end_time = pd.to_datetime('2017-12-31')
+	twins_time_period = pd.date_range(start=start_time, end=end_time, freq='min')
+
+	combined_stations = pd.DataFrame(index=twins_time_period)
+
+	for station in stations:
+		stat = loading_supermag(station, start_time, end_time)
+		stat = stat[start_time:end_time]
+		stat = stat[['dbht']]
+		for col in stat.columns:
+			if delay:
+				stat[f'{col}_delay_{delay}'] = stat[col].shift(-delay)
+				combined_stations = pd.concat([combined_stations, stat[f'{col}_delay_{delay}']], axis=1, ignore_index=False)
+			else:
+				stat[f'{col}_dbdt'] = stat[col]
+				combined_stations = pd.concat([combined_stations, stat[f'{col}_dbdt']], axis=1, ignore_index=False)
+
+	mean_dbht = combined_stations.mean(axis=1)
+	max_dbht = combined_stations.max(axis=1)
+
+	combined_stations['reg_mean'] = mean_dbht
+	combined_stations['reg_max'] = max_dbht
+	combined_stations['rsd'] = rsd['max_rsd']
+	combined_stations['MLT'] = rsd['MLT']
+
+	segmented_df = combined_stations[combined_stations.index.isin(map_keys)]
+
+	return segmented_df
 
 
 def dual_half_circle(center=(0,0), radius=1, angle=90, ax=None, colors=('w','k','k'),
@@ -189,7 +223,7 @@ def get_footpoint(xx=None, yy=None, zz=None, x_gsm=None, y_gsm=None, z_gsm=None,
 
 def field_line_tracing(date, geolat, geolon, vx, vy, vz):
 	'''
-	Ties together all the field line tracing elements and gets 
+	Ties together all the field line tracing elements and gets
 	the footpoints for a given station at a given time.
 
 	Args:
@@ -199,7 +233,7 @@ def field_line_tracing(date, geolat, geolon, vx, vy, vz):
 		vx (float): x component of the solar wind velocity in GSE used to calculate the dipole tilt angle
 		vy (float): y component of the solar wind velocity in GSE used to calculate the dipole tilt angle
 		vz (float): z component of the solar wind velocity in GSE used to calculate the dipole tilt angle
-	
+
 	Returns:
 		xf (float): x component of the footpoint in GSM
 		yf (float): y component of the footpoint in GSM
@@ -239,6 +273,83 @@ def field_line_tracing(date, geolat, geolon, vx, vy, vz):
 	return {'xf':xf, 'yf':yf, 'zmin':zmin}
 
 
+def preparing_region_footpoints_for_plotting(region_df, footpoints):
+	'''
+	putting all the footpoints, dbdt, station names, and mean subtracted dbdt info into a dataframe
+	for plotting. Also converting the footpoint coordinates to the correct scale based on how the
+	twins maps are stored in basic np.arrays. The additions to the footpoint coordinates would have
+	to be adjusted if the twins maps were trimmed differently. The additions coorespond to the
+	x and y locations of Earth in the twins maps. The zmin values are not adjusted because this is
+	in Re and just used for reference. The plotting_color is the mean subtracted dbdt value for the
+	station at the time of the twins map. This is done to garner some insight into the relationship
+	between the footpoint location and the station's impact on the RSD.
+
+	Args:
+		region_df (pd.dataframe): dataframe containing the regional dbdt, rsd, and mlt data for a given date
+		footpoints (dict): dictionary containing the footpoint locations for each station in the region
+
+	Returns:
+		scatter_plotting_df (pd.dataframe): dataframe containing the footpoint locations, dbdt, station names,
+											mean subtracted dbdt values
+	'''
+
+	scatter_plotting_df = pd.DataFrame(columns=['xf', 'yf', 'zmin', 'station', 'dbdt', 'plotting_color'])
+
+	for station, foot in footpoints.items():
+
+		scatter_plotting_df = scatter_plotting_df.append({'xf':((foot['xf']*2)+80), 'yf':((foot['yf']*2)+45),
+														'zmin':foot['zmin'], 'station':station,
+														'dbdt':region_df[f'{station}_dbdt'],
+														'plotting_color':(region_df[station]-region_df['reg_mean'])},
+														axis=0, ignore_index=True)
+
+	return scatter_plotting_df
+
+
+def plotting_footpoints_on_twins_maps(twins_dict, region_df, date, region):
+	'''
+	Plots the footpoints on top of the twins maps
+
+	Args:
+		twins_dict (dict): dictionary entry containing the twins maps and footpoints
+		region_df (pd.dataframe): dataframe containing the regional dbdt, rsd, and mlt data for a given date
+
+	'''
+	scatter_plotting_df = preparing_region_footpoints_for_plotting(region_df[date], twins_dict[date][f'{region}_footpoints'])
+
+	fig = plt.subplots(figsize=(20,15))
+	ax1=plt.subplot(111)
+	twins_cmap = plt.get_cmap('viridis')
+	twins_sc = ScalarMappable(cmap=twins_cmap)
+	twins_sc.set_array([])
+	ax.imshow(twins_dict[date]['map'], cmap=twins_sc, aspect='auto', origin='lower')
+
+	# adding twins colorabar
+	twins_cbar = plt.colorbar(twins_sc, ax=ax1, label='Twins')
+
+	# plotting station footpoints
+	ax2 = ax1.twinx()
+	footpoint_cmap = plt.get_cmap('bwr')
+	footpoint_normalize = plt.Normalize(vmin=scatter_plotting_df['plotting_color'].min(), vmax=scatter_plotting_df['plotting_color'].max())
+	footpoint_sc = ScalarMappable(cmap=footpoint_cmap, norm=footpoint_normalize)
+	footpoint_sc.set_array([])
+	ax.scatter(scatter_plotting_df['xf'], scatter_plotting_df['yf'], c=scatter_plotting_df['plotting_color'], s=100,
+				marker=(5,1), cmap=footpoint_cmap)
+
+	# adding annotation to the station footpoints
+	for i, txt in enumerate(scatter_plotting_df['station']):
+		ax.annotate(txt, (scatter_plotting_df['xf'][i], scatter_plotting_df['yf'][i]), textcoords='offset points', xytext=(0,10), ha='center')
+
+	# adding footpoints colorbar
+	footpoint_cbar = plt.colorbar(footpoint_sc, ax=ax2, label='Mean Subtracted dB/dt')
+
+	ax.set_title(f'{date} - {region} Max RSD: {np.round(region_df[date]["rsd"], 2)} MLT: {np.round(region_df[date]["MLT"], 2)}', fontsize=25)
+	plt.savefig(f'plots/footpoints_on_twins_maps/{region}_{date}.png')
+	plt.close()
+	gc.collect()
+
+
+
 # okay, in order I need to:
 # load the twins maps
 # load the regions
@@ -262,15 +373,20 @@ def main():
 	test_Region = regions[region]
 	test_Stats = stats[region]
 
+	# getting dbdt and rsd data for the region
+	region_df = combining_regional_dfs(test_Region['stations'], test_Stats, twins.keys())
+
 	# Getting the geographic coordiantes of the stations in the region
 	stations_geo_locations = {}
 	for station in test_Region['stations']:
 		df = loading_supermag(station)
 		stations_geo_locations[station] = {'GEOLAT': df['GEOLAT'].mean(), 'GEOLON': df['GEOLON'].mean()}
-	
-	# getting the footpoints for each station in the region for each of 
+
+	# getting the footpoints for each station in the region for each of
 	# the twins maps and storing them in the maps dictionary
 	for date, entry in twins.items():
+		if entry[f'{region}_footpoints']:
+			continue
 		print(f'Working on {date}')
 		footpoints = {}
 		for station, station_info in stations_geo_locations.items():
@@ -278,8 +394,14 @@ def main():
 														station_info['GEOLON'], solarwind.loc[date]['Vx'], \
 														solarwind.loc[date]['Vy'], solarwind.loc[date]['Vz'])
 		entry[f'{region}_footpoints'] = footpoints
-	
 
+	# saving the updated twins dictionary
+	with open('../outputs/twins_maps_with_footpoints.pkl', 'wb') as f:
+		pickle.dump(twins, f)
+
+	# plotting the footpoints on top of the twins maps
+	date = '2012-03-12 09:40:00'
+	plotting_footpoints_on_twins_maps(twins, region_df, date, region)
 
 
 
