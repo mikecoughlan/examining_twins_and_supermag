@@ -69,14 +69,13 @@ def loading_solarwind():
 	return df
 
 
-def loading_supermag(station, start_time, end_time):
+def loading_supermag(station):
 
 	df = pd.read_feather(supermag_dir+station+'.feather')
 
 	# limiting the analysis to the nightside
 	df.set_index('Date_UTC', inplace=True, drop=True)
 	df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
-	df = df[start_time:end_time]
 
 	return df
 
@@ -99,7 +98,9 @@ def dual_half_circle(center=(0,0), radius=1, angle=90, ax=None, colors=('w','k',
     cr = Circle(center, radius, fc=colors[2], fill=False, **kwargs)
     for wedge in [w1, w2, cr]:
         ax.add_artist(wedge)
+
     return [w1, w2, cr]
+
 
 def setup_fig(plotting_y=True, xlim=(10,-30),ylim=(-20,20)):
 
@@ -120,6 +121,7 @@ def setup_fig(plotting_y=True, xlim=(10,-30),ylim=(-20,20)):
 
     return ax
 
+
 def get_seconds(dt):
 
     t0 = datetime(1970,1,1)
@@ -129,15 +131,49 @@ def get_seconds(dt):
     return ut
 
 
-# Return index where field line goes closest to z=0 and its value
-def find_nearest_z(z_arr, value):
-    array = np.asarray(z_arr)
-    idx = (np.abs(array - value)).argmin()
-    return idx, array[idx]
 
-# Takes: dt, th_loc[x,y,z] (assumes get_th_xyz() has already been called)
+def find_nearest_z(z_arr):
+	'''
+	# Return index where field line goes closest to z=0 and its value
+
+	Args:
+		z_arr (np.array): array describing the field line z components
+
+	Returns:
+		idx (int): index where the field line goes closest to z=0
+		z_arr[idx] (float): value of the z component of the field line at idx
+	'''
+
+	idx = np.argmin(np.abs(z_arr))
+
+	return idx, z_arr[idx]
+
+
 # Returns: x,y coordinates of the traced equatorial "footpoint"
-def get_footpoint(x_gsm, y_gsm, z_gsm, vx, vy, vz, dt):
+def get_footpoint(xx=None, yy=None, zz=None, x_gsm=None, y_gsm=None, z_gsm=None, vx=None, vy=None, vz=None, ut=None, dt=None):
+	'''
+	# Trace field line from (x,y,z) to equatorial plane and locates teh footpoint
+
+	Args:
+		xx (np.array): x component of the field line in GSM
+		yy (np.array): y component of the field line in GSM
+		zz (np.array): z component of the field line in GSM
+		x_gsm (float): x component of the station in GSM
+		y_gsm (float): y component of the station in GSM
+		z_gsm (float): z component of the station in GSM
+		vx (float): x component of the solar wind velocity in GSE used to calculate the dipole tilt angle
+		vy (float): y component of the solar wind velocity in GSE used to calculate the dipole tilt angle
+		vz (float): z component of the solar wind velocity in GSE used to calculate the dipole tilt angle
+		ut (float): time in seconds from the 1970's
+		dt (string): date and time of interest
+
+	Returns:
+		xf (float): x component of the footpoint in GSM
+		yf (float): y component of the footpoint in GSM
+		zmin (float): z component of the footpoint in GSM (should be zero or close to zero)
+	'''
+
+
     # Calculate dipole tilt angle
     ut = get_seconds(dt)
     ps = geopack.recalc(ut, vxgse=vx, vygse=vy, vzgse=vz)
@@ -150,4 +186,94 @@ def get_footpoint(x_gsm, y_gsm, z_gsm, vx, vy, vz, dt):
     mindex, z_min = find_nearest_z(zz, 0)
     xf = xx[mindex]
     yf = yy[mindex]
+
     return xf, yf, z_min
+
+
+def field_line_tracing(date, geolat, geolon, vx, vy, vz):
+	'''
+	Ties together all the field line tracing elements and gets 
+	the footpoints for a given station at a given time.
+
+	Args:
+		date (string): date and time of interest
+		geolat (float): geographic latitude of station
+		geolon (float): geographic longitude of station
+		vx (float): x component of the solar wind velocity in GSE used to calculate the dipole tilt angle
+		vy (float): y component of the solar wind velocity in GSE used to calculate the dipole tilt angle
+		vz (float): z component of the solar wind velocity in GSE used to calculate the dipole tilt angle
+	
+	Returns:
+		xf (float): x component of the footpoint in GSM
+		yf (float): y component of the footpoint in GSM
+		zmin (float): z component of the footpoint in GSM (should be zero or close to zero)
+	'''
+	print('Doing field line tracing....')
+	# getting time in seconds from date in the 1970's. Seems like a silly way to do this but that's the requirement.
+	ut = get_seconds(date)
+
+	# Getting the dipole tile angle
+	ps = geopack.recalc(ut, vxgse=vx, vygse=vy, vzgse=vz)
+
+	# convert degrees to radians
+	lat_rad = np.deg2rad(geolat)
+	lon_rad = np.deg2rad(geolon)
+	print(lat_rad, lon_rad)
+
+	# Convert Geodetic to geocentric spherical
+	r, theta_rad = geopack.geodgeo(0, lat_rad, 1)
+	print(r, theta_rad, lon_rad)
+
+	# Converting Geocentric Spherical to Geocentric Cartesian
+	x_gc, y_gc, z_gc = geopack.sphcar(1, theta_rad, lon_rad, 1)
+	print('GC:  ', x_gc,y_gc,z_gc,' R=',np.sqrt(x_gc**2+y_gc**2+z_gc**2))
+
+	# Convert Geocentric Cartesian to GSM
+	x_gsm, y_gsm, z_gsm = geopack.geogsm(x_gc, y_gc, z_gc, 1)
+	print('GSM: ', x_gsm,y_gsm,z_gsm,' R=',np.sqrt(x_gsm**2+y_gsm**2+z_gsm**2))
+
+	# perfroming the trace
+	x, y, z, xx, yy, zz = geopack.trace(x_gsm, y_gsm, z_gsm, dir=1, rlim=1000, r0=.99999, parmod=2, exname='t89', inname='igrf', maxloop=10000)
+
+	# getting the footpoints in the equatorial plane
+	xf, yf, zmin = get_footpoint(x_gsm, y_gsm, z_gsm, vx, vy, vz, date)
+	print(f'Footprints: {xf}, {yf}')
+
+	return xf, yf, zmin
+
+
+# okay, in order I need to:
+# load the twins maps
+# load the regions
+# load the solar wind data
+# choose a region, and then for each station in that region
+	# load the supermag data
+	# go through the process of finding the footpoints for each time that cooresponds to a twins map
+	# save the footpoints in a dictionary
+# plot the footpoints on top of the data from the twins maps
+
+
+def main():
+
+	# loading all the datasets and dictonaries
+	twins = loading_twins_maps()
+	regions, stats = loading_dicts()
+	solarwind = loading_solarwind()
+
+	# selecting one region at a time for analysis
+	region = 'region_83'
+	test_Region = regions[region]
+	test_Stats = stats[region]
+
+	# Getting the geographic coordiantes of the stations in the region
+	stations_geo_locations = {}
+	for station in test_Region['stations']:
+		df = loading_supermag(station)
+		stations_geo_locations[station] = {'lat': df['GEOLAT'].mean(), 'lon': df['GEOLON'].mean()}
+	
+
+
+
+
+if __name__ == '__main__':
+	main()
