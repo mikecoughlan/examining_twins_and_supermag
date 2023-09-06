@@ -123,33 +123,23 @@ def setup_fig(plotting_y=True, xlim=(10,-30),ylim=(-20,20)):
 
 
 def get_seconds(dt):
-
-    t0 = datetime(1970,1,1)
-    t1 = parser.parse(dt)
-    ut = (t1-t0).total_seconds()
-
-    return ut
-
-
-
-def find_nearest_z(z_arr):
 	'''
-	# Return index where field line goes closest to z=0 and its value
+	Converts a date and time into seconds from the 1970's
 
 	Args:
-		z_arr (np.array): array describing the field line z components
+		dt (string): date and time of interest
 
 	Returns:
-		idx (int): index where the field line goes closest to z=0
-		z_arr[idx] (float): value of the z component of the field line at idx
+		ut (float): time in seconds from the 1970's
 	'''
 
-	idx = np.argmin(np.abs(z_arr))
+	t0 = datetime(1970,1,1)
+	t1 = parser.parse(dt)
+	ut = (t1-t0).total_seconds()
 
-	return idx, z_arr[idx]
+	return ut
 
 
-# Returns: x,y coordinates of the traced equatorial "footpoint"
 def get_footpoint(xx=None, yy=None, zz=None, x_gsm=None, y_gsm=None, z_gsm=None, vx=None, vy=None, vz=None, ut=None, dt=None):
 	'''
 	# Trace field line from (x,y,z) to equatorial plane and locates teh footpoint
@@ -173,21 +163,28 @@ def get_footpoint(xx=None, yy=None, zz=None, x_gsm=None, y_gsm=None, z_gsm=None,
 		zmin (float): z component of the footpoint in GSM (should be zero or close to zero)
 	'''
 
+	if x_gsm:
+		# Calculate dipole tilt angle
+		if dt:
+			ut = get_seconds(dt)
+		ps = geopack.recalc(ut, vxgse=vx, vygse=vy, vzgse=vz)
+		# Calculate field line (both directions)
+		x,y,z,xx,yy,zz = geopack.trace(x_gsm,y_gsm,z_gsm,dir=1,rlim=21,r0=.99999,
+									parmod=2,exname='t89',inname='igrf',maxloop=1000)
 
-    # Calculate dipole tilt angle
-    ut = get_seconds(dt)
-    ps = geopack.recalc(ut, vxgse=vx, vygse=vy, vzgse=vz)
-    # Calculate field line (both directions)
-    x,y,z,xx,yy,zz = geopack.trace(x_gsm,y_gsm,z_gsm,dir=1,rlim=21,r0=.99999,
-                                   parmod=2,exname='t89',inname='igrf',maxloop=1000)
     # Check that field lines start and terminate at Earth
-    if (abs(xx[0]) > 1):
-        print(f'Field line failed to terminate at Earth. UT: {ut}')
-    mindex, z_min = find_nearest_z(zz, 0)
-    xf = xx[mindex]
-    yf = yy[mindex]
+	if (abs(xx[0]) > 1):
+		print(f'Field line failed to terminate at Earth. UT: {ut}')
 
-    return xf, yf, z_min
+    # Find index where field line goes closest to z=0 and its value
+	idx = np.argmin(np.abs(zz))
+
+	# Return index where field line goes closest to z=0 and its value
+	zmin = zz[idx]
+	xf = xx[idx]
+	yf = yy[idx]
+
+	return xf, yf, zmin
 
 
 def field_line_tracing(date, geolat, geolon, vx, vy, vz):
@@ -236,10 +233,10 @@ def field_line_tracing(date, geolat, geolon, vx, vy, vz):
 	x, y, z, xx, yy, zz = geopack.trace(x_gsm, y_gsm, z_gsm, dir=1, rlim=1000, r0=.99999, parmod=2, exname='t89', inname='igrf', maxloop=10000)
 
 	# getting the footpoints in the equatorial plane
-	xf, yf, zmin = get_footpoint(x_gsm, y_gsm, z_gsm, vx, vy, vz, date)
-	print(f'Footprints: {xf}, {yf}')
+	xf, yf, zmin = get_footpoint(xx=xx, yy=yy, zz=zz)
+	print(f'Footprints: {xf}, {yf}, {zmin}')
 
-	return xf, yf, zmin
+	return {'xf':xf, 'yf':yf, 'zmin':zmin}
 
 
 # okay, in order I need to:
@@ -269,7 +266,18 @@ def main():
 	stations_geo_locations = {}
 	for station in test_Region['stations']:
 		df = loading_supermag(station)
-		stations_geo_locations[station] = {'lat': df['GEOLAT'].mean(), 'lon': df['GEOLON'].mean()}
+		stations_geo_locations[station] = {'GEOLAT': df['GEOLAT'].mean(), 'GEOLON': df['GEOLON'].mean()}
+	
+	# getting the footpoints for each station in the region for each of 
+	# the twins maps and storing them in the maps dictionary
+	for date, entry in twins.items():
+		print(f'Working on {date}')
+		footpoints = {}
+		for station, station_info in stations_geo_locations.items():
+			footpoints[station] = field_line_tracing(date, station_info['GEOLAT'], \
+														station_info['GEOLON'], solarwind.loc[date]['Vx'], \
+														solarwind.loc[date]['Vy'], solarwind.loc[date]['Vz'])
+		entry[f'{region}_footpoints'] = footpoints
 	
 
 
