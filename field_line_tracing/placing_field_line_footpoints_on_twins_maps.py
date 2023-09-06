@@ -343,7 +343,7 @@ def main():
 	solarwind = loading_solarwind()
 
 	# selecting one region at a time for analysis
-	region = 'region_83'
+	region = 'region_166'
 	test_Region = regions[region]
 	test_Stats = stats[region]
 
