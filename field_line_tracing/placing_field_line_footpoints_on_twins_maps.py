@@ -1,3 +1,4 @@
+import gc
 import glob
 import os
 import pickle
@@ -8,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pyspedas
 import pyspedas.geopack as pygeo
+import shapely
 from dateutil import parser
 from geopack import geopack, t89
 from matplotlib.cm import ScalarMappable
@@ -17,10 +19,10 @@ from spacepy import pycdf
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
 
-twins_dir = '../../data/twins/'
-supermag_dir = '../../data/supermag/'
-regions_dict = '../../identifying_regions/outputs/twins_era_identified_regions_min_2.pkl'
-regions_stat_dict = '../../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
+twins_dir = '../data/twins/'
+supermag_dir = '../data/supermag/'
+regions_dict = '../identifying_regions/outputs/twins_era_identified_regions_min_2.pkl'
+regions_stat_dict = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
@@ -28,6 +30,8 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 
 
 def loading_dicts():
+
+	print('Loading regional dictionaries....')
 
 	with open(regions_dict, 'rb') as f:
 		regions = pickle.load(f)
@@ -44,7 +48,9 @@ def loading_dicts():
 
 def loading_twins_maps():
 
-	times = pd.read_feather('../outputs/regular_twins_map_dates.feather')
+
+	print('Loading twins maps....')
+	times = pd.read_feather('outputs/regular_twins_map_dates.feather')
 	twins_files = sorted(glob.glob(twins_dir+'*.cdf', recursive=True))
 
 	maps = {}
@@ -64,7 +70,8 @@ def loading_twins_maps():
 
 def loading_solarwind():
 
-	df = pd.read_feather('../../data/SW/ace_data.feather')
+	print('Loading solar wind data....')
+	df = pd.read_feather('../data/SW/ace_data.feather')
 	df.set_index('Date_UTC', inplace=True, drop=True)
 	df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
 
@@ -73,6 +80,7 @@ def loading_solarwind():
 
 def loading_supermag(station):
 
+	print(f'Loading station {station}....')
 	df = pd.read_feather(supermag_dir+station+'.feather')
 
 	# limiting the analysis to the nightside
@@ -83,6 +91,8 @@ def loading_supermag(station):
 
 def combining_regional_dfs(stations, rsd, map_keys, delay=None):
 
+
+	print('Combining regional data....')
 	start_time = pd.to_datetime('2009-07-20')
 	end_time = pd.to_datetime('2017-12-31')
 	twins_time_period = pd.date_range(start=start_time, end=end_time, freq='min')
@@ -90,7 +100,7 @@ def combining_regional_dfs(stations, rsd, map_keys, delay=None):
 	combined_stations = pd.DataFrame(index=twins_time_period)
 
 	for station in stations:
-		stat = loading_supermag(station, start_time, end_time)
+		stat = loading_supermag(station)
 		stat = stat[start_time:end_time]
 		stat = stat[['dbht']]
 		for col in stat.columns:
@@ -114,48 +124,6 @@ def combining_regional_dfs(stations, rsd, map_keys, delay=None):
 	return segmented_df
 
 
-def dual_half_circle(center=(0,0), radius=1, angle=90, ax=None, colors=('w','k','k'),
-                     **kwargs):
-    """
-    Add two half circles to the axes *ax* (or the current axes) with the
-    specified facecolors *colors* rotated at *angle* (in degrees).
-    """
-    if ax is None:
-        ax = plt.gca()
-    theta1, theta2 = angle, angle + 180
-    #w1 = Wedge(center, radius, theta1, theta2, fc=colors[0], **kwargs)
-    #w2 = Wedge(center, radius, theta2, theta1, fc=colors[1], **kwargs)
-
-    w1 = Wedge(center, radius, theta1, theta2, fc=colors[1], **kwargs)
-    w2 = Wedge(center, radius, theta2, theta1, fc=colors[0], **kwargs)
-
-    cr = Circle(center, radius, fc=colors[2], fill=False, **kwargs)
-    for wedge in [w1, w2, cr]:
-        ax.add_artist(wedge)
-
-    return [w1, w2, cr]
-
-
-def setup_fig(plotting_y=True, xlim=(10,-30),ylim=(-20,20)):
-
-    fig = plt.figure(figsize=(15,10))
-    ax  = fig.add_subplot(111)
-    ax.axvline(0,ls=':',color='k')
-    ax.axhline(0,ls=':',color='k')
-    ax.set_xlabel('X GSM [Re]')
-    if plotting_y:
-        ax.set_ylabel('Y GSM [Re]')
-    else:
-        ax.set_ylabel('Z GSM [Re]')
-    ax.set_xlim(xlim)
-    ax.set_ylim(ylim)
-    ax.invert_xaxis()
-    ax.set_aspect('equal')
-    w1,w2,cr = dual_half_circle(ax=ax)
-
-    return ax
-
-
 def get_seconds(dt):
 	'''
 	Converts a date and time into seconds from the 1970's
@@ -166,7 +134,7 @@ def get_seconds(dt):
 	Returns:
 		ut (float): time in seconds from the 1970's
 	'''
-
+	print('Getting seconds....')
 	t0 = datetime(1970,1,1)
 	t1 = parser.parse(dt)
 	ut = (t1-t0).total_seconds()
@@ -196,7 +164,7 @@ def get_footpoint(xx=None, yy=None, zz=None, x_gsm=None, y_gsm=None, z_gsm=None,
 		yf (float): y component of the footpoint in GSM
 		zmin (float): z component of the footpoint in GSM (should be zero or close to zero)
 	'''
-
+	print('Getting footpoint....')
 	if x_gsm:
 		# Calculate dipole tilt angle
 		if dt:
@@ -293,6 +261,7 @@ def preparing_region_footpoints_for_plotting(region_df, footpoints):
 											mean subtracted dbdt values
 	'''
 
+	print('Preparing footpoints for plotting....')
 	scatter_plotting_df = pd.DataFrame(columns=['xf', 'yf', 'zmin', 'station', 'dbdt', 'plotting_color'])
 
 	for station, foot in footpoints.items():
@@ -315,6 +284,8 @@ def plotting_footpoints_on_twins_maps(twins_dict, region_df, date, region):
 		region_df (pd.dataframe): dataframe containing the regional dbdt, rsd, and mlt data for a given date
 
 	'''
+
+	print('Plotting footpoints on twins maps....')
 	scatter_plotting_df = preparing_region_footpoints_for_plotting(region_df[date], twins_dict[date][f'{region}_footpoints'])
 
 	fig = plt.subplots(figsize=(20,15))
@@ -322,7 +293,7 @@ def plotting_footpoints_on_twins_maps(twins_dict, region_df, date, region):
 	twins_cmap = plt.get_cmap('viridis')
 	twins_sc = ScalarMappable(cmap=twins_cmap)
 	twins_sc.set_array([])
-	ax.imshow(twins_dict[date]['map'], cmap=twins_sc, aspect='auto', origin='lower')
+	ax1.imshow(twins_dict[date]['map'], cmap=twins_sc, aspect='auto', origin='lower')
 
 	# adding twins colorabar
 	twins_cbar = plt.colorbar(twins_sc, ax=ax1, label='Twins')
@@ -333,17 +304,17 @@ def plotting_footpoints_on_twins_maps(twins_dict, region_df, date, region):
 	footpoint_normalize = plt.Normalize(vmin=scatter_plotting_df['plotting_color'].min(), vmax=scatter_plotting_df['plotting_color'].max())
 	footpoint_sc = ScalarMappable(cmap=footpoint_cmap, norm=footpoint_normalize)
 	footpoint_sc.set_array([])
-	ax.scatter(scatter_plotting_df['xf'], scatter_plotting_df['yf'], c=scatter_plotting_df['plotting_color'], s=100,
+	ax2.scatter(scatter_plotting_df['xf'], scatter_plotting_df['yf'], c=scatter_plotting_df['plotting_color'], s=100,
 				marker=(5,1), cmap=footpoint_cmap)
 
 	# adding annotation to the station footpoints
 	for i, txt in enumerate(scatter_plotting_df['station']):
-		ax.annotate(txt, (scatter_plotting_df['xf'][i], scatter_plotting_df['yf'][i]), textcoords='offset points', xytext=(0,10), ha='center')
+		ax2.annotate(txt, (scatter_plotting_df['xf'][i], scatter_plotting_df['yf'][i]), textcoords='offset points', xytext=(0,10), ha='center')
 
 	# adding footpoints colorbar
 	footpoint_cbar = plt.colorbar(footpoint_sc, ax=ax2, label='Mean Subtracted dB/dt')
 
-	ax.set_title(f'{date} - {region} Max RSD: {np.round(region_df[date]["rsd"], 2)} MLT: {np.round(region_df[date]["MLT"], 2)}', fontsize=25)
+	plt.set_title(f'{date} - {region} Max RSD: {np.round(region_df[date]["rsd"], 2)} MLT: {np.round(region_df[date]["MLT"], 2)}', fontsize=25)
 	plt.savefig(f'plots/footpoints_on_twins_maps/{region}_{date}.png')
 	plt.close()
 	gc.collect()
