@@ -76,7 +76,7 @@ def loading_twins_maps():
 			check = pd.to_datetime(date.strftime(format='%Y-%m-%d %H:%M:%S'), format='%Y-%m-%d %H:%M:%S')
 			if check in times.values:
 				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = {}
-				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][35:125,40:130]
+				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][35:125,40:140]
 
 	return maps
 
@@ -286,7 +286,7 @@ def preparing_region_footpoints_for_plotting(region_df, footpoints):
 		scatter_plotting_df = scatter_plotting_df.append({'xf':((foot['xf']*2)+80), 'yf':((foot['yf']*2)+45),
 														'zmin':foot['zmin'], 'station':station,
 														'dbdt':region_df[f'{station}_dbdt'],
-														'plotting_color':(region_df[station]-region_df['reg_mean'])},
+														'plotting_color':(region_df[f'{station}_dbdt']-region_df['reg_mean'])},
 														ignore_index=True)
 
 	return scatter_plotting_df
@@ -303,50 +303,43 @@ def plotting_footpoints_on_twins_maps(twins_dict, region_df, date, region):
 	'''
 
 	print('Plotting footpoints on twins maps....')
-	scatter_plotting_df = preparing_region_footpoints_for_plotting(region_df[date], twins_dict[date][f'{region}_footpoints'])
+	scatter_plotting_df = preparing_region_footpoints_for_plotting(region_df.loc[date], twins_dict[date][f'{region}_footpoints'])
 
 	fig = plt.subplots(figsize=(20,15))
 	ax1=plt.subplot(111)
 	twins_cmap = plt.get_cmap('viridis')
-	twins_sc = ScalarMappable(cmap=twins_cmap)
+	twins_normalize = plt.Normalize(vmin=np.min(twins_dict[date]['map']), vmax=np.max(twins_dict[date]['map']))
+	twins_sc = ScalarMappable(cmap=twins_cmap, norm=twins_normalize)
 	twins_sc.set_array([])
-	ax1.imshow(twins_dict[date]['map'], cmap=twins_sc, aspect='auto', origin='lower')
+	ax1.imshow(twins_dict[date]['map'], cmap=twins_cmap, aspect='auto', origin='lower')
 
 	# adding twins colorabar
 	twins_cbar = plt.colorbar(twins_sc, ax=ax1, label='Twins')
 
 	# plotting station footpoints
 	ax2 = ax1.twinx()
+	ax2.set_yticks([])
 	footpoint_cmap = plt.get_cmap('bwr')
 	footpoint_normalize = plt.Normalize(vmin=scatter_plotting_df['plotting_color'].min(), vmax=scatter_plotting_df['plotting_color'].max())
 	footpoint_sc = ScalarMappable(cmap=footpoint_cmap, norm=footpoint_normalize)
 	footpoint_sc.set_array([])
-	ax2.scatter(scatter_plotting_df['xf'], scatter_plotting_df['yf'], c=scatter_plotting_df['plotting_color'], s=100,
+	ax1.scatter(scatter_plotting_df['xf'], scatter_plotting_df['yf'], c=scatter_plotting_df['plotting_color'], s=100,
 				marker=(5,1), cmap=footpoint_cmap)
 
 	# adding annotation to the station footpoints
 	for i, txt in enumerate(scatter_plotting_df['station']):
-		ax2.annotate(txt, (scatter_plotting_df['xf'][i], scatter_plotting_df['yf'][i]), textcoords='offset points', xytext=(0,10), ha='center')
+		ax1.annotate(txt, (scatter_plotting_df['xf'][i], scatter_plotting_df['yf'][i]), textcoords='offset points', xytext=(0,5), ha='center')
 
 	# adding footpoints colorbar
 	footpoint_cbar = plt.colorbar(footpoint_sc, ax=ax2, label='Mean Subtracted dB/dt')
 
-	plt.title(f'{date} - {region} Max RSD: {np.round(region_df[date]["rsd"], 2)} MLT: {np.round(region_df[date]["MLT"], 2)}', fontsize=25)
+	rsd_title = round(region_df.loc[date]["rsd"], 2)
+	mlt_title = round(region_df.loc[date]["MLT"], 2)
+
+	plt.title(f'{date} - {region} Max RSD: {rsd_title:.2f} MLT: {mlt_title:.2f}', fontsize=20)
 	plt.savefig(f'plots/footpoints_on_twins_maps/{region}_{date}.png')
 	plt.close()
 	gc.collect()
-
-
-
-# okay, in order I need to:
-# load the twins maps
-# load the regions
-# load the solar wind data
-# choose a region, and then for each station in that region
-	# load the supermag data
-	# go through the process of finding the footpoints for each time that cooresponds to a twins map
-	# save the footpoints in a dictionary
-# plot the footpoints on top of the data from the twins maps
 
 
 def main():
@@ -373,26 +366,46 @@ def main():
 	# getting the footpoints for each station in the region for each of
 	# the twins maps and storing them in the maps dictionary
 	print('Getting footpoints....')
-	date = '2012-03-12 09:40:00'
-	entry = twins[date]
+
+	starts = ['2012-03-09 00:00:00', '2012-03-12 00:00:00', '2015-03-17 00:00:00']
+	ends = ['2012-03-10 00:00:00', '2012-03-13 00:00:00', '2015-03-18 12:00:00']
+
+	starts = [pd.to_datetime(start, format='%Y-%m-%d %H:%M:%S') for start in starts]
+	ends = [pd.to_datetime(end, format='%Y-%m-%d %H:%M:%S') for end in ends]
+
+	map_keys = list(twins.keys())
+	map_keys = [pd.to_datetime(key, format='%Y-%m-%d %H:%M:%S') for key in map_keys]
+
+	twins_segments = []
+	for start, end in zip(starts,ends):
+		twins_segments = twins_segments + [key for key in map_keys if key >= start and key <= end]
+
+	twins_segments = [key.strftime(format='%Y-%m-%d %H:%M:%S') for key in twins_segments]
+
+	for date, entry in twins.items():
+		if date not in twins_segments:
+			continue
+
+	# date = '2012-03-12 23:10:00'
+	# entry = twins[date]
 	# for date, entry in twins.items():
-	# if f'{region}_footpoints' in entry:
-	# 	continue
-	print(f'Working on {date}')
-	footpoints = {}
-	for station, station_info in stations_geo_locations.items():
-		footpoints[station] = field_line_tracing(date, station_info['GEOLAT'], \
-													station_info['GEOLON'], solarwind.loc[date]['Vx'], \
-													solarwind.loc[date]['Vy'], solarwind.loc[date]['Vz'])
-	entry[f'{region}_footpoints'] = footpoints
+		# if f'{region}_footpoints' in entry:
+		# 	continue
+		print(f'Working on {date}')
+		footpoints = {}
+		for station, station_info in stations_geo_locations.items():
+			footpoints[station] = field_line_tracing(date, station_info['GEOLAT'], \
+														station_info['GEOLON'], solarwind.loc[date]['Vx'], \
+														solarwind.loc[date]['Vy'], solarwind.loc[date]['Vz'])
+		entry[f'{region}_footpoints'] = footpoints
 
 	# saving the updated twins dictionaryx
 	# with open('../outputs/twins_maps_with_footpoints.pkl', 'wb') as f:
 	# 	pickle.dump(twins, f)
 
 	# plotting the footpoints on top of the twins maps
-	date = '2012-03-12 09:40:00'
-	plotting_footpoints_on_twins_maps(twins, region_df, date, region)
+	# date = '2012-03-12 09:40:00'
+		plotting_footpoints_on_twins_maps(twins, region_df, date, region)
 
 
 
