@@ -341,6 +341,22 @@ def plotting_footpoints_on_twins_maps(twins_dict, region_df, date, region):
 	plt.close()
 	gc.collect()
 
+def getting_all_stations_in_regions(regions):
+	'''
+	Getting a list of all the stations in the regions
+
+	Args:
+		regions (dict): dictionary containing the regional dictionaries
+
+	Returns:
+		all_stations (list): list containing all the stations in the regions
+	'''
+
+	all_stations = []
+	for region in regions:
+		all_stations = all_stations + [station for station in regions[region]['station'] if station not in all_stations]
+
+	return all_stations
 
 def main():
 
@@ -357,9 +373,12 @@ def main():
 	# getting dbdt and rsd data for the region
 	region_df = combining_regional_dfs(test_Region['station'], test_Stats, twins.keys())
 
+	all_stations = getting_all_stations_in_regions(regions)
+
 	# Getting the geographic coordiantes of the stations in the region
 	stations_geo_locations = {}
-	for station in test_Region['station']:
+	# for station in test_Region['station']:
+	for station in all_stations:
 		df = loading_supermag(station)
 		stations_geo_locations[station] = {'GEOLAT': df['GEOLAT'].mean(), 'GEOLON': df['GEOLON'].mean()}
 
@@ -367,24 +386,7 @@ def main():
 	# the twins maps and storing them in the maps dictionary
 	print('Getting footpoints....')
 
-	starts = ['2012-03-09 00:00:00', '2012-03-12 00:00:00', '2015-03-17 00:00:00']
-	ends = ['2012-03-10 00:00:00', '2012-03-13 00:00:00', '2015-03-18 12:00:00']
-
-	starts = [pd.to_datetime(start, format='%Y-%m-%d %H:%M:%S') for start in starts]
-	ends = [pd.to_datetime(end, format='%Y-%m-%d %H:%M:%S') for end in ends]
-
-	map_keys = list(twins.keys())
-	map_keys = [pd.to_datetime(key, format='%Y-%m-%d %H:%M:%S') for key in map_keys]
-
-	twins_segments = []
-	for start, end in zip(starts,ends):
-		twins_segments = twins_segments + [key for key in map_keys if key >= start and key <= end]
-
-	twins_segments = [key.strftime(format='%Y-%m-%d %H:%M:%S') for key in twins_segments]
-
 	for date, entry in twins.items():
-		if date not in twins_segments:
-			continue
 
 	# date = '2012-03-12 23:10:00'
 	# entry = twins[date]
@@ -397,15 +399,15 @@ def main():
 			footpoints[station] = field_line_tracing(date, station_info['GEOLAT'], \
 														station_info['GEOLON'], solarwind.loc[date]['Vx'], \
 														solarwind.loc[date]['Vy'], solarwind.loc[date]['Vz'])
-		entry[f'{region}_footpoints'] = footpoints
+		entry['station_footpoints'] = footpoints
 
 	# saving the updated twins dictionaryx
-	# with open('../outputs/twins_maps_with_footpoints.pkl', 'wb') as f:
-	# 	pickle.dump(twins, f)
+		with open('outputs/twins_maps_with_footpoints.pkl', 'wb') as f:
+			pickle.dump(twins, f)
 
 	# plotting the footpoints on top of the twins maps
 	# date = '2012-03-12 09:40:00'
-		plotting_footpoints_on_twins_maps(twins, region_df, date, region)
+		# plotting_footpoints_on_twins_maps(twins, region_df, date, region)
 
 
 
