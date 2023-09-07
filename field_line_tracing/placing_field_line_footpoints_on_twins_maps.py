@@ -54,6 +54,12 @@ def loading_dicts():
 
 
 def loading_twins_maps():
+	'''
+	Loads the twins maps
+
+	Returns:
+		maps (dict): dictionary containing the twins maps
+	'''
 
 
 	print('Loading twins maps....')
@@ -76,6 +82,12 @@ def loading_twins_maps():
 
 
 def loading_solarwind():
+	'''
+	Loads the solar wind data
+
+	Returns:
+		df (pd.dataframe): dataframe containing the solar wind data
+	'''
 
 	print('Loading solar wind data....')
 	df = pd.read_feather('../data/SW/ace_data.feather')
@@ -96,6 +108,8 @@ def loading_supermag(station):
 
 	return df
 
+
+
 def combining_regional_dfs(stations, rsd, map_keys, delay=None):
 
 
@@ -112,7 +126,7 @@ def combining_regional_dfs(stations, rsd, map_keys, delay=None):
 		stat = stat[['dbht']]
 		if delay:
 			stat[f'{station}_delay_{delay}'] = stat['dbht'].shift(-delay)
-			combined_stations = pd.concat([combined_stations, stat[f'delay_{delay}']], axis=1, ignore_index=False)
+			combined_stations = pd.concat([combined_stations, stat[f'{station}_delay_{delay}']], axis=1, ignore_index=False)
 		else:
 			stat[f'{station}_dbdt'] = stat['dbht']
 			combined_stations = pd.concat([combined_stations, stat[f'{station}_dbdt']], axis=1, ignore_index=False)
@@ -359,20 +373,22 @@ def main():
 	# getting the footpoints for each station in the region for each of
 	# the twins maps and storing them in the maps dictionary
 	print('Getting footpoints....')
-	for date, entry in twins.items():
-		if f'{region}_footpoints' in entry:
-			continue
-		print(f'Working on {date}')
-		footpoints = {}
-		for station, station_info in stations_geo_locations.items():
-			footpoints[station] = field_line_tracing(date, station_info['GEOLAT'], \
-														station_info['GEOLON'], solarwind.loc[date]['Vx'], \
-														solarwind.loc[date]['Vy'], solarwind.loc[date]['Vz'])
-		entry[f'{region}_footpoints'] = footpoints
+	date = '2012-03-12 09:40:00'
+	entry = twins[date]
+	# for date, entry in twins.items():
+	# if f'{region}_footpoints' in entry:
+	# 	continue
+	print(f'Working on {date}')
+	footpoints = {}
+	for station, station_info in stations_geo_locations.items():
+		footpoints[station] = field_line_tracing(date, station_info['GEOLAT'], \
+													station_info['GEOLON'], solarwind.loc[date]['Vx'], \
+													solarwind.loc[date]['Vy'], solarwind.loc[date]['Vz'])
+	entry[f'{region}_footpoints'] = footpoints
 
 	# saving the updated twins dictionaryx
-	with open('../outputs/twins_maps_with_footpoints.pkl', 'wb') as f:
-		pickle.dump(twins, f)
+	# with open('../outputs/twins_maps_with_footpoints.pkl', 'wb') as f:
+	# 	pickle.dump(twins, f)
 
 	# plotting the footpoints on top of the twins maps
 	date = '2012-03-12 09:40:00'
