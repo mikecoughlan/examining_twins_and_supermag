@@ -511,8 +511,6 @@ def main():
 	stations_geo_locations = {}
 	# for station in test_Region['station']:
 	for station in all_stations:
-	# for station in test_Region['station']:
-	for station in all_stations:
 		df = loading_supermag(station)
 		stations_geo_locations[station] = {'GEOLAT': df['GEOLAT'].mean(), 'GEOLON': df['GEOLON'].mean()}
 
