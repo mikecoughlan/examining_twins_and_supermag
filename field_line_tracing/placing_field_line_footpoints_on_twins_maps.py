@@ -511,6 +511,8 @@ def main():
 	stations_geo_locations = {}
 	# for station in test_Region['station']:
 	for station in all_stations:
+	# for station in test_Region['station']:
+	for station in all_stations:
 		df = loading_supermag(station)
 		stations_geo_locations[station] = {'GEOLAT': df['GEOLAT'].mean(), 'GEOLON': df['GEOLON'].mean()}
 
@@ -557,6 +559,7 @@ def main():
 
 	# plotting the footpoints on top of the twins maps
 	# date = '2012-03-12 09:40:00'
+		# plotting_footpoints_on_twins_maps(twins, region_df, date, region)
 		# plotting_footpoints_on_twins_maps(twins, region_df, date, region)
 
 
