@@ -1,8 +1,11 @@
 import gc
 import glob
+import math
 import os
 import pickle
 from datetime import datetime
+from functools import partial
+from multiprocessing import Manager, Pool
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,6 +19,7 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Circle, Wedge
 from spacepy import pycdf
+from tracing_tools import read_qindenton_json
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
 
@@ -76,7 +80,7 @@ def loading_twins_maps():
 			check = pd.to_datetime(date.strftime(format='%Y-%m-%d %H:%M:%S'), format='%Y-%m-%d %H:%M:%S')
 			if check in times.values:
 				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = {}
-				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][35:125,40:130]
+				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][35:125,40:140]
 
 	return maps
 
@@ -98,6 +102,15 @@ def loading_solarwind():
 
 
 def loading_supermag(station):
+	'''
+	Loads the supermag data
+
+	Args:
+		station (string): station of interest
+
+	Returns:
+		df (pd.dataframe): dataframe containing the supermag data with a datetime index
+	'''
 
 	print(f'Loading station {station}....')
 	df = pd.read_feather(supermag_dir+station+'.feather')
@@ -109,9 +122,19 @@ def loading_supermag(station):
 	return df
 
 
-
 def combining_regional_dfs(stations, rsd, map_keys, delay=None):
+	'''
+	Combines the regional data into one dataframe
 
+	Args:
+		stations (list): list of stations in the region
+		rsd (pd.dataframe): dataframe containing the rsd and mlt data for the region
+		map_keys (list): list of keys for the twins maps
+		delay (int): amount of time to delay the dbdt data
+
+	Returns:
+		segmented_df (pd.dataframe): dataframe containing the regional dbdt, rsd, and mlt data for a given date
+	'''
 
 	print('Combining regional data....')
 	start_time = pd.to_datetime('2009-07-20')
@@ -207,15 +230,44 @@ def get_footpoint(xx=None, yy=None, zz=None, x_gsm=None, y_gsm=None, z_gsm=None,
 	return xf, yf, zmin
 
 
-def field_line_tracing(date, geolat, geolon, vx, vy, vz):
+def getting_g_parameters(twins_keys):
+
+	'''
+	Getting the g parameters for the Tsekenyenko 01 model
+
+	Returns:
+		g_params (dict): dictionary containing the g parameters for the Tsekenyenko 01 model
+	'''
+
+	g_params = {}
+	folders = ['2009', '2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017']
+	for folder in folders:
+		files = sorted(glob.glob(f'../../../../data/g_para_files/{folder}/*.txt'))
+		for file in files:
+			data = read_qindenton_json(file)
+			for entry in data:
+				entry_date = str(pd.to_datetime(entry['DateTime'], format='%Y-%m-%d %H:%M:%S'))
+				if entry_date in twins_keys:
+					g_params[entry_date] = {}
+					g_params[entry_date]['G1'] = entry['G']['G1']
+					g_params[entry_date]['G2'] = entry['G']['G2']
+					g_params[entry_date]['pdyn'] = entry['Pdyn']
+					g_params[entry_date]['Dst'] = entry['Dst']
+					g_params[entry_date]['ByIMF'] = entry['ByIMF']
+					g_params[entry_date]['BzIMF'] = entry['BzIMF']
+
+
+	return g_params
+
+
+def field_line_tracing(geolat, geolon, date, vx, vy, vz, g_params):
 	'''
 	Ties together all the field line tracing elements and gets
 	the footpoints for a given station at a given time.
 
 	Args:
 		date (string): date and time of interest
-		geolat (float): geographic latitude of station
-		geolon (float): geographic longitude of station
+		station_info (dict): dictionary containing the geographic coordinates of the station
 		vx (float): x component of the solar wind velocity in GSE used to calculate the dipole tilt angle
 		vy (float): y component of the solar wind velocity in GSE used to calculate the dipole tilt angle
 		vz (float): z component of the solar wind velocity in GSE used to calculate the dipole tilt angle
@@ -225,11 +277,12 @@ def field_line_tracing(date, geolat, geolon, vx, vy, vz):
 		yf (float): y component of the footpoint in GSM
 		zmin (float): z component of the footpoint in GSM (should be zero or close to zero)
 	'''
+
 	# getting time in seconds from date in the 1970's. Seems like a silly way to do this but that's the requirement.
 	ut = get_seconds(date)
 
 	# Getting the dipole tile angle
-	ps = geopack.recalc(ut, vxgse=vx, vygse=vy, vzgse=vz)
+	ps = geopack.recalc(ut, vxgse=(vx)*(-1), vygse=vy, vzgse=vz)
 
 	# convert degrees to radians
 	lat_rad = np.deg2rad(geolat)
@@ -248,8 +301,21 @@ def field_line_tracing(date, geolat, geolon, vx, vy, vz):
 	x_gsm, y_gsm, z_gsm = geopack.geogsm(x_gc, y_gc, z_gc, 1)
 	# print('GSM: ', x_gsm,y_gsm,z_gsm,' R=',np.sqrt(x_gsm**2+y_gsm**2+z_gsm**2))
 
+	pm = [
+		float(g_params['Pdyn']),
+		float(g_params['Dst']),
+		float(g_params['ByIMF']),
+		float(g_params['BzIMF']),
+		float(g_params['G1']),
+		float(g_params['G2']),
+		ps,
+		x_gsm,
+		y_gsm,
+		z_gsm
+		]
+
 	# perfroming the trace
-	x, y, z, xx, yy, zz = geopack.trace(x_gsm, y_gsm, z_gsm, dir=1, rlim=1000, r0=.99999, parmod=2, exname='t89', inname='igrf', maxloop=10000)
+	x, y, z, xx, yy, zz = geopack.trace(x_gsm, y_gsm, z_gsm, dir=1, rlim=1000, r0=.99999, parmod=pm, exname='t01', inname='igrf', maxloop=10000)
 
 	# getting the footpoints in the equatorial plane
 	xf, yf, zmin = get_footpoint(xx=xx, yy=yy, zz=zz)
@@ -286,7 +352,7 @@ def preparing_region_footpoints_for_plotting(region_df, footpoints):
 		scatter_plotting_df = scatter_plotting_df.append({'xf':((foot['xf']*2)+80), 'yf':((foot['yf']*2)+45),
 														'zmin':foot['zmin'], 'station':station,
 														'dbdt':region_df[f'{station}_dbdt'],
-														'plotting_color':(region_df[station]-region_df['reg_mean'])},
+														'plotting_color':(region_df[f'{station}_dbdt']-region_df['reg_mean'])},
 														ignore_index=True)
 
 	return scatter_plotting_df
@@ -303,98 +369,207 @@ def plotting_footpoints_on_twins_maps(twins_dict, region_df, date, region):
 	'''
 
 	print('Plotting footpoints on twins maps....')
-	scatter_plotting_df = preparing_region_footpoints_for_plotting(region_df[date], twins_dict[date][f'{region}_footpoints'])
+	scatter_plotting_df = preparing_region_footpoints_for_plotting(region_df.loc[date], twins_dict[date][f'{region}_footpoints'])
 
 	fig = plt.subplots(figsize=(20,15))
 	ax1=plt.subplot(111)
 	twins_cmap = plt.get_cmap('viridis')
-	twins_sc = ScalarMappable(cmap=twins_cmap)
+	twins_normalize = plt.Normalize(vmin=np.min(twins_dict[date]['map']), vmax=np.max(twins_dict[date]['map']))
+	twins_sc = ScalarMappable(cmap=twins_cmap, norm=twins_normalize)
 	twins_sc.set_array([])
-	ax1.imshow(twins_dict[date]['map'], cmap=twins_sc, aspect='auto', origin='lower')
+	ax1.imshow(twins_dict[date]['map'], cmap=twins_cmap, aspect='auto', origin='lower')
 
 	# adding twins colorabar
 	twins_cbar = plt.colorbar(twins_sc, ax=ax1, label='Twins')
 
 	# plotting station footpoints
 	ax2 = ax1.twinx()
+	ax2.set_yticks([])
 	footpoint_cmap = plt.get_cmap('bwr')
 	footpoint_normalize = plt.Normalize(vmin=scatter_plotting_df['plotting_color'].min(), vmax=scatter_plotting_df['plotting_color'].max())
 	footpoint_sc = ScalarMappable(cmap=footpoint_cmap, norm=footpoint_normalize)
 	footpoint_sc.set_array([])
-	ax2.scatter(scatter_plotting_df['xf'], scatter_plotting_df['yf'], c=scatter_plotting_df['plotting_color'], s=100,
+	ax1.scatter(scatter_plotting_df['xf'], scatter_plotting_df['yf'], c=scatter_plotting_df['plotting_color'], s=100,
 				marker=(5,1), cmap=footpoint_cmap)
 
 	# adding annotation to the station footpoints
 	for i, txt in enumerate(scatter_plotting_df['station']):
-		ax2.annotate(txt, (scatter_plotting_df['xf'][i], scatter_plotting_df['yf'][i]), textcoords='offset points', xytext=(0,10), ha='center')
+		ax1.annotate(txt, (scatter_plotting_df['xf'][i], scatter_plotting_df['yf'][i]), textcoords='offset points', xytext=(0,5), ha='center')
 
 	# adding footpoints colorbar
 	footpoint_cbar = plt.colorbar(footpoint_sc, ax=ax2, label='Mean Subtracted dB/dt')
 
-	plt.title(f'{date} - {region} Max RSD: {np.round(region_df[date]["rsd"], 2)} MLT: {np.round(region_df[date]["MLT"], 2)}', fontsize=25)
+	rsd_title = round(region_df.loc[date]["rsd"], 2)
+	mlt_title = round(region_df.loc[date]["MLT"], 2)
+
+	plt.title(f'{date} - {region} Max RSD: {rsd_title:.2f} MLT: {mlt_title:.2f}', fontsize=20)
 	plt.savefig(f'plots/footpoints_on_twins_maps/{region}_{date}.png')
 	plt.close()
 	gc.collect()
 
 
+def getting_all_stations_in_regions(regions):
+	'''
+	Getting a list of all the stations in the regions
 
-# okay, in order I need to:
-# load the twins maps
-# load the regions
-# load the solar wind data
-# choose a region, and then for each station in that region
-	# load the supermag data
-	# go through the process of finding the footpoints for each time that cooresponds to a twins map
-	# save the footpoints in a dictionary
-# plot the footpoints on top of the data from the twins maps
+	Args:
+		regions (dict): dictionary containing the regional dictionaries
 
+	Returns:
+		all_stations (list): list containing all the stations in the regions
+	'''
+
+	all_stations = []
+	for region in regions:
+		all_stations = all_stations + [station for station in regions[region]['station'] if station not in all_stations]
+
+	return all_stations
+
+
+def getting_ion_temp_for_footpoints(twins_dict, region_dfs_dict, station_geo_locations):
+	'''
+	Getting the ion temperature for each footpoint and storing it in the maps dictionary
+
+	Args:
+		twins_dict (dict): dictionary containing the twins maps and footpoints
+		region_dfs_dict (dict): dictionary containing the regional dataframes
+		station_geo_locations (dict): dictionary containing the geographic locations of the stations
+
+	Returns:
+		correlation_dataframe (pd.dataframe): dataframe containing the ion temperature and mean subtracted dbdt values
+	'''
+
+	correlation_dataframe = pd.DataFrame({'region':[], 'MLT':[], 'RSD':[], 'station':[], 'latitude':[], 'ion_temp':[], 'mean_sub_dbdt':[]})
+
+	for region, data in region_dfs_dict.items():
+		region_df = data['combined_dfs']
+		for date in region_df.index:
+			footpoints = twins_dict[date]['station_footpoints']
+			for station in data['station']:
+				ion_temp = twins_dict[date]['map'][math.floor(((footpoints[station]['xf']*2)+80)), math.floor(((footpoints[station]['yf']*2)+45))]
+				correlation_dataframe = correlation_dataframe.append({'region':region, 'MLT':region_df.loc[date]['MLT'], 'RSD':region_df.loc[date]['rsd'],
+																		'station':station, 'latitude':station_geo_locations[station]['GEOLAT'],
+																		'ion_temp':ion_temp, 'mean_sub_dbdt':region_df.loc[date][f'{station}_dbdt']-region_df.loc[date]['reg_mean']},
+																		ignore_index=True)
+
+	return correlation_dataframe
+
+def calculating_ion_temp_and_footprint_correlations(correlation_dataframe, region=None, segmenting_var=None, segmenting_var_iterator=None):
+	'''
+	Calculates the correlation between the ion temperature and the mean subtracted dbdt values
+
+	Args:
+		correlation_dataframe (pd.dataframe): dataframe containing the ion temperature and mean subtracted dbdt values
+		region (string): region of interest
+		segmenting_var (string): variable to segment the data by
+		segmenting_var_iterator (int): amount to increase the segmenting variable by
+
+	Returns:
+		correlation (float): correlation between the ion temperature and the mean subtracted dbdt values
+	'''
+
+	if region:
+		correlation_dataframe = correlation_dataframe[correlation_dataframe['region']==region]
+
+	if segmenting_var:
+		correlations = pd.DataFrame({segmenting_var:[], 'correlation':[]})
+		for value in range(correlation_dataframe[segmenting_var].min(), correlation_dataframe[segmenting_var].max(), segmenting_var_iterator):
+			iterated_dataframe = correlation_dataframe[correlation_dataframe[segmenting_var]>=value & correlation_dataframe[segmenting_var]<value+segmenting_var_iterator]
+			correlations = correlations.append({segmenting_var:value, 'correlation':iterated_dataframe['ion_temp'].corr(iterated_dataframe['mean_sub_dbdt'])}, ignore_index=True)
+
+	return correlations
 
 def main():
+	'''
+	Runs the main program
+	'''
 
 	# loading all the datasets and dictonaries
-	twins = loading_twins_maps()
+	if os.path.exists('outputs/twins_maps_with_footpoints.pkl'):
+		with open('outputs/twins_maps_with_footpoints.pkl', 'rb') as f:
+			twins = pickle.load(f)
+	else:
+		twins = loading_twins_maps()
+
 	regions, stats = loading_dicts()
 	solarwind = loading_solarwind()
 
-	# selecting one region at a time for analysis
-	region = 'region_166'
-	test_Region = regions[region]
-	test_Stats = stats[region]
+	# reduce the regions dict to be only the ones that have keys in the region_numbers list
+	regions = {f'region_{reg}': regions[f'region_{reg}'] for reg in region_numbers}
 
-	# getting dbdt and rsd data for the region
-	region_df = combining_regional_dfs(test_Region['station'], test_Stats, twins.keys())
+	# selecting one region at a time for analysis
+
+	for region in regions.keys():
+
+		# getting dbdt and rsd data for the region
+		regions[region]['combined_dfs'] = combining_regional_dfs(regions[region]['station'], stats[region], twins.keys())
+
+	region = 'region_166'
+	all_stations = getting_all_stations_in_regions(regions)
 
 	# Getting the geographic coordiantes of the stations in the region
 	stations_geo_locations = {}
-	for station in test_Region['station']:
+	# for station in test_Region['station']:
+	for station in all_stations:
+	# for station in test_Region['station']:
+	for station in all_stations:
 		df = loading_supermag(station)
 		stations_geo_locations[station] = {'GEOLAT': df['GEOLAT'].mean(), 'GEOLON': df['GEOLON'].mean()}
 
 	# getting the footpoints for each station in the region for each of
 	# the twins maps and storing them in the maps dictionary
 	print('Getting footpoints....')
-	date = '2012-03-12 09:40:00'
-	entry = twins[date]
-	# for date, entry in twins.items():
-	# if f'{region}_footpoints' in entry:
-	# 	continue
-	print(f'Working on {date}')
-	footpoints = {}
-	for station, station_info in stations_geo_locations.items():
-		footpoints[station] = field_line_tracing(date, station_info['GEOLAT'], \
-													station_info['GEOLON'], solarwind.loc[date]['Vx'], \
-													solarwind.loc[date]['Vy'], solarwind.loc[date]['Vz'])
-	entry[f'{region}_footpoints'] = footpoints
 
-	# saving the updated twins dictionaryx
-	# with open('../outputs/twins_maps_with_footpoints.pkl', 'wb') as f:
-	# 	pickle.dump(twins, f)
+	g_params = getting_g_parameters(twins.keys())
+
+	for date, entry in twins.items():
+
+	# date = '2012-03-12 23:10:00'
+	# entry = twins[date]
+	# for date, entry in twins.items():
+		# if f'{region}_footpoints' in entry:
+		# 	continue
+		if 'station_footpoints' in entry:
+			continue
+		print(f'Working on {date}')
+
+		tasks = [(station_info['GEOLAT'], station_info['GEOLON'], date, solarwind.loc[date]['Vx'], solarwind.loc[date]['Vy'], \
+					solarwind.loc[date]['Vz'], g_params[date]) for station, station_info in stations_geo_locations.items()]
+
+		with Pool(processes=10) as pool:
+			footpoint_results = pool.starmap(field_line_tracing, tasks)
+			# footpoints[station] = field_line_tracing(date, station_info['GEOLAT'], \
+			# 											station_info['GEOLON'], solarwind.loc[date]['Vx'], \
+			# 											solarwind.loc[date]['Vy'], solarwind.loc[date]['Vz'])
+
+		entry['station_footpoints'] = {station:footpoint for station, footpoint in zip(stations_geo_locations.keys(), footpoint_results)}
+
+		# saving the updated twins dictionaryx
+		with open('outputs/twins_maps_with_footpoints.pkl', 'wb') as f:
+			pickle.dump(twins, f)
+
+	# getting the ion temperature for each footpoint and storing it in the maps dictionary
+	print('Getting ion temperature....')
+	correlation_dataframe = getting_ion_temp_for_footpoints(twins, regions, stations_geo_locations)
+	correlation_dataframe.to_feather('outputs/correlation_dataframe.feather')
+
+	# getting the correlations between the ion temperature and the mean subtracted dbdt values
+	print('Calculating correlations....')
+	correlation = calculating_ion_temp_and_footprint_correlations(correlation_dataframe, region='region_166', segmenting_var='latitude', segmenting_var_iterator=5)
 
 	# plotting the footpoints on top of the twins maps
-	date = '2012-03-12 09:40:00'
-	plotting_footpoints_on_twins_maps(twins, region_df, date, region)
+	# date = '2012-03-12 09:40:00'
+		# plotting_footpoints_on_twins_maps(twins, region_df, date, region)
+		# plotting_footpoints_on_twins_maps(twins, region_df, date, region)
 
 
+# Need to write a function that:
+	# takes the footprint locations for each map and gets the value for ion temperature in the corresponding pixel
+	# stores that information along with the mean subtracted dbdt values, the MLT and RSD values and station latitude
+	# find the correlations between the ion temperature and the mean subtracted dbdt values
+	# write it so that it can be done as a function of the variables MLT, RSD, and station latitude
+	# write it so that it can be done for each region and for all regions combined
+# write a different function to plot the correlations
 
 if __name__ == '__main__':
 	main()
