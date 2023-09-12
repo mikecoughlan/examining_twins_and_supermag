@@ -516,10 +516,11 @@ def main():
 
 	# getting the footpoints for each station in the region for each of
 	# the twins maps and storing them in the maps dictionary
-	print('Getting footpoints....')
+	print('Getting G parameters....')
 
 	g_params = getting_g_parameters(twins.keys())
 
+	print('Getting footpoints....')
 	for date, entry in twins.items():
 
 	# date = '2012-03-12 23:10:00'
