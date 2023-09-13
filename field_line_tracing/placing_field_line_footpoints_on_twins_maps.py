@@ -518,7 +518,13 @@ def main():
 	# the twins maps and storing them in the maps dictionary
 	print('Getting G parameters....')
 
-	g_params = getting_g_parameters(twins.keys())
+	if os.path.exists('outputs/g_params.pkl'):
+		with open('outputs/g_params.pkl', 'rb') as f:
+			g_params = pickle.load(f)
+	else:
+		g_params = getting_g_parameters(twins.keys())
+		with open('outputs/g_params.pkl', 'wb') as f:
+			pickle.dump(g_params, f)
 
 	print('Getting footpoints....')
 	for date, entry in twins.items():

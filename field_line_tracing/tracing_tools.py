@@ -1,5 +1,6 @@
-import sys
 import json
+import sys
+
 
 def read_qindenton_json(filename):
    data = []
@@ -18,9 +19,10 @@ def read_qindenton_json(filename):
       preprocessed = []
       for l in f:
          preprocessed.append(l.split())    # fill preprocessed[] with a list of lists (of values) for every line in a file
-            
+
       j = json.loads(jstring)             # convert big file header string into a json object
-      realkeys = list(j.keys())[1:]       # top-level keys (e.g., "G" (not "G1" "G2" or "G3"))
+      # realkeys = list(j.keys())[1:]       # top-level keys (e.g., "G" (not "G1" "G2" or "G3"))
+      realkeys = ["G", "BzIMF", "ByIMF", "Pdyn", "DateTime", "Dst"]
 
       data = [{} for _ in preprocessed]
 
@@ -38,7 +40,21 @@ def read_qindenton_json(filename):
             for i in range(len(data)):
                data[i][key] = {}
                for k, e in enumerate(elements):
-                  data[i][key][e] = preprocessed[i][column + k]
+                  try:
+                     data[i][key][e] = preprocessed[i][column + k]
+                  except IndexError:
+                     print("ERROR: INDEX OUT OF RANGE")
+                     print("i = ", i)
+                     print("column = ", column)
+                     print("k = ", k)
+                     print("len(preprocessed[i]) = ", len(preprocessed[i]))
+                     print("len(elements) = ", len(elements))
+                     print("len(data) = ", len(data))
+                     print("len(data[i]) = ", len(data[i]))
+                     print("data[i] = ", data[i])
+                     print("data[i][key] = ", data[i][key])
+                     print("data[i][key][e] = ", data[i][key][e])
+                     continue
 
    return data
 
@@ -47,6 +63,6 @@ if __name__ == "__main__":
       print("FORGOT FILE NAME")
       exit(1)
 
-   filename = sys.argv[1] 
+   filename = sys.argv[1]
 
    #print(read_qindenton_json(filename))
