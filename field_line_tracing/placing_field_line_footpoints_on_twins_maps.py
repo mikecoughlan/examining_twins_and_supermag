@@ -251,7 +251,7 @@ def getting_g_parameters(twins_keys):
 					g_params[entry_date] = {}
 					g_params[entry_date]['G1'] = entry['G']['G1']
 					g_params[entry_date]['G2'] = entry['G']['G2']
-					g_params[entry_date]['pdyn'] = entry['Pdyn']
+					g_params[entry_date]['Pdyn'] = entry['Pdyn']
 					g_params[entry_date]['Dst'] = entry['Dst']
 					g_params[entry_date]['ByIMF'] = entry['ByIMF']
 					g_params[entry_date]['BzIMF'] = entry['BzIMF']
@@ -315,7 +315,7 @@ def field_line_tracing(geolat, geolon, date, vx, vy, vz, g_params):
 		]
 
 	# perfroming the trace
-	x, y, z, xx, yy, zz = geopack.trace(x_gsm, y_gsm, z_gsm, dir=1, rlim=1000, r0=.99999, parmod=pm, exname='t01', inname='igrf', maxloop=10000)
+	x, y, z, xx, yy, zz = geopack.trace(x_gsm, y_gsm, z_gsm, dir=1, rlim=1000, r0=.99999, parmod=2, exname='t89', inname='igrf', maxloop=10000)
 
 	# getting the footpoints in the equatorial plane
 	xf, yf, zmin = get_footpoint(xx=xx, yy=yy, zz=zz)
@@ -526,31 +526,40 @@ def main():
 		with open('outputs/g_params.pkl', 'wb') as f:
 			pickle.dump(g_params, f)
 
+	# dividing the twins maps into different dictonaries by year
+	years = ['2009', '2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017']
+	twins_dict_by_years = {}
+	for year in years:
+		twins_dict_by_years[year] = {date:twins[date] for date in twins.keys() if date[0:4]==year}
+
+
 	print('Getting footpoints....')
-	for date, entry in twins.items():
+	for year, twins in twins_dict_by_years.items():
 
-	# date = '2012-03-12 23:10:00'
-	# entry = twins[date]
-	# for date, entry in twins.items():
-		# if f'{region}_footpoints' in entry:
-		# 	continue
-		if 'station_footpoints' in entry:
-			continue
-		print(f'Working on {date}')
+		if os.path.exists(f'outputs/twins_maps_with_footpoints_year_{year}.pkl'):
+			with open(f'outputs/twins_maps_with_footpoints_year_{year}.pkl', 'rb') as f:
+				twins = pickle.load(f)
 
-		tasks = [(station_info['GEOLAT'], station_info['GEOLON'], date, solarwind.loc[date]['Vx'], solarwind.loc[date]['Vy'], \
-					solarwind.loc[date]['Vz'], g_params[date]) for station, station_info in stations_geo_locations.items()]
 
-		with Pool(processes=10) as pool:
-			footpoint_results = pool.starmap(field_line_tracing, tasks)
-			# footpoints[station] = field_line_tracing(date, station_info['GEOLAT'], \
-			# 											station_info['GEOLON'], solarwind.loc[date]['Vx'], \
-			# 											solarwind.loc[date]['Vy'], solarwind.loc[date]['Vz'])
+		for date, entry in twins.items():
 
-		entry['station_footpoints'] = {station:footpoint for station, footpoint in zip(stations_geo_locations.keys(), footpoint_results)}
+			if 'station_footpoints' in entry:
+				continue
+			print(f'Working on {date}')
+
+			tasks = [(station_info['GEOLAT'], station_info['GEOLON'], date, solarwind.loc[date]['Vx'], solarwind.loc[date]['Vy'], \
+						solarwind.loc[date]['Vz'], g_params[date]) for station, station_info in stations_geo_locations.items()]
+
+			with Pool(processes=10) as pool:
+				footpoint_results = pool.starmap(field_line_tracing, tasks)
+				# footpoints[station] = field_line_tracing(date, station_info['GEOLAT'], \
+				# 											station_info['GEOLON'], solarwind.loc[date]['Vx'], \
+				# 											solarwind.loc[date]['Vy'], solarwind.loc[date]['Vz'])
+
+			entry['station_footpoints'] = {station:footpoint for station, footpoint in zip(stations_geo_locations.keys(), footpoint_results)}
 
 		# saving the updated twins dictionaryx
-		with open('outputs/twins_maps_with_footpoints.pkl', 'wb') as f:
+		with open(f'outputs/twins_maps_with_footpoints_year_{year}.pkl', 'wb') as f:
 			pickle.dump(twins, f)
 
 	# getting the ion temperature for each footpoint and storing it in the maps dictionary
@@ -568,13 +577,6 @@ def main():
 		# plotting_footpoints_on_twins_maps(twins, region_df, date, region)
 
 
-# Need to write a function that:
-	# takes the footprint locations for each map and gets the value for ion temperature in the corresponding pixel
-	# stores that information along with the mean subtracted dbdt values, the MLT and RSD values and station latitude
-	# find the correlations between the ion temperature and the mean subtracted dbdt values
-	# write it so that it can be done as a function of the variables MLT, RSD, and station latitude
-	# write it so that it can be done for each region and for all regions combined
-# write a different function to plot the correlations
 
 if __name__ == '__main__':
 	main()
