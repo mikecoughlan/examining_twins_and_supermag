@@ -150,8 +150,9 @@ def fit_CNN(model, X_train, X_val, y_train, y_val, early_stop):
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
 		Xval = xval.reshape((xval.shape[0], xval.shape[1], xval.shape[2], 1))
 
-		model.fit(Xtrain, ytrain, validation_data=(Xval, yval),
-					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
+		# doing the training! Yay!
+		model.fit(Xtrain, ytrain, validation_data=(Xval, yval), verbose=1,
+					shuffle=True, epochs=MODEL_CONFIG['epochs'],  callbacks=[early_stop])
 
 		# saving the model
 		model.save('models/test_non_twins_model.h5')
