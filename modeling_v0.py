@@ -49,7 +49,7 @@ os.environ["CDF_LIB"] = "~/CDF/lib"
 
 
 region_path = '../identifying_regions/outputs/twins_era_identified_regions_min_2.pkl'
-region_number = '83'
+region_number = '163'
 solarwind_path = '../data/SW/omniData.feather'
 supermag_dir_path = '../data/supermag/'
 twins_times_path = 'ENA_timestamps.csv'
