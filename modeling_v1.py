@@ -97,7 +97,7 @@ def create_CNN_model(n_features, loss='mse', early_stop_patience=10):
 		n_features (int): number of input features into the model
 		loss (str, optional): loss function to be uesd for training. Defaults to 'categorical_crossentropy'.
 		early_stop_patience (int, optional): number of epochs the model will continue training once there
-												is no longer val loss improvements. Defaults to 3.
+												is no longer val loss improvements. Defaults to 10.
 
 	Returns:
 		object: model configuration ready for training
@@ -161,7 +161,6 @@ def fit_CNN(model, X_train, X_val, y_train, y_val, early_stop):
 		# loading the model if it has already been trained.
 		model = load_model('models/test_non_twins_model.h5')				# loading the models if already trained
 
-
 	return model
 
 
@@ -202,6 +201,7 @@ def making_predictions(model, X_test, y_test):
 
 	return results_df
 
+
 def calculate_some_metrics(results_df):
 
 	# calculating the RMSE
@@ -240,7 +240,8 @@ def main():
 
 	# creating the model
 	print('Initalizing model...')
-	MODEL, early_stop = create_CNN_model(X_train.shape[2])
+	MODEL, early_stop = create_CNN_model(X_train.shape[2], loss=MODEL_CONFIG['loss'],
+											early_stop_patience=MODEL_CONFIG['early_stop_patience'])
 
 	# fitting the model
 	print('Fitting model...')

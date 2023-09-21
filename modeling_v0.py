@@ -240,7 +240,8 @@ def main():
 
 	# creating the model
 	print('Initalizing model...')
-	MODEL, early_stop = create_CNN_model(X_train.shape[2])
+	MODEL, early_stop = create_CNN_model(X_train.shape[2], loss=MODEL_CONFIG['loss'],
+											early_stop_patience=MODEL_CONFIG['early_stop_patience'])
 
 	# fitting the model
 	print('Fitting model...')

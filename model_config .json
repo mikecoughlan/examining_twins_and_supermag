@@ -2,5 +2,7 @@
 {"filters": 64,
 "initial_learning_rate": 1e-6,
 "epochs": 300,
-"batch_size": 32
+"batch_size": 32,
+"early_stop_patience": 10,
+"loss": "mse"
 }
