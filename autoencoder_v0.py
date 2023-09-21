@@ -83,10 +83,9 @@ def getting_prepared_data():
 	prep = DataPrep(region_path, region_number, solarwind_path, supermag_dir_path, twins_times_path,
 					rsd_path, random_seed)
 
-	X_train, X_val, X_test, y_train, y_val, y_test,  = prep.do_full_data_prep(CONFIG)
+	train, val, test  = prep.twins_only_data_prep(CONFIG)
 
-
-	return X_train, X_val, X_test, y_train, y_val, y_test
+	return train, val, test
 
 
 def create_CNN_model(n_features, loss='mse', early_stop_patience=10):
@@ -236,7 +235,7 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	X_train, X_val, X_test, y_train, y_val, y_test = getting_prepared_data()
+	train, val, test = getting_prepared_data()
 
 	# creating the model
 	print('Initalizing model...')

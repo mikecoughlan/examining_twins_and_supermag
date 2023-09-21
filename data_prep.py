@@ -393,6 +393,25 @@ class DataPrep:
 			return self.X_train, self.X_test, self.X_val, self.y_train, self.y_test, self.y_val
 
 
+	def twins_only_data_prep(self, config=None):
+
+		if config == None:
+			raise ValueError('Must specify a config file or variable dictionary.')
+
+		# loading gloabl data
+		self.loading_global_data(load_twins=config['load_twins'], twins_dir=config['twins_dir'],
+									twins_col_limits=config['twins_col_limits'], twins_row_limits=config['twins_row_limits'])
+
+		# splitting and scaling the data
+		self.splitting_and_scaling(solarwind_and_supermag_scaling_method=config['solarwind_and_supermag_scaling_method'],
+									test_size=config['test_size'], val_size=config['val_size'],
+									random_state=config['random_state'], include_twins=config['include_twins'],
+									twins_scaling_method=config['twins_scaling_method'])
+
+
+		return self.twins_x_train, self.twins_x_val, self.twins_x_test
+
+
 	def do_full_data_prep(self, config=None):
 
 		if config == None:
