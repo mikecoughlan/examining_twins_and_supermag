@@ -7,11 +7,11 @@
 "delay": True,
 "delay_time": 11,
 "delay_columns": "all",
-"rolling": True,
+"rolling": False,
 "rolling_window": 11,
 "rolling_vars": "all",
 "data_manipulations": ["mean"],
-"to_drop": [],
+"to_drop": None,
 "omni_or_ace": "omni",
 "sw_features": ["B_Total", "BY_GSM", "BZ_GSM", "Vx", "Vy", "Vz",
 				"proton_density", "T"],
@@ -24,7 +24,7 @@
 "solarwind_and_supermag_scaling_method": "standard",
 "test_size": 0.2,
 "val_size": 0.25,
-"random_state": 42,
+"random_seed": 42,
 "include_twins": False,
 "twins_scaling_method": "standard"
 }

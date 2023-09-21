@@ -190,7 +190,6 @@ class DataPrep:
 
 		if rolling:
 			indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=rolling_window)
-
 			for var in rolling_vars:
 				self.regional_dataframe[f'shifted_{var}'] = self.regional_dataframe[var].rolling(indexer, min_periods=1).max()
 

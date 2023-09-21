@@ -41,6 +41,7 @@ from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
                                      MaxPooling2D, concatenate)
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.python.keras.backend import get_session
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 from data_prep import DataPrep
 
@@ -81,13 +82,13 @@ def getting_prepared_data():
 	prep = DataPrep(region_path, region_number, solarwind_path, supermag_dir_path, twins_times_path,
 					rsd_path, random_seed)
 
-	X_train, X_val, X_test, y_train, y_val, y_test = prep.do_full_data_prep()
+	X_train, X_val, X_test, y_train, y_val, y_test = prep.do_full_data_prep(CONFIG)
 
 
 	return X_train, X_val, X_test, y_train, y_val, y_test
 
 
-def create_CNN_model(n_features, loss='categorical_crossentropy', early_stop_patience=3):
+def create_CNN_model(n_features, loss='mse', early_stop_patience=10):
 	'''
 	Initializing our model
 
@@ -105,24 +106,26 @@ def create_CNN_model(n_features, loss='categorical_crossentropy', early_stop_pat
 
 	model = Sequential()						# initalizing the model
 
-	model.add(Conv2D(MODEL_CONFIG['filters'], 2, padding='same',
-								activation='relu', input_shape=(MODEL_CONFIG['time_history'], n_features, 1)))			# adding the CNN layer
+	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same',
+								activation='relu', input_shape=(CONFIG['time_history'], n_features, 1)))			# adding the CNN layer
+	model.add(MaxPooling2D())
+	model.add(Conv2D(MODEL_CONFIG['filters']*2, 2, padding='same', activation='relu'))			# adding the CNN layer
 	model.add(MaxPooling2D())
 	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
-	model.add(Dense(MODEL_CONFIG['filters'], activation='relu'))		# Adding dense layers with dropout in between
+	model.add(Dense(MODEL_CONFIG['filters']*2, activation='relu'))		# Adding dense layers with dropout in between
 	model.add(Dropout(0.2))
-	model.add(Dense(MODEL_CONFIG['filters']//2, activation='relu'))
+	model.add(Dense(MODEL_CONFIG['filters'], activation='relu'))
 	model.add(Dropout(0.2))
-	model.add(Dense(2, activation='softmax'))
-	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['learning_rate'])		# learning rate that actually started producing good results
-	model.compile(optimizer=opt, loss=loss, metrics = ['accuracy'])					# Ive read that cross entropy is good for this type of model
+	model.add(Dense(2, activation='linear'))
+	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
+	model.compile(optimizer=opt, loss=loss)					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
 
 	return model, early_stop
 
 
-def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, split, station, first_time=True):
+def fit_CNN(model, X_train, X_val, y_train, y_val, early_stop):
 	'''
 	Performs the actual fitting of the model.
 
@@ -141,7 +144,7 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, split, station, first
 		model: fit model ready for making predictions.
 	'''
 
-	if first_time:
+	if not os.path.exists('models/test_non_twins_model.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
@@ -150,22 +153,18 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, split, station, first
 		model.fit(Xtrain, ytrain, validation_data=(Xval, yval),
 					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
 
-		# checking that the model directory exists. Creates it if not.
-		if not os.path.exists('models/{0}'.format(station)):
-			os.makedirs('models/{0}'.format(station))
-
 		# saving the model
-		model.save('models/{0}/CNN_version_5_split_{1}.h5'.format(station, split))
+		model.save('models/test_non_twins_model.h5')
 
-	if not first_time:
-
+	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/{0}/CNN_version_5_split_{1}.h5'.format(station, split))				# loading the models if already trained
+		model = load_model('models/test_non_twins_model.h5')				# loading the models if already trained
+
 
 	return model
 
 
-def making_predictions(model, test_dict, split):
+def making_predictions(model, X_test, y_test):
 	'''
 	Function using the trained models to make predictions with the testing data.
 
@@ -178,111 +177,92 @@ def making_predictions(model, test_dict, split):
 		dict: test dict now containing columns in the dataframe with the model predictions for this split
 	'''
 
-	# looping through the sub dictonaries for each storm
-	for key in test_dict:
+	Xtest = Xtest.reshape((Xtest.shape[0], Xtest.shape[1], Xtest.shape[2], 1))			# reshpaing for one channel input
+	print('Test input Nans: '+str(np.isnan(Xtest).sum()))
 
-		Xtest = test_dict[key]['Y']							# defining the testing inputs
-		Xtest = Xtest.reshape((Xtest.shape[0], Xtest.shape[1], Xtest.shape[2], 1))			# reshpaing for one channel input
-		print('Test input Nans: '+str(np.isnan(Xtest).sum()))
-		print(np.isnan(Xtest.sum(axis=1).sum(axis=1)))
-		print(np.isnan(Xtest.sum(axis=1).sum(axis=1)).shape)
-		nans = pd.Series(np.isnan(Xtest.sum(axis=1).sum(axis=1)).reshape(len(np.isnan(Xtest.sum(axis=1).sum(axis=1))),))
+	nans = pd.Series(np.isnan(Xtest.sum(axis=1).sum(axis=1)).reshape(len(np.isnan(Xtest.sum(axis=1).sum(axis=1))),))
 
-		predicted = model.predict(Xtest, verbose=1)						# predicting on the testing input data
+	predicted = model.predict(Xtest, verbose=1)						# predicting on the testing input data
+	predicted = tf.gather(predicted, [1], axis=1)					# grabbing the positive node
+	predicted = predicted.numpy()									# turning to a numpy array
+	predicted = pd.Series(predicted.reshape(len(predicted),))		# and then into a pd.series
 
-		print(predicted)
-		print(predicted.shape)
+	temp_df = pd.DataFrame({'predicted':predicted,
+							'nans':nans})
 
-		predicted = tf.gather(predicted, [1], axis=1)					# grabbing the positive node
-		predicted = predicted.numpy()									# turning to a numpy array
-		predicted = pd.Series(predicted.reshape(len(predicted),))		# and then into a pd.series
+	temp_df.loc[temp_df['nans'] == True, 'predicted'] = np.nan
 
-		temp_df = pd.DataFrame({'predicted':predicted,
-								'nans':nans})
+	results_df = {'y_test':y_test,
+					'predicted': predicted}						# and storing the results
 
-		temp_df.loc[temp_df['nans'] == True, 'predicted'] = np.nan
+	# checking for nan data in the results
+	print('Pred has Nan: '+str(predicted.isnull().sum()))
+	print('Real has Nan: '+str(re.isnull().sum()))
 
-		df = test_dict[key]['real_df']									# calling the correct dataframe
-		df[f'predicted_split_{split}'] = temp_df['predicted']						# and storing the results
-		re = df['crossing']
+	return results_df
 
-		# checking for nan data in the results
-		print('Pred has Nan: '+str(predicted.isnull().sum()))
-		print('Real has Nan: '+str(re.isnull().sum()))
+def calculate_some_metrics(results_df):
 
-	return test_dict
+	# calculating the RMSE
+	rmse = np.sqrt(mean_squared_error(results_df['y_test'], results_df['predicted']))
+	print('RMSE: '+str(rmse))
+
+	# calculating the MAE
+	mae = mean_absolute_error(results_df['y_test'], results_df['predicted'])
+	print('MAE: '+str(mae))
+
+	# calculating the MAPE
+	mape = np.mean(np.abs((results_df['y_test'] - results_df['predicted']) / results_df['y_test'])) * 100
+	print('MAPE: '+str(mape))
+
+	# calculating the R^2
+	r2 = r2_score(results_df['y_test'], results_df['predicted'])
+	print('R^2: '+str(r2))
+
+	metrics = pd.DataFrame({'rmse':rmse,
+							'mae':mae,
+							'mape':mape,
+							'r2':r2})
+
+	return metrics
 
 
-def main(station):
+def main():
 	'''
-	Pulls all the above functions together. Loops through the number of splits to create, fit ,
-	and predict with a unique model for each train-val split. Outputs a saved file with the results.
+	Pulls all the above functions together. Outputs a saved file with the results.
 
-	Args:
-		station (str): 3 diget code for the station being examined. Passed to the script via arg parsing.
 	'''
 
 	# loading all data and indicies
-	train_dict, test_dict, train_indicies, val_indicies = loading_data_and_indicies(station)
+	print('Loading data...')
+	X_train, X_val, X_test, y_train, y_val, y_test = getting_prepared_data()
 
-	# this is the bulk of the shuffeled k-fold splitting. We loop through the list of indexes and train on the different train-val indices
-	for split in range(MODEL_CONFIG['splits']):
+	# creating the model
+	print('Initalizing model...')
+	MODEL, early_stop = create_CNN_model(X_train.shape[2])
 
-		train_index = train_indicies['split_{0}'.format(split)].to_numpy()
-		val_index = val_indicies['split_{0}'.format(split)].to_numpy()
+	# fitting the model
+	print('Fitting model...')
+	MODEL = fit_CNN(MODEL, X_train, X_val, y_train, y_val, early_stop)
 
-		print('Split: '+ str(split))
+	# making predictions
+	print('Making predictions...')
+	results_df = making_predictions(MODEL, X_test, y_test)
 
-		# clearing the information from any old models so we can run clean new ones.
-		if 'MODEL' in locals():
-			reset_keras(MODEL)
-		MODEL, early_stop = create_CNN_model(n_features=train_dict['X'].shape[2], loss='categorical_crossentropy', early_stop_patience=5)					# creating the model
+	# saving the results
+	print('Saving results...')
+	results_df.to_feather('outputs/non_twins_results.feather')
 
-		print(MODEL.summary())
-		# pulling the data and catagorizing it into the train-val pairs
-		xtrain = train_dict['X'][train_index]
-		xval =  train_dict['X'][val_index]
-		ytrain = train_dict['crossing'][train_index]
-		yval = train_dict['crossing'][val_index]
+	# calculating some metrics
+	print('Calculating metrics...')
+	metrics = calculate_some_metrics(results_df)
 
-		print('X Train input Nans: '+str(np.isnan(xtrain).sum()))
-		print('X Val input Nans: '+str(np.isnan(xval).sum()))
-		print('Y Train input Nans: '+str(np.isnan(ytrain).sum()))
-		print('Y Val input Nans: '+str(np.isnan(yval).sum()))
+	# saving the metrics
+	print('Saving metrics...')
+	metrics.to_feather('outputs/non_twins_metrics.feather')
 
-		# if the saved model already exists, loads the pre-fit model
-		if os.path.exists('models/{0}/CNN_version_5_split_{1}.h5'.format(station, split)):
-			model = fit_CNN(MODEL, xtrain, xval, ytrain, yval, early_stop, split, station, first_time=False)
-
-		# if model has not been fit, fits the model
-		else:
-			model = fit_CNN(MODEL, xtrain, xval, ytrain, yval, early_stop, split, station, first_time=True)
-
-		test_dict = making_predictions(model, test_dict, split)					# defines the test dictonary for storing results
-
-
-	# for each storm we set the datetime index and saves the data in a CSV/feather file
-	for i in range(len(test_dict)):
-		real_df = test_dict['storm_{0}'.format(i)]['real_df']
-		pd.to_datetime(real_df['Date_UTC'], format='%Y-%m-%d %H:%M:%S')
-		real_df.reset_index(drop=True, inplace=True)
-
-		if not os.path.exists('outputs/{0}'.format(station)):
-			os.makedirs('outputs/{0}'.format(station))
-
-		real_df.to_feather('outputs/{0}/version_5_storm_{1}.feather'.format(station, i))
 
 
 if __name__ == '__main__':
-	parser = argparse.ArgumentParser()
-	parser.add_argument('station',
-						action='store',
-						choices=['OTT', 'STJ', 'VIC', 'NEW', 'ESK', 'WNG', 'LER', 'BFE', 'NGK'],
-						type=str,
-						help='input station code for the SuperMAG station to be examined.')
-
-	args=parser.parse_args()
-
-	main(args.station)
-
+	main()
 	print('It ran. God job!')
