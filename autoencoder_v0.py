@@ -53,7 +53,7 @@ region_path = '../identifying_regions/outputs/adjusted_regions.pkl'
 region_number = '163'
 solarwind_path = '../data/SW/omniData.feather'
 supermag_dir_path = '../data/supermag/'
-twins_times_path = 'ENA_timestamps.csv'
+twins_times_path = 'ENA_TimeStamp.csv'
 rsd_path = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
 random_seed = 42
 
