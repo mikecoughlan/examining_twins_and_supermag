@@ -1,6 +1,6 @@
 {
 	"load_twins": true,
-	"twins_dir": "~/projects/data/twins/",
+	"twins_dir": "../data/twins/",
 	"twins_col_limits": [50,140],
 	"twins_row_limits": [40,100],
 	"mag_features": ["N","E","dbht","MAGNITUDE"],

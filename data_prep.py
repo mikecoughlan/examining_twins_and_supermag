@@ -99,7 +99,7 @@ class DataPrep:
 		self.rsd = self.rsd[f'region_{self.region_number}']['max_rsd']
 
 		# loading the twins times
-		self.twins_times = pd.read_csv(self.twins_times_path)
+		self.twins_times = pd.read_feather(self.twins_times_path)
 
 		# Loading the TWINS maps if load_twins == True:
 		if load_twins:

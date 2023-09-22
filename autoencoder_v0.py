@@ -53,7 +53,7 @@ region_path = '../identifying_regions/outputs/adjusted_regions.pkl'
 region_number = '163'
 solarwind_path = '../data/SW/omniData.feather'
 supermag_dir_path = '../data/supermag/'
-twins_times_path = 'ENA_TimeStamp.csv'
+twins_times_path = 'outputs/regular_twins_map_dates.feather'
 rsd_path = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
 random_seed = 42
 
@@ -88,15 +88,13 @@ def getting_prepared_data():
 def Autoencoder(input_shape, early_stopping_patience=10):
 
 
-
-
-	model_input = Input(shape=self.input_shape, name='encoder_input')
+	model_input = Input(shape=input_shape, name='encoder_input')
 
 	e = Conv2D(filters=64, kernal_size=3, activation='relu', strides=2, padding='same')(model_input)
 	e = Conv2D(filters=128, kernal_size=3, activation='relu', strides=2, padding='same')(e)
 	e = Conv2D(filters=256, kernal_size=3, activation='relu', strides=2, padding='same')(e)
 
-	self.shape = int_shape(e)
+	shape = int_shape(e)
 
 	e = Flatten(e)
 
