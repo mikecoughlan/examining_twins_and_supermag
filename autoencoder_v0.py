@@ -28,6 +28,7 @@ import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import shapely
 import tensorflow as tf
 import tqdm
 from scipy.special import expit, inv_boxcox
@@ -48,7 +49,7 @@ from data_prep import DataPrep
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
 
-region_path = '../identifying_regions/outputs/twins_era_identified_regions_min_2.pkl'
+region_path = '../identifying_regions/outputs/adjusted_regions.pkl'
 region_number = '163'
 solarwind_path = '../data/SW/omniData.feather'
 supermag_dir_path = '../data/supermag/'

@@ -21,6 +21,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import shapely
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -82,7 +83,7 @@ class DataPrep:
 			self.region_data = pickle.load(f)
 
 		# taking only the region of interest
-		self.region_data = self.region_data[self.region_number]
+		self.region_data = self.region_data[f'region_{self.region_number}']
 
 		# defining the stations int eh region of interest
 		self.stations = self.region_data['station']
@@ -405,7 +406,7 @@ class DataPrep:
 		# splitting and scaling the data
 		self.splitting_and_scaling(solarwind_and_supermag_scaling_method=config['solarwind_and_supermag_scaling_method'],
 									test_size=config['test_size'], val_size=config['val_size'],
-									random_state=config['random_state'], include_twins=config['include_twins'],
+									include_twins=config['include_twins'],
 									twins_scaling_method=config['twins_scaling_method'])
 
 
@@ -438,7 +439,7 @@ class DataPrep:
 		# splitting and scaling the data
 		self.splitting_and_scaling(solarwind_and_supermag_scaling_method=config['solarwind_and_supermag_scaling_method'],
 									test_size=config['test_size'], val_size=config['val_size'],
-									random_state=config['random_state'], include_twins=config['include_twins'],
+									include_twins=config['include_twins'],
 									twins_scaling_method=config['twins_scaling_method'])
 
 
