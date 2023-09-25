@@ -446,7 +446,13 @@ def getting_ion_temp_for_footpoints(twins_dict, region_dfs_dict, station_geo_loc
 		for date in region_df.index:
 			footpoints = twins_dict[date.strftime(format='%Y-%m-%d %H:%M:%S')]['station_footpoints']
 			for station in data['station']:
-				ion_temp = twins_dict[datedate.strftime(format='%Y-%m-%d %H:%M:%S')]['map'][math.floor(((footpoints[station]['xf']*2)+80)), math.floor(((footpoints[station]['yf']*2)+45))]
+				try:
+					ion_temp = twins_dict[date.strftime(format='%Y-%m-%d %H:%M:%S')]['map'][math.floor(((footpoints[station]['xf']*2)+80)), math.floor(((footpoints[station]['yf']*2)+45))]
+				except IndexError:
+					print(f'IndexError: {date} {station}')
+					print(f'Footpoint: {footpoints[station]}')
+					continue
+
 				correlation_dataframe = correlation_dataframe.append({'region':region, 'MLT':region_df.loc[date]['MLT'], 'RSD':region_df.loc[date]['rsd'],
 																		'station':station, 'latitude':station_geo_locations[station]['GEOLAT'],
 																		'ion_temp':ion_temp, 'mean_sub_dbdt':region_df.loc[date][f'{station}_dbdt']-region_df.loc[date]['reg_mean']},
