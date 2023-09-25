@@ -116,8 +116,9 @@ class DataPrep:
 						continue
 					check = pd.to_datetime(date.strftime(format='%Y-%m-%d %H:%M:%S'), format='%Y-%m-%d %H:%M:%S')
 					if check in self.twins_times.values:
-						self.maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = \
-							twins_map['Ion_Temperature'][i][twins_col_limits[0]:twins_col_limits[1],twins_row_limits[0]:twins_row_limits[1]]
+						arr = twins_map['Ion_Temperature'][i][twins_col_limits[0]:twins_col_limits[1],twins_row_limits[0]:twins_row_limits[1]]
+						arr[arr == -1] = 0
+						self.maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = arr
 
 
 
@@ -361,8 +362,8 @@ class DataPrep:
 				twins_arrays = [self.maps[i] for i in map_keys]
 				twins_arrays = np.array(twins_arrays)
 			# splitting the TWINS data into training, testing, and validation sets
-			twins_x_train, twins_x_test = train_test_split(twins_arrays, test_size=test_size, random_state=self.random_seed)
-			twins_x_train, twins_x_val = train_test_split(twins_x_train, test_size=val_size, random_state=self.random_seed)
+			self.twins_x_train, self.twins_x_test = train_test_split(twins_arrays, test_size=test_size, random_state=self.random_seed)
+			self.twins_x_train, self.twins_x_val = train_test_split(self.twins_x_train, test_size=val_size, random_state=self.random_seed)
 
 			# defining the TWINS scaler
 			if twins_scaling_method == 'standard':
@@ -373,28 +374,34 @@ class DataPrep:
 				raise ValueError('Must specify a valid scaling method for TWINS. Options are "standard" and "minmax".')
 
 			# scaling the TWINS data
-			self.twins_x_train = self.twins_scaler.fit_transform(twins_x_train)
-			self.twins_x_test = self.twins_scaler.transform(twins_x_test)
-			self.twins_x_val = self.twins_scaler.transform(twins_x_val)
+			self.twins_x_train = self.twins_scaler.fit_transform(self.twins_x_train.reshape(-1, self.twins_x_train.shape[-1])).reshape(self.twins_x_train.shape)
+			self.twins_x_test = self.twins_scaler.transform(self.twins_x_test.reshape(-1, self.twins_x_test.shape[-1])).reshape(self.twins_x_test.shape)
+			self.twins_x_val = self.twins_scaler.transform(self.twins_x_val.reshape(-1, self.twins_x_val.shape[-1])).reshape(self.twins_x_val.shape)
+			# self.twins_x_train = self.twins_scaler.fit_transform(twins_x_train)
+			# self.twins_x_test = self.twins_scaler.transform(twins_x_test)
+			# self.twins_x_val = self.twins_scaler.transform(twins_x_val)
 
-		# splitting the solar wind and supermag data into training, testing, and validation sets
-		self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=test_size, random_state=random_state)
-		self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(self.X_train, self.y_train, test_size=val_size, random_state=random_state)
+		if not only_twins:
+			# splitting the solar wind and supermag data into training, testing, and validation sets
+			self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=test_size, random_state=random_seed)
+			self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(self.X_train, self.y_train, test_size=val_size, random_state=random_state)
 
-		# defining the solar wind and supermag scaler
-		if solarwind_and_supermag_scaling_method == 'standard':
-			self.scaler = StandardScaler()
-		elif solarwind_and_supermag_scaling_method == 'minmax':
-			self.scaler = MinMaxScaler()
-		else:
-			raise ValueError('Must specify a valid scaling method for solarwind and supermag. Options are "standard" and "minmax".')
+			# defining the solar wind and supermag scaler
+			if solarwind_and_supermag_scaling_method == 'standard':
+				self.scaler = StandardScaler()
+			elif solarwind_and_supermag_scaling_method == 'minmax':
+				self.scaler = MinMaxScaler()
+			else:
+				raise ValueError('Must specify a valid scaling method for solarwind and supermag. Options are "standard" and "minmax".')
 
-		# scaling the solar wind and supermag data
-		self.X_train = self.scaler.fit_transform(self.X_train)
-		self.X_test = self.scaler.transform(self.X_test)
-		self.X_val = self.scaler.transform(self.X_val)
+			# scaling the solar wind and supermag data
+			self.X_train = self.scaler.fit_transform(self.X_train)
+			self.X_test = self.scaler.transform(self.X_test)
+			self.X_val = self.scaler.transform(self.X_val)
 
-		if include_twins:
+		if only_twins:
+			return self.twins_x_train, self.twins_x_test, self.twins_x_val
+		elif include_twins:
 			return self.X_train, self.X_test, self.X_val, self.y_train, self.y_test, self.y_val, self.twins_x_train, self.twins_x_test, self.twins_x_val
 		else:
 			return self.X_train, self.X_test, self.X_val, self.y_train, self.y_test, self.y_val

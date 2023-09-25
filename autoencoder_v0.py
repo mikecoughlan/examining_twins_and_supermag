@@ -85,18 +85,18 @@ def getting_prepared_data():
 	return train, val, test
 
 
-def Autoencoder(input_shape, early_stopping_patience=10):
+def Autoencoder(input_shape, train, val, early_stopping_patience=10):
 
 
 	model_input = Input(shape=input_shape, name='encoder_input')
 
-	e = Conv2D(filters=64, kernal_size=3, activation='relu', strides=2, padding='same')(model_input)
-	e = Conv2D(filters=128, kernal_size=3, activation='relu', strides=2, padding='same')(e)
-	e = Conv2D(filters=256, kernal_size=3, activation='relu', strides=2, padding='same')(e)
+	e = Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(model_input)
+	e = Conv2D(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(e)
+	e = Conv2D(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(e)
 
 	shape = int_shape(e)
 
-	e = Flatten(e)
+	e = Flatten()(e)
 
 	bottleneck = Dense(64, name='bottleneck')(e)
 
@@ -104,20 +104,23 @@ def Autoencoder(input_shape, early_stopping_patience=10):
 
 	d = Reshape((shape[1], shape[2], shape[3]))(d)
 
-	d = Conv2DTranspose(filters=256, kernal_size=3, activation='relu', strides=2, padding='same')(d)
-	d = Conv2DTranspose(filters=128, kernal_size=3, activation='relu', strides=2, padding='same')(d)
-	d = Conv2DTranspose(filters=64, kernal_size=3, activation='relu', strides=2, padding='same')(d)
+	d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+	d = Conv2DTranspose(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+	d = Conv2DTranspose(filters=64, kernel_size=2, activation='relu', strides=1, padding='same')(d)
 
-	model_outputs = Conv2DTranspose(filters=1, kernal_size=3, activation='linear', padding='same', name='decoder_output')(d)
+	model_outputs = Conv2DTranspose(filters=1, kernel_size=1, activation='linear', padding='same', name='decoder_output')(d)
 
 	full_autoencoder = Model(inputs=model_input, outputs=model_outputs)
 
 	opt = tf.keras.optimizers.Adam(learning_rate=1e-6)		# learning rate that actually started producing good results
 	full_autoencoder.compile(optimizer=opt, loss='mse')					# Ive read that cross entropy is good for this type of model
-	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
+	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stopping_patience)		# early stop process prevents overfitting
 
+	full_autoencoder = fit_autoencoder(full_autoencoder, train, val, early_stop)
 
-	return model, early_stop
+	encoder = Model(inputs=model_input, outputs = bottleneck)
+
+	return full_autoencoder, encoder
 
 
 def fit_autoencoder(model, train, val, early_stop):
@@ -131,8 +134,10 @@ def fit_autoencoder(model, train, val, early_stop):
 		train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
 		val = val.reshape((val.shape[0], val.shape[1], val.shape[2], 1))
 
+		print(model.summary())
+
 		model.fit(train, train, validation_data=(val, val),
-					verbose=1, shuffle=True, epochs=200, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
+					verbose=1, shuffle=True, epochs=5, callbacks=[early_stop], batch_size=1024)			# doing the training! Yay!
 
 		# saving the model
 		model.save('models/autoencoder_v0.h5')
@@ -158,10 +163,10 @@ def making_predictions(model, test):
 	'''
 
 	test = test.reshape((test.shape[0], test.shape[1], test.shape[2], 1))			# reshpaing for one channel input
-	print('Test input Nans: '+str(np.isnan(Xtest).sum()))
+	print('Test input Nans: '+str(np.isnan(test).sum()))
 
 	predicted = model.predict(test, verbose=1)						# predicting on the testing input data
-	predicted = predicted.numpy()									# turning to a numpy array
+	# predicted = predicted.numpy()									# turning to a numpy array
 
 	return predicted
 
@@ -179,33 +184,43 @@ def main():
 
 	# creating the model
 	print('Initalizing model...')
-	MODEL, early_stop = Autoencoder((train.shape[1], train.shape[2], 1))
+	autoencoder, encoder = Autoencoder((train.shape[1], train.shape[2], 1), train, val)
 
-	# fitting the model
-	print('Fitting model...')
-	MODEL = fit_autoencoder(MODEL, train, val, early_stop)
+	# # fitting the model
+	# print('Fitting model...')
+	# MODEL = fit_autoencoder(MODEL, train, val, early_stop)
 
 	# making predictions
 	print('Making predictions...')
-	predictions = making_predictions(MODEL, test)
+	predictions = making_predictions(autoencoder, test)
 
-	rmse = np.sqrt(mean_squared_error(test, predictions))
-	print(f'RMSE: {rmse}')
+	# rmse = np.sqrt(mean_squared_error(test, predictions[:,:,:,0]))
+	# print(f'RMSE: {rmse}')
 
-	encoder = Model(inputs=MODEL.model_inputs, outputs=MODEL.bottleneck)
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(211)
+	ax1.imshow(predictions[15, :, :, 0])
+	ax1.set_title('Prediction')
+	ax2 = fig.add_subplot(212)
+	ax2.imshow(test[15, :, :])
+	ax2.set_title('Actual')
+	plt.show()
+
+
+	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.bottleneck)
 	encoder.save('models/encoder_v0.h5')
 
-	# saving the results
-	print('Saving results...')
-	results_df.to_feather('outputs/non_twins_results.feather')
+	# # saving the results
+	# print('Saving results...')
+	# results_df.to_feather('outputs/non_twins_results.feather')
 
-	# calculating some metrics
-	print('Calculating metrics...')
-	metrics = calculate_some_metrics(results_df)
+	# # calculating some metrics
+	# print('Calculating metrics...')
+	# metrics = calculate_some_metrics(results_df)
 
-	# saving the metrics
-	print('Saving metrics...')
-	metrics.to_feather('outputs/non_twins_metrics.feather')
+	# # saving the metrics
+	# print('Saving metrics...')
+	# metrics.to_feather('outputs/non_twins_metrics.feather')
 
 
 
