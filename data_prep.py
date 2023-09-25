@@ -21,6 +21,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import shapely
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -82,23 +83,23 @@ class DataPrep:
 			self.region_data = pickle.load(f)
 
 		# taking only the region of interest
-		self.region_data = self.region_data[self.region_number]
+		self.region_data = self.region_data[f'region_{self.region_number}']
 
 		# defining the stations int eh region of interest
 		self.stations = self.region_data['station']
 
 		# loading the solar wind data and setting datetime index
 		self.solarwind_data = pd.read_feather(self.solarwind_path)
-		self.solarwind_data.set_index('Date_UTC', inplace=True, drop=True)
+		self.solarwind_data.set_index('Epoch', inplace=True, drop=True)
 		self.solarwind_data.index = pd.to_datetime(self.solarwind_data.index)
 
 		# loading the rsd data for the region of interest
 		with open(self.rsd_path, 'rb') as f:
 			self.rsd = pickle.load(f)
-		self.rsd = self.rsd[self.region_number]['max_rsd']
+		self.rsd = self.rsd[f'region_{self.region_number}']['max_rsd']
 
 		# loading the twins times
-		self.twins_times = pd.read_csv(self.twins_times_path)
+		self.twins_times = pd.read_feather(self.twins_times_path)
 
 		# Loading the TWINS maps if load_twins == True:
 		if load_twins:
@@ -324,7 +325,7 @@ class DataPrep:
 
 	def splitting_and_scaling(self, solarwind_and_supermag_scaling_method='standard',
 								test_size=0.2, val_size=0.25, include_twins=False,
-								twins_scaling_method='standard'):
+								twins_scaling_method='standard', only_twins=False):
 		'''
 		Splits the data into training, validation, and testing sets and scales the data.
 
@@ -348,11 +349,17 @@ class DataPrep:
 
 		if include_twins:
 
-			# need to eliminate the maps that were skipped in the split sequences functions
-			map_keys = list(self.maps.keys())
-			twins_arrays = [self.maps[i] for i in map_keys if i not in self.bad_dates]
-			twins_arrays = np.array(twins_arrays)
+			if not only_twins:
+				# need to eliminate the maps that were skipped in the split sequences functions
+				map_keys = list(self.maps.keys())
+				twins_arrays = [self.maps[i] for i in map_keys if i not in self.bad_dates]
+				twins_arrays = np.array(twins_arrays)
 
+			else:
+				# need to eliminate the maps that were skipped in the split sequences functions
+				map_keys = list(self.maps.keys())
+				twins_arrays = [self.maps[i] for i in map_keys]
+				twins_arrays = np.array(twins_arrays)
 			# splitting the TWINS data into training, testing, and validation sets
 			twins_x_train, twins_x_test = train_test_split(twins_arrays, test_size=test_size, random_state=self.random_seed)
 			twins_x_train, twins_x_val = train_test_split(twins_x_train, test_size=val_size, random_state=self.random_seed)
@@ -405,8 +412,8 @@ class DataPrep:
 		# splitting and scaling the data
 		self.splitting_and_scaling(solarwind_and_supermag_scaling_method=config['solarwind_and_supermag_scaling_method'],
 									test_size=config['test_size'], val_size=config['val_size'],
-									random_state=config['random_state'], include_twins=config['include_twins'],
-									twins_scaling_method=config['twins_scaling_method'])
+									include_twins=config['include_twins'],
+									twins_scaling_method=config['twins_scaling_method'], only_twins=True)
 
 
 		return self.twins_x_train, self.twins_x_val, self.twins_x_test
@@ -438,7 +445,7 @@ class DataPrep:
 		# splitting and scaling the data
 		self.splitting_and_scaling(solarwind_and_supermag_scaling_method=config['solarwind_and_supermag_scaling_method'],
 									test_size=config['test_size'], val_size=config['val_size'],
-									random_state=config['random_state'], include_twins=config['include_twins'],
+									include_twins=config['include_twins'],
 									twins_scaling_method=config['twins_scaling_method'])
 
 
