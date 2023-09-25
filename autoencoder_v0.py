@@ -45,6 +45,7 @@ from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.python.keras.backend import get_session
 
+from data_generator import Generator
 from data_prep import DataPrep
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
@@ -81,6 +82,9 @@ def getting_prepared_data():
 					rsd_path, random_seed)
 
 	train, val, test  = prep.twins_only_data_prep(CONFIG)
+
+	train = Generator(train, train, batch_size=16, shuffle=True)
+	val = Generator(val, val, batch_size=16, shuffle=True)
 
 	return train, val, test
 
