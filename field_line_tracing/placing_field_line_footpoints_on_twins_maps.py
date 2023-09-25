@@ -19,6 +19,7 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Circle, Wedge
 from spacepy import pycdf
+from tqdm import tqdm
 from tracing_tools import read_qindenton_json
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
@@ -439,11 +440,11 @@ def getting_ion_temp_for_footpoints(twins_dict, region_dfs_dict, station_geo_loc
 		correlation_dataframe (pd.dataframe): dataframe containing the ion temperature and mean subtracted dbdt values
 	'''
 
-	correlation_dataframe = pd.DataFrame({'region':[], 'MLT':[], 'RSD':[], 'station':[], 'latitude':[], 'ion_temp':[], 'mean_sub_dbdt':[]})
-
+	# correlation_dataframe = pd.DataFrame({'region':[], 'MLT':[], 'RSD':[], 'station':[], 'latitude':[], 'ion_temp':[], 'mean_sub_dbdt':[]})
+	regions, MLT, RSD, stations, latitude, ion_temps, mean_sub_dbdt = [], [], [], [], [], [], []
 	for region, data in region_dfs_dict.items():
 		region_df = data['combined_dfs']
-		for date in region_df.index:
+		for date in tqdm(region_df.index):
 			footpoints = twins_dict[date.strftime(format='%Y-%m-%d %H:%M:%S')]['station_footpoints']
 			for station in data['station']:
 				try:
@@ -453,10 +454,20 @@ def getting_ion_temp_for_footpoints(twins_dict, region_dfs_dict, station_geo_loc
 					print(f'Footpoint: {footpoints[station]}')
 					continue
 
-				correlation_dataframe = correlation_dataframe.append({'region':region, 'MLT':region_df.loc[date]['MLT'], 'RSD':region_df.loc[date]['rsd'],
-																		'station':station, 'latitude':station_geo_locations[station]['GEOLAT'],
-																		'ion_temp':ion_temp, 'mean_sub_dbdt':region_df.loc[date][f'{station}_dbdt']-region_df.loc[date]['reg_mean']},
-																		ignore_index=True)
+				regions.append(region)
+				MLT.append(region_df.loc[date]['MLT'])
+				RSD.append(region_df.loc[date]['rsd'])
+				stations.append(station)
+				latitude.append(station_geo_locations[station]['GEOLAT'])
+				ion_temps.append(ion_temp)
+				mean_sub_dbdt.append(region_df.loc[date][f'{station}_dbdt']-region_df.loc[date]['reg_mean'])
+				# correlation_dataframe = pd.concat([correlation_dataframe, {'region':region, 'MLT':region_df.loc[date]['MLT'], 'RSD':region_df.loc[date]['rsd'],
+				# 														'station':station, 'latitude':station_geo_locations[station]['GEOLAT'],
+				# 														'ion_temp':ion_temp, 'mean_sub_dbdt':region_df.loc[date][f'{station}_dbdt']-region_df.loc[date]['reg_mean']}],
+				# 														axis=0)
+
+	correlation_dataframe = pd.DataFrame({'region':regions, 'MLT':MLT, 'RSD':RSD, 'station':stations,
+											'latitude':latitude, 'ion_temp':ion_temps, 'mean_sub_dbdt':mean_sub_dbdt})
 
 	return correlation_dataframe
 
