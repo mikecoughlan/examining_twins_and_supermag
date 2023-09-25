@@ -444,9 +444,9 @@ def getting_ion_temp_for_footpoints(twins_dict, region_dfs_dict, station_geo_loc
 	for region, data in region_dfs_dict.items():
 		region_df = data['combined_dfs']
 		for date in region_df.index:
-			footpoints = twins_dict[date]['station_footpoints']
+			footpoints = twins_dict[date.strftime(format='%Y-%m-%d %H:%M:%S')]['station_footpoints']
 			for station in data['station']:
-				ion_temp = twins_dict[date]['map'][math.floor(((footpoints[station]['xf']*2)+80)), math.floor(((footpoints[station]['yf']*2)+45))]
+				ion_temp = twins_dict[datedate.strftime(format='%Y-%m-%d %H:%M:%S')]['map'][math.floor(((footpoints[station]['xf']*2)+80)), math.floor(((footpoints[station]['yf']*2)+45))]
 				correlation_dataframe = correlation_dataframe.append({'region':region, 'MLT':region_df.loc[date]['MLT'], 'RSD':region_df.loc[date]['rsd'],
 																		'station':station, 'latitude':station_geo_locations[station]['GEOLAT'],
 																		'ion_temp':ion_temp, 'mean_sub_dbdt':region_df.loc[date][f'{station}_dbdt']-region_df.loc[date]['reg_mean']},
@@ -528,10 +528,9 @@ def main():
 
 	# dividing the twins maps into different dictonaries by year
 	years = ['2009', '2010', '2011', '2012', '2013', '2014', '2015', '2016', '2017']
-	twins_dict_by_years = {}
+	twins_dict_by_years, final_twins = {}, {}
 	for year in years:
 		twins_dict_by_years[year] = {date:twins[date] for date in twins.keys() if date[0:4]==year}
-
 
 	print('Getting footpoints....')
 	for year, twins in twins_dict_by_years.items():
@@ -539,7 +538,6 @@ def main():
 		if os.path.exists(f'outputs/twins_maps_with_footpoints_year_{year}.pkl'):
 			with open(f'outputs/twins_maps_with_footpoints_year_{year}.pkl', 'rb') as f:
 				twins = pickle.load(f)
-
 
 		for date, entry in twins.items():
 
@@ -558,13 +556,16 @@ def main():
 
 			entry['station_footpoints'] = {station:footpoint for station, footpoint in zip(stations_geo_locations.keys(), footpoint_results)}
 
+		for key, value in twins.items():
+			final_twins[key] = value
+
 		# saving the updated twins dictionaryx
 		with open(f'outputs/twins_maps_with_footpoints_year_{year}.pkl', 'wb') as f:
 			pickle.dump(twins, f)
 
 	# getting the ion temperature for each footpoint and storing it in the maps dictionary
 	print('Getting ion temperature....')
-	correlation_dataframe = getting_ion_temp_for_footpoints(twins, regions, stations_geo_locations)
+	correlation_dataframe = getting_ion_temp_for_footpoints(final_twins, regions, stations_geo_locations)
 	correlation_dataframe.to_feather('outputs/correlation_dataframe.feather')
 
 	# getting the correlations between the ion temperature and the mean subtracted dbdt values
