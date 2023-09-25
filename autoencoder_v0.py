@@ -83,10 +83,23 @@ def getting_prepared_data():
 
 	train, val, test  = prep.twins_only_data_prep(CONFIG)
 
-	train = Generator(train, train, batch_size=16, shuffle=True)
-	val = Generator(val, val, batch_size=16, shuffle=True)
+	train = train[:(int(len(train)*0.001)),:,:]
+	val = val[:(int(len(val)*0.001)),:,:]
 
-	return train, val, test
+	print(train.shape)
+	print(val.shape)
+
+	# reshaping the model input vectors for a single channel
+	train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
+	val = val.reshape((val.shape[0], val.shape[1], val.shape[2], 1))
+	test = test.reshape((test.shape[0], test.shape[1], test.shape[2], 1))
+
+	input_shape = (train.shape[1], train.shape[2], 1)
+
+	# train = Generator(train, train, batch_size=16, shuffle=True)
+	# val = Generator(val, val, batch_size=16, shuffle=True)
+
+	return train, val, test, input_shape
 
 
 def Autoencoder(input_shape, train, val, early_stopping_patience=10):
@@ -134,9 +147,9 @@ def fit_autoencoder(model, train, val, early_stop):
 
 	if not os.path.exists('models/autoencoder_v0.h5'):
 
-		# reshaping the model input vectors for a single channel
-		train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
-		val = val.reshape((val.shape[0], val.shape[1], val.shape[2], 1))
+		# # reshaping the model input vectors for a single channel
+		# train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
+		# val = val.reshape((val.shape[0], val.shape[1], val.shape[2], 1))
 
 		print(model.summary())
 
@@ -184,11 +197,11 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	train, val, test = getting_prepared_data()
+	train, val, test, input_shape = getting_prepared_data()
 
 	# creating the model
 	print('Initalizing model...')
-	autoencoder, encoder = Autoencoder((train.shape[1], train.shape[2], 1), train, val)
+	autoencoder, encoder = Autoencoder(input_shape, train, val)
 
 	# # fitting the model
 	# print('Fitting model...')
