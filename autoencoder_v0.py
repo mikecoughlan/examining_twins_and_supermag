@@ -45,6 +45,7 @@ from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.python.keras.backend import get_session
 
+from data_generator import Generator
 from data_prep import DataPrep
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
@@ -81,6 +82,9 @@ def getting_prepared_data():
 					rsd_path, random_seed)
 
 	train, val, test  = prep.twins_only_data_prep(CONFIG)
+
+	train = Generator(train, train, batch_size=16, shuffle=True)
+	val = Generator(val, val, batch_size=16, shuffle=True)
 
 	return train, val, test
 
@@ -137,7 +141,7 @@ def fit_autoencoder(model, train, val, early_stop):
 		print(model.summary())
 
 		model.fit(train, train, validation_data=(val, val),
-					verbose=1, shuffle=True, epochs=5, callbacks=[early_stop], batch_size=1024)			# doing the training! Yay!
+					verbose=1, shuffle=True, epochs=200, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
 
 		# saving the model
 		model.save('models/autoencoder_v0.h5')
@@ -198,10 +202,10 @@ def main():
 	# print(f'RMSE: {rmse}')
 
 	fig = plt.figure(figsize=(10, 10))
-	ax1 = fig.add_subplot(211)
+	ax1 = fig.add_subplot(121)
 	ax1.imshow(predictions[15, :, :, 0])
 	ax1.set_title('Prediction')
-	ax2 = fig.add_subplot(212)
+	ax2 = fig.add_subplot(122)
 	ax2.imshow(test[15, :, :])
 	ax2.set_title('Actual')
 	plt.show()
