@@ -490,8 +490,8 @@ def calculating_ion_temp_and_footprint_correlations(correlation_dataframe, regio
 
 	if segmenting_var:
 		correlations = pd.DataFrame({segmenting_var:[], 'correlation':[]})
-		for value in range(correlation_dataframe[segmenting_var].min(), correlation_dataframe[segmenting_var].max(), segmenting_var_iterator):
-			iterated_dataframe = correlation_dataframe[correlation_dataframe[segmenting_var]>=value & correlation_dataframe[segmenting_var]<value+segmenting_var_iterator]
+		for value in range(int(correlation_dataframe[segmenting_var].min()), int(correlation_dataframe[segmenting_var].max()), segmenting_var_iterator):
+			iterated_dataframe = correlation_dataframe[(correlation_dataframe[segmenting_var]>=value) & (correlation_dataframe[segmenting_var]<(value+segmenting_var_iterator))]
 			correlations = correlations.append({segmenting_var:value, 'correlation':iterated_dataframe['ion_temp'].corr(iterated_dataframe['mean_sub_dbdt'])}, ignore_index=True)
 
 	return correlations
@@ -580,14 +580,19 @@ def main():
 		with open(f'outputs/twins_maps_with_footpoints_year_{year}.pkl', 'wb') as f:
 			pickle.dump(twins, f)
 
-	# getting the ion temperature for each footpoint and storing it in the maps dictionary
-	print('Getting ion temperature....')
-	correlation_dataframe = getting_ion_temp_for_footpoints(final_twins, regions, stations_geo_locations)
-	correlation_dataframe.to_feather('outputs/correlation_dataframe.feather')
+	if os.path.exists('outputs/correlation_dataframe.feather'):
+		correlation_dataframe = pd.read_feather('outputs/correlation_dataframe.feather')
+
+	else:
+		# getting the ion temperature for each footpoint and storing it in the maps dictionary
+		print('Getting ion temperature....')
+		correlation_dataframe = getting_ion_temp_for_footpoints(final_twins, regions, stations_geo_locations)
+		correlation_dataframe.to_feather('outputs/correlation_dataframe.feather')
 
 	# getting the correlations between the ion temperature and the mean subtracted dbdt values
 	print('Calculating correlations....')
 	correlation = calculating_ion_temp_and_footprint_correlations(correlation_dataframe, region='region_166', segmenting_var='latitude', segmenting_var_iterator=5)
+	correlation.to_csv('outputs/correlation.csv')
 
 	# plotting the footpoints on top of the twins maps
 	# date = '2012-03-12 09:40:00'
