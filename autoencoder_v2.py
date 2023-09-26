@@ -130,7 +130,7 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=10):
 	full_autoencoder = Model(inputs=model_input, outputs=model_outputs)
 
 	opt = tf.keras.optimizers.Adam(learning_rate=1e-6)		# learning rate that actually started producing good results
-	full_autoencoder.compile(optimizer=opt, loss='mse')					# Ive read that cross entropy is good for this type of model
+	full_autoencoder.compile(optimizer=opt, loss='binary_crossentropy')					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stopping_patience)		# early stop process prevents overfitting
 
 	full_autoencoder = fit_autoencoder(full_autoencoder, train, val, early_stop)
@@ -145,7 +145,7 @@ def fit_autoencoder(model, train, val, early_stop):
 
 	'''
 
-	if not os.path.exists('models/autoencoder_v0.h5'):
+	if not os.path.exists('models/autoencoder_v2.h5'):
 
 		# # reshaping the model input vectors for a single channel
 		# train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
@@ -157,11 +157,11 @@ def fit_autoencoder(model, train, val, early_stop):
 					verbose=1, shuffle=True, epochs=200, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
 
 		# saving the model
-		model.save('models/autoencoder_v0.h5')
+		model.save('models/autoencoder_v2.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/autoencoder_v0.h5')				# loading the models if already trained
+		model = load_model('models/autoencoder_v2.h5')				# loading the models if already trained
 		print(model.summary())
 
 	return model
@@ -226,7 +226,7 @@ def main():
 
 
 	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.bottleneck)
-	encoder.save('models/encoder_v0.h5')
+	encoder.save('models/encoder_v2.h5')
 
 	# # saving the results
 	# print('Saving results...')

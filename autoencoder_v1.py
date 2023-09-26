@@ -108,7 +108,9 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=10):
 	model_input = Input(shape=input_shape, name='encoder_input')
 
 	e = Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(model_input)
+	e = MaxPooling2D(pool_size=2, strides=2)(e)
 	e = Conv2D(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(e)
+	e = MaxPooling2D(pool_size=3, strides=3)(e)
 	e = Conv2D(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(e)
 
 	shape = int_shape(e)
@@ -121,9 +123,9 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=10):
 
 	d = Reshape((shape[1], shape[2], shape[3]))(d)
 
-	d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(d)
-	d = Conv2DTranspose(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(d)
-	d = Conv2DTranspose(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+	d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=3, padding='same')(d)
+	d = Conv2DTranspose(filters=128, kernel_size=3, activation='relu', strides=2, padding='same')(d)
+	d = Conv2DTranspose(filters=64, kernel_size=2, activation='relu', strides=1, padding='same')(d)
 
 	model_outputs = Conv2DTranspose(filters=1, kernel_size=1, activation='linear', padding='same', name='decoder_output')(d)
 
@@ -145,7 +147,7 @@ def fit_autoencoder(model, train, val, early_stop):
 
 	'''
 
-	if not os.path.exists('models/autoencoder_v0.h5'):
+	if not os.path.exists('models/autoencoder_v1.h5'):
 
 		# # reshaping the model input vectors for a single channel
 		# train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
@@ -157,12 +159,11 @@ def fit_autoencoder(model, train, val, early_stop):
 					verbose=1, shuffle=True, epochs=200, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
 
 		# saving the model
-		model.save('models/autoencoder_v0.h5')
+		model.save('models/autoencoder_v1.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/autoencoder_v0.h5')				# loading the models if already trained
-		print(model.summary())
+		model = load_model('models/autoencoder_v1.h5')				# loading the models if already trained
 
 	return model
 
@@ -226,7 +227,7 @@ def main():
 
 
 	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.bottleneck)
-	encoder.save('models/encoder_v0.h5')
+	encoder.save('models/encoder_v1.h5')
 
 	# # saving the results
 	# print('Saving results...')

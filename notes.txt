@@ -1,0 +1,44 @@
+Notes for the auto-encoder:
+
+Still a lot of hyperparameter tuning to do. But the model works overall. Will attempt to do a Baysiean
+optimaization technique or some of the automatic hyperparameter tuning. Still need to figure out how to
+properly adjust the layers such that they reproduce the initial image dimensions for the loss calculations
+without me having to manually do some math on the strides and filter sizes to get the dimensions right.
+
+Version Descriptions:
+    v0: 	First model that produced results.
+
+            e = Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(model_input)
+            e = Conv2D(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(e)
+            e = Conv2D(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(e)
+            shape = int_shape(e)
+            e = Flatten()(e)
+            bottleneck = Dense(64, name='bottleneck')(e)
+            d = Dense(shape[1]*shape[2]*shape[3])(bottleneck)
+            d = Reshape((shape[1], shape[2], shape[3]))(d)
+            d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+            d = Conv2DTranspose(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+            d = Conv2DTranspose(filters=64, kernel_size=2, activation='relu', strides=1, padding='same')(d)
+            model_outputs = Conv2DTranspose(filters=1, kernel_size=1, activation='linear', padding='same', name='decoder_output')(d)
+
+    v1: 	Includes the addition of maxpooling layers in between the initial Conv2D layers. Required adjusting
+            of the strides in the decoder layers.
+
+            e = Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(model_input)
+            e = MaxPooling2D(pool_size=2, strides=2)(e)
+            e = Conv2D(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(e)
+            e = MaxPooling2D(pool_size=3, strides=3)(e)
+            e = Conv2D(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(e)
+            shape = int_shape(e)
+            e = Flatten()(e)
+            bottleneck = Dense(64, name='bottleneck')(e)
+            d = Dense(shape[1]*shape[2]*shape[3])(bottleneck)
+            d = Reshape((shape[1], shape[2], shape[3]))(d)
+            d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=3, padding='same')(d)
+            d = Conv2DTranspose(filters=128, kernel_size=3, activation='relu', strides=2, padding='same')(d)
+            d = Conv2DTranspose(filters=64, kernel_size=2, activation='relu', strides=1, padding='same')(d)
+            model_outputs = Conv2DTranspose(filters=1, kernel_size=1, activation='linear', padding='same', name='decoder_output')(d)
+
+            Antecdotally the inclusion of the maxpooling layers apeared to introduce more noise to the resulting prediction.
+
+    v2:
