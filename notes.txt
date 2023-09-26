@@ -1,0 +1,9 @@
+Notes for the auto-encoder:
+
+Still a lot of hyperparameter tuning to do. But the model works overall. Will attempt to do a Baysiean
+optimaization technique or some of the automatic hyperparameter tuning. Still need to figure out how to
+properly adjust the layers such that they reproduce the initial image dimensions for the loss calculations
+without me having to manually do some math on the strides and filter sizes to get the dimensions right.
+
+Version Descriptions:
+    v0: Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')
