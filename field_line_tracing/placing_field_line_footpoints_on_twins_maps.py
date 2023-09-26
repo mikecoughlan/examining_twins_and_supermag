@@ -591,7 +591,7 @@ def main():
 
 	# getting the correlations between the ion temperature and the mean subtracted dbdt values
 	print('Calculating correlations....')
-	correlation = calculating_ion_temp_and_footprint_correlations(correlation_dataframe, region='region_166', segmenting_var='latitude', segmenting_var_iterator=5)
+	correlation = calculating_ion_temp_and_footprint_correlations(correlation_dataframe, region=None, segmenting_var='latitude', segmenting_var_iterator=2)
 	correlation.to_csv('outputs/correlation.csv')
 
 	# plotting the footpoints on top of the twins maps
