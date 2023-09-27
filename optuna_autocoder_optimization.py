@@ -122,12 +122,12 @@ def Autoencoder(input_shape, trial, early_stopping_patience=10):
 
 		if i == 0:
 			e = Conv2D(filters=filters, kernel_size=3, activation=activation, strides=1, padding='same')(model_input)
+			filters = (filters*2)
 		elif i == (layers-1):
 			e = Conv2D(filters=filters, kernel_size=2, activation=activation, strides=2, padding='same')(e)
 		else:
 			e = Conv2D(filters=filters, kernel_size=3, activation=activation, strides=1, padding='same')(e)
-
-		filters = (filters*2)
+			filters = (filters*2)
 
 	shape = int_shape(e)
 
