@@ -107,9 +107,11 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=10):
 
 	model_input = Input(shape=input_shape, name='encoder_input')
 
-	e = Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(model_input)
+	e = Conv2D(filters=32, kernel_size=3, activation='relu', strides=1, padding='same')(model_input)
+	e = Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(e)
 	e = Conv2D(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(e)
 	e = Conv2D(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(e)
+	e = Conv2D(filters=512, kernel_size=3, activation='relu', strides=1, padding='same')(e)
 
 	shape = int_shape(e)
 
@@ -121,9 +123,11 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=10):
 
 	d = Reshape((shape[1], shape[2], shape[3]))(d)
 
+	d = Conv2DTranspose(filters=512, kernel_size=3, activation='relu', strides=1, padding='same')(d)
 	d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(d)
 	d = Conv2DTranspose(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(d)
 	d = Conv2DTranspose(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+	d = Conv2DTranspose(filters=32, kernel_size=3, activation='relu', strides=1, padding='same')(d)
 
 	model_outputs = Conv2DTranspose(filters=1, kernel_size=1, activation='linear', padding='same', name='decoder_output')(d)
 
@@ -145,7 +149,7 @@ def fit_autoencoder(model, train, val, early_stop):
 
 	'''
 
-	if not os.path.exists('models/autoencoder_v0.h5'):
+	if not os.path.exists('models/autoencoder_v3.h5'):
 
 		# # reshaping the model input vectors for a single channel
 		# train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
@@ -154,14 +158,14 @@ def fit_autoencoder(model, train, val, early_stop):
 		print(model.summary())
 
 		model.fit(train, train, validation_data=(val, val),
-					verbose=1, shuffle=True, epochs=200, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
+					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
 
 		# saving the model
-		model.save('models/autoencoder_v0.h5')
+		model.save('models/autoencoder_v3.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/autoencoder_v0.h5')				# loading the models if already trained
+		model = load_model('models/autoencoder_v3.h5')				# loading the models if already trained
 		print(model.summary())
 
 	return model
@@ -200,6 +204,9 @@ def main():
 	print('Loading data...')
 	train, val, test, input_shape = getting_prepared_data()
 
+	train = train[:(int(len(train)*0.5)),:,:]
+	val = val[:(int(len(val)*0.5)),:,:]
+
 	# creating the model
 	print('Initalizing model...')
 	autoencoder, encoder = Autoencoder(input_shape, train, val)
@@ -212,11 +219,8 @@ def main():
 	print('Making predictions...')
 	predictions = making_predictions(autoencoder, test)
 
-	# calculating the RMSE
-	metrics_test = test.reshape((test.shape[0], test.shape[1]*test.shape[2]))
-	metrics_predictions = predictions.reshape((predictions.shape[0], predictions.shape[1]*predictions.shape[2]))
-	rmse = np.sqrt(mean_squared_error(metrics_test, metrics_predictions))
-	print(f'RMSE: {rmse}')
+	# rmse = np.sqrt(mean_squared_error(test, predictions[:,:,:,0]))
+	# print(f'RMSE: {rmse}')
 
 	fig = plt.figure(figsize=(10, 10))
 	ax1 = fig.add_subplot(121)
@@ -229,7 +233,7 @@ def main():
 
 
 	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.bottleneck)
-	encoder.save('models/encoder_v0.h5')
+	encoder.save('models/encoder_v3.h5')
 
 	# # saving the results
 	# print('Saving results...')
