@@ -85,8 +85,8 @@ def getting_prepared_data():
 
 	train, val, test  = prep.twins_only_data_prep(CONFIG)
 
-	train = train[:(int(len(train)*0.01)),:,:]
-	val = val[:(int(len(val)*0.01)),:,:]
+	train = train[:(int(len(train)*0.1)),:,:]
+	val = val[:(int(len(val)*0.1)),:,:]
 
 	print(train.shape)
 	print(val.shape)
@@ -110,23 +110,24 @@ def Autoencoder(input_shape, trial, early_stopping_patience=10):
 	initial_filters = trial.suggest_categorical('initial_filters', [32, 64, 128, 256])
 	latent_dim = trial.suggest_int('latent_dim', 16, 128)
 	learning_rate = trial.suggest_loguniform('learning_rate', 1e-7, 1e-2)
-	layers = trial.suggest_int('layers', 1, 5)
+	layers = trial.suggest_int('layers', 2, 5)
 	activation = trial.suggest_categorical('activation', ['relu', 'tanh', 'sigmoid'])
 	loss = trial.suggest_categorical('loss', ['mse', 'binary_crossentropy'])
 
 
 	model_input = Input(shape=input_shape, name='encoder_input')
+	filters = initial_filters
 
 	for i in range(layers):
-		filters = initial_filters
+
 		if i == 0:
 			e = Conv2D(filters=filters, kernel_size=3, activation=activation, strides=1, padding='same')(model_input)
-		elif i == int(layers/2):
+		elif i == (layers-1):
 			e = Conv2D(filters=filters, kernel_size=2, activation=activation, strides=2, padding='same')(e)
 		else:
 			e = Conv2D(filters=filters, kernel_size=3, activation=activation, strides=1, padding='same')(e)
 
-		filters *= 2
+		filters = (filters*2)
 
 	shape = int_shape(e)
 
@@ -139,7 +140,7 @@ def Autoencoder(input_shape, trial, early_stopping_patience=10):
 	d = Reshape((shape[1], shape[2], shape[3]))(d)
 
 	for i in range(layers):
-		if i == int(layers/2):
+		if i == 0:
 			d = Conv2DTranspose(filters=filters, kernel_size=2, activation=activation, strides=2, padding='same')(d)
 		else:
 			d = Conv2DTranspose(filters=filters, kernel_size=3, activation=activation, strides=1, padding='same')(d)
@@ -160,11 +161,12 @@ def Autoencoder(input_shape, trial, early_stopping_patience=10):
 def objective(trial, train, val, test, input_shape):
 
 	model, early_stop = Autoencoder(input_shape, trial)
+	print(model.summary())
 	model.fit(train, train, validation_data=(val, val),
 				verbose=1, shuffle=True, epochs=500,
 				callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
 
-	return model.evaluate(test, test, verbose=1)[1]
+	return model.evaluate(test, test, verbose=1)
 
 
 def main():
@@ -180,7 +182,7 @@ def main():
 	storage = optuna.storages.InMemoryStorage()
 	# reshaping the model input vectors for a single channel
 	study = optuna.create_study(direction='minimize', study_name='autoencoder_optimization_trial')
-	study.optimize(lambda trial: objective(trial, train, val, test, input_shape), n_trials=100, n_jobs=-1)
+	study.optimize(lambda trial: objective(trial, train, val, test, input_shape), n_trials=100)
 	print(study.best_params)
 
 	optuna.visualization.plot_optimization_history(study).write_image('plots/optimization_history.png')
@@ -189,7 +191,7 @@ def main():
 
 	best_model, ___ = Autoencoder(input_shape, study.best_params)
 
-	best_model.evaluate(test, test)[1]
+	best_model.evaluate(test, test)
 
 	best_model.save('models/best_autoencoder.h5')
 
