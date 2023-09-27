@@ -107,10 +107,10 @@ def getting_prepared_data():
 def Autoencoder(input_shape, trial, early_stopping_patience=10):
 
 
-	initial_filters = trial.suggest_categorical('initial_filters', [32, 64, 128, 256])
-	latent_dim = trial.suggest_int('latent_dim', 16, 128)
+	initial_filters = trial.suggest_categorical('initial_filters', [32, 64, 128])
+	latent_dim = trial.suggest_categorical('latent_dim', [8, 16, 32, 64])
 	learning_rate = trial.suggest_loguniform('learning_rate', 1e-7, 1e-2)
-	layers = trial.suggest_int('layers', 2, 5)
+	layers = trial.suggest_int('layers', 2, 4)
 	activation = trial.suggest_categorical('activation', ['relu', 'tanh', 'sigmoid'])
 	loss = trial.suggest_categorical('loss', ['mse', 'binary_crossentropy'])
 
@@ -162,9 +162,14 @@ def objective(trial, train, val, test, input_shape):
 
 	model, early_stop = Autoencoder(input_shape, trial)
 	print(model.summary())
-	model.fit(train, train, validation_data=(val, val),
+	clear_session()
+	try:
+		model.fit(train, train, validation_data=(val, val),
 				verbose=1, shuffle=True, epochs=500,
 				callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
+	except ResourceExhaustedError:
+		print('Resource Exhausted Error')
+		return None
 
 	return model.evaluate(test, test, verbose=1)
 
