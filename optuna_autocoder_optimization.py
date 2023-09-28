@@ -167,7 +167,7 @@ def objective(trial, train, val, test, input_shape):
 		model.fit(train, train, validation_data=(val, val),
 				verbose=1, shuffle=True, epochs=500,
 				callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
-	except ResourceExhaustedError:
+	except:
 		print('Resource Exhausted Error')
 		return None
 
@@ -187,7 +187,7 @@ def main():
 	storage = optuna.storages.InMemoryStorage()
 	# reshaping the model input vectors for a single channel
 	study = optuna.create_study(direction='minimize', study_name='autoencoder_optimization_trial')
-	study.optimize(lambda trial: objective(trial, train, val, test, input_shape), n_trials=100)
+	study.optimize(lambda trial: objective(trial, train, val, test, input_shape), n_trials=100, callbacks=[lambda study, trial: gc.collect()])
 	print(study.best_params)
 
 	optuna.visualization.plot_optimization_history(study).write_image('plots/optimization_history.png')
