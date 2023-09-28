@@ -19,18 +19,17 @@ import pickle
 import subprocess
 import time
 
-import keras
 import matplotlib
 import matplotlib.animation as animation
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import tensorflow as tf
+import tensorflow
 import tqdm
 from scipy.special import expit, inv_boxcox
 from scipy.stats import boxcox
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from spacepy import pycdf
@@ -41,7 +40,6 @@ from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
                                      MaxPooling2D, concatenate)
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.python.keras.backend import get_session
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 from data_prep import DataPrep
 
@@ -117,7 +115,7 @@ def create_CNN_model(n_features, loss='mse', early_stop_patience=10):
 	model.add(Dense(MODEL_CONFIG['filters'], activation='relu'))
 	model.add(Dropout(0.2))
 	model.add(Dense(2, activation='linear'))
-	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
+	opt = tensorflow.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
 	model.compile(optimizer=opt, loss=loss)					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
@@ -125,7 +123,7 @@ def create_CNN_model(n_features, loss='mse', early_stop_patience=10):
 	return model, early_stop
 
 
-def fit_CNN(model, X_train, X_val, y_train, y_val, early_stop):
+def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop):
 	'''
 	Performs the actual fitting of the model.
 
@@ -144,7 +142,7 @@ def fit_CNN(model, X_train, X_val, y_train, y_val, early_stop):
 		model: fit model ready for making predictions.
 	'''
 
-	if not os.path.exists('models/test_non_twins_model.h5'):
+	if not os.path.exists('models/test_non_twins_model_v0.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
@@ -155,17 +153,17 @@ def fit_CNN(model, X_train, X_val, y_train, y_val, early_stop):
 					shuffle=True, epochs=MODEL_CONFIG['epochs'],  callbacks=[early_stop])
 
 		# saving the model
-		model.save('models/test_non_twins_model.h5')
+		model.save('models/test_non_twins_model_v0.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/test_non_twins_model.h5')				# loading the models if already trained
+		model = load_model('models/test_non_twins_model_v0.h5')				# loading the models if already trained
 
 
 	return model
 
 
-def making_predictions(model, X_test, y_test):
+def making_predictions(model, Xtest, ytest):
 	'''
 	Function using the trained models to make predictions with the testing data.
 
@@ -184,21 +182,21 @@ def making_predictions(model, X_test, y_test):
 	nans = pd.Series(np.isnan(Xtest.sum(axis=1).sum(axis=1)).reshape(len(np.isnan(Xtest.sum(axis=1).sum(axis=1))),))
 
 	predicted = model.predict(Xtest, verbose=1)						# predicting on the testing input data
-	predicted = tf.gather(predicted, [1], axis=1)					# grabbing the positive node
+	predicted = tensorflow.gather(predicted, [1], axis=1)					# grabbing the positive node
 	predicted = predicted.numpy()									# turning to a numpy array
 	predicted = pd.Series(predicted.reshape(len(predicted),))		# and then into a pd.series
 
 	temp_df = pd.DataFrame({'predicted':predicted,
 							'nans':nans})
 
-	temp_df.loc[temp_df['nans'] == True, 'predicted'] = np.nan
+	temp_df.loc[temp_df['nans'] is True, 'predicted'] = np.nan
 
-	results_df = {'y_test':y_test,
-					'predicted': predicted}						# and storing the results
+	results_df = pd.DataFrame({'y_test':ytest,
+					'predicted': predicted})						# and storing the results
 
 	# checking for nan data in the results
 	print('Pred has Nan: '+str(predicted.isnull().sum()))
-	print('Real has Nan: '+str(re.isnull().sum()))
+	print('ytest has Nan: '+str(ytest.isnull().sum()))
 
 	return results_df
 

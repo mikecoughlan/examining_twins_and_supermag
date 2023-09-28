@@ -103,7 +103,7 @@ class DataPrep:
 
 		# Loading the TWINS maps if load_twins == True:
 		if load_twins:
-			if twins_dir == None:
+			if twins_dir is None:
 				raise ValueError('TWINS directory not specified. TWINS directory must be specified if load_twins == True')
 			twins_files = sorted(glob.glob(twins_dir+'*.cdf', recursive=True))
 
@@ -168,16 +168,16 @@ class DataPrep:
 
 			if delay:
 				if delay_columns == 'all':
-					for col in stat.columns:
-						formatting_dict[feat][f'{station}_{feat}'] = stat[feat].shift(-delay_time)
+					for feat in stat.columns:
+						formatting_dict[feat][f'shifted_{station}_{feat}'] = stat[feat].shift(-delay_time)
 				else:
 					for feat in features:
 						if feat in delay_columns:
-							formatting_dict[feat][f'{station}_{feat}'] = stat[feat].shift(-delay_time)
+							formatting_dict[feat][f'shifted_{station}_{feat}'] = stat[feat].shift(-delay_time)
 						else:
 							formatting_dict[feat][f'{station}_{feat}'] = stat[feat]
 
-		if data_manipulations != None:
+		if data_manipulations is not None:
 			for feature in features:
 				temp_df = formatting_dict[feature].aggregate(data_manipulations, axis=1)
 				temp_df.columns = [f'{feature}_{col}' for col in temp_df.columns]
@@ -195,7 +195,7 @@ class DataPrep:
 			for var in rolling_vars:
 				self.regional_dataframe[f'shifted_{var}'] = self.regional_dataframe[var].rolling(indexer, min_periods=1).max()
 
-		if to_drop != None:
+		if to_drop is not None:
 			self.regional_dataframe.drop(to_drop, axis=1, inplace=True)
 
 		return self.regional_dataframe
@@ -223,9 +223,9 @@ class DataPrep:
 
 		# need to fully think out these time shifts.
 		if omni_or_ace == 'omni':
-			time_shift = 10
+			time_shift = 0
 		elif omni_or_ace == 'ace':
-			time_shift = 40
+			time_shift = 0
 		else:
 			raise ValueError('Must specify whether to use OMNI or ACE data')
 
@@ -279,17 +279,17 @@ class DataPrep:
 			if beginning_ix < 0:					# check if we are beyond the dataset
 				raise ValueError('Time history goes below the beginning of the dataset')
 			seq_x = sequences[beginning_ix:i, :]				# grabs the appropriate chunk of the data
-			if target != None:
+			if target is not None:
 				if np.isnan(seq_x).any():				# doesn't add arrays with nan values to the training set
 					print(f'nan values in the input array for {df["Date_UTC"][i]}')
 					bad_dates.append(df['Date_UTC'][i])
 					continue
-			if target != None:
+			if target is not None:
 				seq_y1 = target[i]				# gets the appropriate target
 				y1.append(seq_y1)
 			X.append(seq_x)
 
-		if target != None:
+		if target is not None:
 			return np.array(X), np.array(y1), bad_dates
 		else:
 			return np.array(X)
@@ -409,7 +409,7 @@ class DataPrep:
 
 	def twins_only_data_prep(self, config=None):
 
-		if config == None:
+		if config is None:
 			raise ValueError('Must specify a config file or variable dictionary.')
 
 		# loading gloabl data
@@ -428,7 +428,7 @@ class DataPrep:
 
 	def do_full_data_prep(self, config=None):
 
-		if config == None:
+		if config is None:
 			raise ValueError('Must specify a config file or variable dictionary.')
 
 		# loading gloabl data
