@@ -46,11 +46,11 @@ from data_prep import DataPrep
 os.environ["CDF_LIB"] = "~/CDF/lib"
 
 
-region_path = '../identifying_regions/outputs/twins_era_identified_regions_min_2.pkl'
+region_path = '../identifying_regions/outputs/adjusted_regions.pkl'
 region_number = '163'
 solarwind_path = '../data/SW/omniData.feather'
 supermag_dir_path = '../data/supermag/'
-twins_times_path = 'ENA_timestamps.csv'
+twins_times_path = 'outputs/regular_twins_map_dates.feather'
 rsd_path = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
 random_seed = 42
 
@@ -58,8 +58,8 @@ random_seed = 42
 # loading config and specific model config files. Using them as dictonaries
 with open('non_twins_config.json', 'r') as con:
 	CONFIG = json.load(con)
-
-with open('model_config.json', 'r') as mcon:
+print(os.getcwd())
+with open('model_config .json', 'r') as mcon:
 	MODEL_CONFIG = json.load(mcon)
 
 
@@ -189,14 +189,25 @@ def making_predictions(model, Xtest, ytest):
 	temp_df = pd.DataFrame({'predicted':predicted,
 							'nans':nans})
 
-	temp_df.loc[temp_df['nans'] is True, 'predicted'] = np.nan
+	temp_df.loc[temp_df['nans'] == True, 'predicted'] = np.nan
 
 	results_df = pd.DataFrame({'y_test':ytest,
 					'predicted': predicted})						# and storing the results
 
+	fig = plt.figure(figsize=(10,10))
+	plt.scatter(results_df['y_test'], results_df['predicted'], s=1)
+	plt.plot([0, 100], [0, 100], 'k--')
+	plt.xlabel('y_test')
+	plt.ylabel('predicted')
+	plt.title('Predicted vs. Actual')
+	plt.margins(x=0,y=0)
+	plt.ylim(0,100)
+	plt.xlim(0, 100)
+	plt.savefig('plots/non_twins_predicted_vs_actual.png')
+
 	# checking for nan data in the results
 	print('Pred has Nan: '+str(predicted.isnull().sum()))
-	print('ytest has Nan: '+str(ytest.isnull().sum()))
+	print('ytest has Nan: '+str(np.isnan(ytest).sum()))
 
 	return results_df
 
@@ -221,7 +232,8 @@ def calculate_some_metrics(results_df):
 	metrics = pd.DataFrame({'rmse':rmse,
 							'mae':mae,
 							'mape':mape,
-							'r2':r2})
+							'r2':r2},
+							index=[0])
 
 	return metrics
 
