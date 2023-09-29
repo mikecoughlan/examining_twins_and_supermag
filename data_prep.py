@@ -217,10 +217,10 @@ class DataPrep:
 		if to_drop is not None:
 			self.regional_dataframe.drop(to_drop, axis=1, inplace=True)
 
-		print(self.rsd.loc['2009-07-21 00:00:00':'2009-07-20 00:31:00'])
+		print(self.rsd.loc['2009-07-20 00:00:00':'2009-07-20 00:31:00'])
 		print(self.regional_dataframe[:20])
 		print(self.regional_dataframe.iloc[62575:62590])
-		print(self.regional_dataframe.loc['2009-07-21 00:00:00':'2009-07-20 00:31:00'])
+		print(self.regional_dataframe.loc['2009-07-20 00:00:00':'2009-07-20 00:31:00'])
 
 		return self.regional_dataframe
 
