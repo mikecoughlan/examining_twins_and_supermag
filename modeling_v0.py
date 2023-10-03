@@ -142,7 +142,7 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop):
 		model: fit model ready for making predictions.
 	'''
 
-	if not os.path.exists('models/test_non_twins_model_v0.h5'):
+	if not os.path.exists('models/test_non_twins_model_v1.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
@@ -153,11 +153,11 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop):
 					shuffle=True, epochs=MODEL_CONFIG['epochs'],  callbacks=[early_stop])
 
 		# saving the model
-		model.save('models/test_non_twins_model_v0.h5')
+		model.save('models/test_non_twins_model_v1.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/test_non_twins_model_v0.h5')				# loading the models if already trained
+		model = load_model('models/test_non_twins_model_v1.h5')				# loading the models if already trained
 
 
 	return model
@@ -205,6 +205,18 @@ def making_predictions(model, Xtest, ytest):
 	plt.xlim(0, 100)
 	plt.savefig('plots/non_twins_predicted_vs_actual.png')
 
+	fig = plt.figure(figsize=(10,10))
+	plt.hist2d(results_df['y_test'], results_df['predicted'], bins=[100,100], norm=matplotlib.colors.LogNorm())
+	plt.colorbar()
+	plt.plot([0, 100], [0, 100], 'k--')
+	plt.xlabel('y_test')
+	plt.ylabel('predicted')
+	plt.title('Predicted vs. Actual')
+	plt.margins(x=0,y=0)
+	plt.ylim(0,100)
+	plt.xlim(0, 100)
+	plt.savefig('plots/non_twins_predicted_vs_actual_hist.png')
+
 	# checking for nan data in the results
 	print('Pred has Nan: '+str(predicted.isnull().sum()))
 	print('ytest has Nan: '+str(np.isnan(ytest).sum()))
@@ -212,6 +224,11 @@ def making_predictions(model, Xtest, ytest):
 	return results_df
 
 def calculate_some_metrics(results_df):
+
+	print(f'Mean of y_test: {results_df["y_test"].mean()}')
+	print(f'Mean of predicted: {results_df["predicted"].mean()}')
+	print(f'Std of y_test: {results_df["y_test"].std()}')
+	print(f'Std of predicted: {results_df["predicted"].std()}')
 
 	# calculating the RMSE
 	rmse = np.sqrt(mean_squared_error(results_df['y_test'], results_df['predicted']))

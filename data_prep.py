@@ -99,6 +99,7 @@ class DataPrep:
 
 		# loading the twins times
 		self.twins_times = pd.read_feather(self.twins_times_path)
+		self.twins_times['dates'] = pd.to_datetime(self.twins_times['dates'], format='%Y-%m-%d %H:%M:$S').round('T')
 
 		# Loading the TWINS maps if load_twins == True:
 		if load_twins:
@@ -293,10 +294,19 @@ class DataPrep:
 		# Date_UTC column and the value fo the twins_dates series. '''
 		print(df.head())
 		df.index.name = 'Date_UTC'
-		print(df.loc['2009-07-21 00:00:00':'2009-07-20 00:31:00'])
+		print(df.loc['2009-07-20 00:00:00':'2009-07-20 00:31:00'])
 		df.reset_index(inplace=True, drop=False)
 		indices = df.index[df['Date_UTC'].isin(self.twins_times['dates'])].tolist()
 		not_indices = df.index[~df['Date_UTC'].isin(self.twins_times['dates'])].tolist()
+
+		matching = df['Date_UTC'][df['Date_UTC'].isin(self.twins_times['dates'])]
+		not_matching = df['Date_UTC'][~df['Date_UTC'].isin(self.twins_times['dates'])]
+
+		matching = pd.DataFrame({'matching':matching}).reset_index(drop=True)
+		not_matching = pd.DataFrame({'not_matching':not_matching}).reset_index(drop=True)
+		matching.to_feather('outputs/matching.feather')
+		not_matching.to_feather('outputs/not_matching.feather')
+
 		missing_twins = self.twins_times['dates'][~self.twins_times['dates'].isin(df['Date_UTC'])].tolist()
 		sequences = df.copy()
 		target = sequences[target_var]
