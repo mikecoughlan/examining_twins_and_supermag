@@ -19,7 +19,7 @@
 "sw_rolling_window": 5,
 "sw_rolling_vars": "all",
 "rolling_value": "mean",
-"target_var": "rsd_max",
+"target_var": "max_rsd",
 "time_history": 30,
 "solarwind_and_supermag_scaling_method": "standard",
 "test_size": 0.2,

@@ -21,7 +21,6 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import shapely
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -100,6 +99,7 @@ class DataPrep:
 
 		# loading the twins times
 		self.twins_times = pd.read_feather(self.twins_times_path)
+		self.twins_times['dates'] = pd.to_datetime(self.twins_times['dates'], format='%Y-%m-%d %H:%M:$S').round('T')
 
 		# Loading the TWINS maps if load_twins == True:
 		if load_twins:
@@ -177,15 +177,35 @@ class DataPrep:
 						else:
 							formatting_dict[feat][f'{station}_{feat}'] = stat[feat]
 
+			else:
+				for feat in features:
+					formatting_dict[feat][f'{station}_{feat}'] = stat[feat]
+
 		if data_manipulations is not None:
 			for feature in features:
-				temp_df = formatting_dict[feature].aggregate(data_manipulations, axis=1)
-				temp_df.columns = [f'{feature}_{col}' for col in temp_df.columns]
-				self.regional_dataframe = pd.concat([self.regional_dataframe, temp_df], axis=1, ignore_index=False)
+				for man in data_manipulations:
 
-		self.regional_dataframe['max_rsd'] = self.rsd['max_rsd']
-		self.regional_dataframe['MLT'] = self.rsd['MLT']
+					if man =='mean':
+						self.regional_dataframe[f'{feature}_mean'] = formatting_dict[feature].mean(axis=1)
+					elif man=='std':
+						self.regional_dataframe[f'{feature}_std'] = formatting_dict[feature].std(axis=1)
+					elif man == 'max':
+						self.regional_dataframe[f'{feature}_max'] = formatting_dict[feature].max(axis=1)
+					elif man == 'min':
+						self.regional_dataframe[f'{feature}_min'] = formatting_dict[feature].min(axis=1)
+					else:
+						temp_df = formatting_dict[feature].agg(data_manipulations, axis=1)
+						temp_df.columns = [f'{feature}_{col}' for col in temp_df.columns]
+						self.regional_dataframe = pd.concat([self.regional_dataframe, temp_df], axis=1, ignore_index=False)
 
+		else:
+			for feature in features:
+				self.regional_dataframe = pd.concat([self.regional_dataframe, formatting_dict[feature]], axis=1, ignore_index=False)
+
+		# self.regional_dataframe['max_rsd'] = self.rsd['max_rsd']
+		# self.regional_dataframe['MLT'] = self.rsd['MLT']
+
+		self.regional_dataframe = pd.concat([self.regional_dataframe, self.rsd['max_rsd'], self.rsd['MLT']], axis=1, ignore_index=False)
 		# sin and cos MLT are used to avoid the 23 -> 0 hard drop which the model may have trouble with
 		self.regional_dataframe['sinMLT'] = np.sin(self.regional_dataframe.MLT * 2 * np.pi * 15 / 360)
 		self.regional_dataframe['cosMLT'] = np.cos(self.regional_dataframe.MLT * 2 * np.pi * 15 / 360)
@@ -197,6 +217,11 @@ class DataPrep:
 
 		if to_drop is not None:
 			self.regional_dataframe.drop(to_drop, axis=1, inplace=True)
+
+		print(self.rsd.loc['2009-07-20 00:00:00':'2009-07-20 00:31:00'])
+		print(self.regional_dataframe[:20])
+		print(self.regional_dataframe.iloc[62575:62590])
+		print(self.regional_dataframe.loc['2009-07-20 00:00:00':'2009-07-20 00:31:00'])
 
 		return self.regional_dataframe
 
@@ -264,11 +289,25 @@ class DataPrep:
 				np.array (n, time history, n_features): array for model input
 				np.array (n, 1): target array
 			'''
-		df.reset_index(inplace=True, drop=False)			# resetting the index of the dataframe
 
 		# Getting the index values of the df based on maching the
 		# Date_UTC column and the value fo the twins_dates series. '''
+		print(df.head())
+		df.index.name = 'Date_UTC'
+		print(df.loc['2009-07-20 00:00:00':'2009-07-20 00:31:00'])
+		df.reset_index(inplace=True, drop=False)
 		indices = df.index[df['Date_UTC'].isin(self.twins_times['dates'])].tolist()
+		not_indices = df.index[~df['Date_UTC'].isin(self.twins_times['dates'])].tolist()
+
+		matching = df['Date_UTC'][df['Date_UTC'].isin(self.twins_times['dates'])]
+		not_matching = df['Date_UTC'][~df['Date_UTC'].isin(self.twins_times['dates'])]
+
+		matching = pd.DataFrame({'matching':matching}).reset_index(drop=True)
+		not_matching = pd.DataFrame({'not_matching':not_matching}).reset_index(drop=True)
+		matching.to_feather('outputs/matching.feather')
+		not_matching.to_feather('outputs/not_matching.feather')
+
+		missing_twins = self.twins_times['dates'][~self.twins_times['dates'].isin(df['Date_UTC'])].tolist()
 		sequences = df.copy()
 		target = sequences[target_var]
 		sequences.drop(['Date_UTC', target_var], axis=1, inplace=True)
@@ -278,13 +317,12 @@ class DataPrep:
 			beginning_ix = i - n_steps						# find the end of this pattern
 			if beginning_ix < 0:					# check if we are beyond the dataset
 				raise ValueError('Time history goes below the beginning of the dataset')
-			seq_x = sequences[beginning_ix:i, :]				# grabs the appropriate chunk of the data
+			seq_x = sequences[beginning_ix:i].to_numpy()				# grabs the appropriate chunk of the data
 			if target is not None:
 				if np.isnan(seq_x).any():				# doesn't add arrays with nan values to the training set
 					print(f'nan values in the input array for {df["Date_UTC"][i]}')
 					bad_dates.append(df['Date_UTC'][i])
 					continue
-			if target is not None:
 				seq_y1 = target[i]				# gets the appropriate target
 				y1.append(seq_y1)
 			X.append(seq_x)
@@ -314,9 +352,10 @@ class DataPrep:
 		'''
 
 		# combining the solarwind and supermag data.
-		supermag_and_solarwind_data = pd.concat([self.regional_dataframe, self.solarwind_data], axis=1, ignore_index=False)
+		supermag_and_solarwind_data = self.regional_dataframe.join(self.solarwind_data, how='inner')
 
 		print(supermag_and_solarwind_data.columns)
+		supermag_and_solarwind_data = supermag_and_solarwind_data.dropna(axis=0, how='any')
 
 		self.X, self.y, self.bad_dates = self.split_sequences(supermag_and_solarwind_data, target_var=target_var, n_steps=time_history)
 
@@ -383,8 +422,8 @@ class DataPrep:
 
 		if not only_twins:
 			# splitting the solar wind and supermag data into training, testing, and validation sets
-			self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=test_size, random_state=random_seed)
-			self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(self.X_train, self.y_train, test_size=val_size, random_state=random_state)
+			self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(self.X, self.y, test_size=test_size, random_state=self.random_seed)
+			self.X_train, self.X_val, self.y_train, self.y_val = train_test_split(self.X_train, self.y_train, test_size=val_size, random_state=self.random_seed)
 
 			# defining the solar wind and supermag scaler
 			if solarwind_and_supermag_scaling_method == 'standard':
@@ -395,9 +434,9 @@ class DataPrep:
 				raise ValueError('Must specify a valid scaling method for solarwind and supermag. Options are "standard" and "minmax".')
 
 			# scaling the solar wind and supermag data
-			self.X_train = self.scaler.fit_transform(self.X_train)
-			self.X_test = self.scaler.transform(self.X_test)
-			self.X_val = self.scaler.transform(self.X_val)
+			self.X_train = self.scaler.fit_transform(self.X_train.reshape(-1, self.X_train.shape[-1])).reshape(self.X_train.shape)
+			self.X_test = self.scaler.transform(self.X_test.reshape(-1, self.X_test.shape[-1])).reshape(self.X_test.shape)
+			self.X_val = self.scaler.transform(self.X_val.reshape(-1, self.X_val.shape[-1])).reshape(self.X_val.shape)
 
 		if only_twins:
 			return self.twins_x_train, self.twins_x_test, self.twins_x_val
