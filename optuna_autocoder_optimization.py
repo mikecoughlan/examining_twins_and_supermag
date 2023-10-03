@@ -29,6 +29,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 import pandas as pd
+import plotly
 import shapely
 import tensorflow as tf
 import tqdm
@@ -187,10 +188,10 @@ def main():
 	storage = optuna.storages.InMemoryStorage()
 	# reshaping the model input vectors for a single channel
 	study = optuna.create_study(direction='minimize', study_name='autoencoder_optimization_trial')
-	study.optimize(lambda trial: objective(trial, train, val, test, input_shape), n_trials=100, callbacks=[lambda study, trial: gc.collect()])
+	study.optimize(lambda trial: objective(trial, train, val, test, input_shape), n_trials=200, callbacks=[lambda study, trial: gc.collect()])
 	print(study.best_params)
 
-	optuna.visualization.plot_optimization_history(study).write_image('plots/optimization_history.png')
+	run_server(storage)
 
 	optuna.visualization.plot_param_importances(study).write_image('plots/param_importances.png')
 
@@ -200,9 +201,7 @@ def main():
 
 	best_model.save('models/best_autoencoder.h5')
 
-	run_server(storage)
-
-
+	optuna.visualization.plot_optimization_history(study).write_image('plots/optimization_history.png')
 
 
 
