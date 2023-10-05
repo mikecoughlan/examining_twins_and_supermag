@@ -10,11 +10,9 @@ from multiprocessing import Manager, Pool
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import pyspedas
-import pyspedas.geopack as pygeo
 import shapely
 from dateutil import parser
-from geopack import geopack, t89
+# from geopack import geopack, t89
 from matplotlib.cm import ScalarMappable
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Circle, Wedge
@@ -84,6 +82,20 @@ def loading_twins_maps():
 				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][35:125,40:140]
 
 	return maps
+
+
+def loading_algorithm_maps():
+
+	with open('outputs/twins_algo_dict.pkl', 'rb') as f:
+		maps = pickle.load(f)
+
+	new_maps = {}
+	for date, entry in maps.items():
+		date = date.strftime(format('%Y-%m-%d %H:%M:%S'))
+		new_maps[date] = {}
+		new_maps[date]['map'] = entry[35:125,40:140]
+
+	return new_maps
 
 
 def loading_solarwind():
@@ -441,7 +453,7 @@ def getting_ion_temp_for_footpoints(twins_dict, region_dfs_dict, station_geo_loc
 	'''
 
 	# correlation_dataframe = pd.DataFrame({'region':[], 'MLT':[], 'RSD':[], 'station':[], 'latitude':[], 'ion_temp':[], 'mean_sub_dbdt':[]})
-	regions, MLT, RSD, stations, latitude, ion_temps, mean_sub_dbdt = [], [], [], [], [], [], []
+	regions, MLT, RSD, stations, latitude, z_scores, ion_temps, mean_sub_dbdt = [], [], [], [], [], [], [], []
 	for region, data in region_dfs_dict.items():
 		region_df = data['combined_dfs']
 		for date in tqdm(region_df.index):
@@ -449,8 +461,13 @@ def getting_ion_temp_for_footpoints(twins_dict, region_dfs_dict, station_geo_loc
 			for station in data['station']:
 				try:
 					ion_temp = twins_dict[date.strftime(format='%Y-%m-%d %H:%M:%S')]['map'][math.floor(((footpoints[station]['xf']*2)+80)), math.floor(((footpoints[station]['yf']*2)+45))]
+					z_score = twins_dict[date.strftime(format='%Y-%m-%d %H:%M:%S')]['algorithm_map'][math.floor(((footpoints[station]['xf']*2)+80)), math.floor(((footpoints[station]['yf']*2)+45))]
 				except IndexError:
 					print(f'IndexError: {date} {station}')
+					print(f'Footpoint: {footpoints[station]}')
+					continue
+				except KeyError:
+					print(f'KeyError: {date} {station}')
 					print(f'Footpoint: {footpoints[station]}')
 					continue
 
@@ -460,6 +477,7 @@ def getting_ion_temp_for_footpoints(twins_dict, region_dfs_dict, station_geo_loc
 				stations.append(station)
 				latitude.append(station_geo_locations[station]['GEOLAT'])
 				ion_temps.append(ion_temp)
+				z_scores.append(z_score)
 				mean_sub_dbdt.append(region_df.loc[date][f'{station}_dbdt']-region_df.loc[date]['reg_mean'])
 				# correlation_dataframe = pd.concat([correlation_dataframe, {'region':region, 'MLT':region_df.loc[date]['MLT'], 'RSD':region_df.loc[date]['rsd'],
 				# 														'station':station, 'latitude':station_geo_locations[station]['GEOLAT'],
@@ -467,7 +485,7 @@ def getting_ion_temp_for_footpoints(twins_dict, region_dfs_dict, station_geo_loc
 				# 														axis=0)
 
 	correlation_dataframe = pd.DataFrame({'region':regions, 'MLT':MLT, 'RSD':RSD, 'station':stations,
-											'latitude':latitude, 'ion_temp':ion_temps, 'mean_sub_dbdt':mean_sub_dbdt})
+											'latitude':latitude, 'z_score':z_scores, 'ion_temp':ion_temps, 'mean_sub_dbdt':mean_sub_dbdt})
 
 	return correlation_dataframe
 
@@ -489,11 +507,14 @@ def calculating_ion_temp_and_footprint_correlations(correlation_dataframe, regio
 		correlation_dataframe = correlation_dataframe[correlation_dataframe['region']==region]
 
 	if segmenting_var:
-		correlations = pd.DataFrame({segmenting_var:[], 'correlation':[]})
+		correlations = pd.DataFrame({segmenting_var:[], 'temp_correlation':[], 'z_score_correlation':[]})
 		for value in range(int(correlation_dataframe[segmenting_var].min()), int(correlation_dataframe[segmenting_var].max()), segmenting_var_iterator):
 			iterated_dataframe = correlation_dataframe[(correlation_dataframe[segmenting_var]>=value) & (correlation_dataframe[segmenting_var]<(value+segmenting_var_iterator))]
-			correlations = correlations.append({segmenting_var:value, 'correlation':iterated_dataframe['ion_temp'].corr(iterated_dataframe['mean_sub_dbdt'])}, ignore_index=True)
-
+			correlations = pd.concat([correlations,pd.DataFrame({segmenting_var:value, 'temp_correlation':iterated_dataframe['ion_temp'].corr(iterated_dataframe['mean_sub_dbdt']), \
+													'z_score_correlation':iterated_dataframe['z_score'].corr(iterated_dataframe['mean_sub_dbdt'])}, index=[0])], ignore_index=True)
+			correlations.reset_index(drop=True, inplace=True)
+	print(f'Overall Ion Temp Corr: {correlation_dataframe["ion_temp"].corr(correlation_dataframe["mean_sub_dbdt"])}')
+	print(f'Overall Z Score Corr: {correlation_dataframe["z_score"].corr(correlation_dataframe["mean_sub_dbdt"])}')
 	return correlations
 
 def main():
@@ -579,6 +600,15 @@ def main():
 		# saving the updated twins dictionaryx
 		with open(f'outputs/twins_maps_with_footpoints_year_{year}.pkl', 'wb') as f:
 			pickle.dump(twins, f)
+
+	# Attaching the algorithm maps to the twins dictionary
+	algorithm_maps = loading_algorithm_maps()
+
+	print(final_twins.keys())
+	print(algorithm_maps.keys())
+	for date, entry in final_twins.items():
+		if date in algorithm_maps.keys():
+			entry['algorithm_map'] = algorithm_maps[date]['map']
 
 	if os.path.exists('outputs/correlation_dataframe.feather'):
 		correlation_dataframe = pd.read_feather('outputs/correlation_dataframe.feather')
