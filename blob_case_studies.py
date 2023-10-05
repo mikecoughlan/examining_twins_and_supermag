@@ -159,7 +159,7 @@ def combining_regional_dfs(stations, rsd, map_keys):
 		stat = loading_supermag(station)
 		stat = stat[start_time:end_time]
 		stat = stat[['dbht']]
-	
+
 		stat[f'{station}_dbdt'] = stat['dbht']
 		combined_stations = pd.concat([combined_stations, stat[f'{station}_dbdt']], axis=1, ignore_index=False)
 
@@ -219,11 +219,11 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 	if twins_or_algo == 'twins':
 		maps = data_dict['twins_maps']
 		# getting the maps within the date range
-		maps = {date:maps[date] for date in maps.keys() if date >= start_date and date <= end_date}
+		maps = {date:maps[date] for date in maps.keys() if datetime.strptime(date, '%Y-%m-%d %H:%M:%S') >= start_date and datetime.strptime(date, '%Y-%m-%d %H:%M:%S') <= end_date}
 	elif twins_or_algo == 'algo':
 		maps = data_dict['algorithm_maps']
 		# getting the maps within the date range
-		maps = {date:maps[date] for date in maps.keys() if date >= start_date and date <= end_date}
+		maps = {date:maps[date] for date in maps.keys() if datetime.strptime(date, '%Y-%m-%d %H:%M:%S') >= start_date and datetime.strptime(date, '%Y-%m-%d %H:%M:%S') <= end_date}
 	else:
 		raise ValueError('twins_or_algo must be either twins or algo')
 
@@ -237,17 +237,21 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 	mlt_bins = np.arange(0, 24, 1)
 	mlt_dict = {}
 	for mlt in mlt_bins:
-		mlt_df = pd.DataFrame()
+		mlt_df = pd.DataFrame(index=pd.date_range(start=pd.to_datetime(start_date), end=pd.to_datetime(end_date), freq='min'))
 		for region in regions.keys():
-			temp_df = segmented_regions[region]['combined_dfs'][segmented_regions[region]['combined_dfs']['MLT'].between(mlt, mlt+1)]
+			temp_df = segmented_regions[region][segmented_regions[region]['MLT'].between(mlt, mlt+1)]
 			mlt_df = pd.concat([mlt_df, temp_df['rsd']], axis=1, ignore_index=False)
 		mlt_df['max'] = mlt_df.max(axis=1)
+		mlt_df.dropna(inplace=True, subset=['max'])
 		mlt_dict[f'{mlt}'] = mlt_df
+
+	# setting the min and max values for the maps and the polar plot
+	finding_max_rsd = [mlt_dict[key]['max'].max() for key in mlt_dict.keys()]
 
 	map_min = 0
 	map_max = 20
 	polar_min = 0
-	polar_max = 200
+	polar_max = max(finding_max_rsd)
 	# plotting the maps and the regional data
 	for key in maps.keys():
 
@@ -255,7 +259,7 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 		fig = plt.figure(figsize=(20,10))
 		plt.title(f'{key}')
 		ax0=plt.subplot(121)
-		ax0.imshow(maps[key]['map'], cmap='jet', origin='lower', vmin=map_min, vmax=map_max)
+		plt.imshow(maps[key]['map'], cmap='jet', origin='lower', vmin=map_min, vmax=map_max)
 		plt.colorbar()
 
 		# plotting gridded max rsd
@@ -267,14 +271,15 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 		normalize = Normalize(vmin=polar_min, vmax=polar_max)
 		for i, df in enumerate(mlt_dict.values()):
 			theta = np.linspace(2 * np.pi * i / 24, 2 * np.pi * (i + 1) / 24, 100)
-			normed_data = normalize(df['max'])
-			colors = cmap(normed_data)
-
+			try:
+				colors = [cmap(normalize(df.loc[key]['max']))]
+			except KeyError:
+				continue
 			# Fill the arc between specified theta values
 			theta_start = 2 * np.pi * i / 24  # Adjust as needed
 			theta_end = 2 * np.pi * (i + 1) / 24  # Adjust as needed
 
-			ax.fill_between(theta, 0, r, where=(theta >= theta_start) & (theta <= theta_end),
+			ax1.fill_between(theta, 0, r, where=(theta >= theta_start) & (theta <= theta_end),
                     alpha=0.5, label=f'Section {i+1}', color=colors)
 		sm = plt.cm.ScalarMappable(cmap=cmap, norm=normalize)
 		sm.set_array([])

@@ -144,3 +144,4 @@ combined_dict.pkl
 geographic_combined_dict.pkl
 geomagnetic_combined_dict.pkl
 plots/footpoints_on_twins_maps/
+plots/
