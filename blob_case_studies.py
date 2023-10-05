@@ -89,11 +89,14 @@ def loading_algorithm_maps():
 	with open('outputs/twins_algo_dict.pkl', 'rb') as f:
 		maps = pickle.load(f)
 
+	times = pd.read_feather('outputs/regular_twins_map_dates.feather')
+
 	new_maps = {}
 	for date, entry in maps.items():
-		date = date.strftime(format('%Y-%m-%d %H:%M:%S'))
-		new_maps[date] = {}
-		new_maps[date]['map'] = entry[35:125,40:140]
+		if date in times.values:
+			date = date.strftime(format('%Y-%m-%d %H:%M:%S'))
+			new_maps[date] = {}
+			new_maps[date]['map'] = entry[35:125,40:140]
 
 	return new_maps
 
@@ -251,7 +254,7 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 	map_min = 0
 	map_max = 20
 	polar_min = 0
-	polar_max = max(finding_max_rsd)
+	polar_max = min(finding_max_rsd)
 	# plotting the maps and the regional data
 	for key in maps.keys():
 
@@ -265,7 +268,8 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 		# plotting gridded max rsd
 		ax1=plt.subplot(122, projection='polar')
 		ax1.set_theta_zero_location("W")
-		ax1.set_theta_direction(-1)
+		ax1.set_theta_direction(1)
+		ax1.set
 		r=1
 		cmap = plt.get_cmap('jet')
 		normalize = Normalize(vmin=polar_min, vmax=polar_max)
@@ -280,7 +284,8 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 			theta_end = 2 * np.pi * (i + 1) / 24  # Adjust as needed
 
 			ax1.fill_between(theta, 0, r, where=(theta >= theta_start) & (theta <= theta_end),
-                    alpha=0.5, label=f'Section {i+1}', color=colors)
+                    alpha=1, label=f'Section {i+1}', color=colors)
+			ax1.set_xticklabels(['0', '3', '6', '9', '12', '15', '18', '21'])
 		sm = plt.cm.ScalarMappable(cmap=cmap, norm=normalize)
 		sm.set_array([])
 		cbar = plt.colorbar(sm, ax=ax1)
