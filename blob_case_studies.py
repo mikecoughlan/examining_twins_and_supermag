@@ -169,9 +169,11 @@ def combining_regional_dfs(stations, rsd, map_keys):
 	mean_dbht = combined_stations.mean(axis=1)
 	max_dbht = combined_stations.max(axis=1)
 
+	indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=12)
+
 	combined_stations['reg_mean'] = mean_dbht
 	combined_stations['reg_max'] = max_dbht
-	combined_stations['rsd'] = rsd['max_rsd']['max_rsd']
+	combined_stations['rsd'] = rsd['max_rsd']['max_rsd'].rolling(indexer, min_periods=1).max()
 	combined_stations['MLT'] = rsd['max_rsd']['MLT']
 
 	segmented_df = combined_stations[combined_stations.index.isin(map_keys)]
