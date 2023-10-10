@@ -249,6 +249,22 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 		mlt_df['max'] = mlt_df.max(axis=1)
 		mlt_df.dropna(inplace=True, subset=['max'])
 		mlt_dict[f'{mlt}'] = mlt_df
+		print(f'Length of mlt_df for {mlt} MLT: {len(mlt_df)}. Mean max_RSD: {mlt_df["max"].mean()}. 99th Percentile: {mlt_df["max"].quantile(0.99)}')
+
+
+	# Taking the dfs in the mlt_dict and putting them in a stacked histogram
+	# fig = plt.figure(figsize=(20,10))
+	# plt.title(f'{mlt} MLT')
+	# plt.hist([mlt_df['max'] for mlt_df in mlt_dict.values()], bins=50, stacked=True, label=[f'{mlt} MLT' for mlt in mlt_bins], log=True)
+	# plt.legend()
+	# plt.show()
+
+	total_df = [mlt_df['max'].to_numpy() for mlt_df in mlt_dict.values()]
+
+	fig = plt.figure(figsize=(20,10))
+	plt.title(f'All MLTs')
+	plt.boxplot(total_df, vert=True, labels=[f'{mlt} MLT' for mlt in mlt_bins], whis=[5,95])
+	plt.show()
 
 	# setting the min and max values for the maps and the polar plot
 	finding_max_rsd = [mlt_dict[key]['max'].max() for key in mlt_dict.keys()]
@@ -256,7 +272,7 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 	map_min = 0
 	map_max = 20
 	polar_min = 0
-	polar_max = min(finding_max_rsd)
+	polar_max = 50
 	# plotting the maps and the regional data
 	for key in maps.keys():
 
@@ -302,10 +318,12 @@ def main():
 
 	data_dict = get_data()
 
-	start_date = pd.to_datetime('2012-03-08')
-	end_date = pd.to_datetime('2012-03-10')
+	# start_date = pd.to_datetime('2012-03-08')
+	# end_date = pd.to_datetime('2012-03-10')
+	start_date = pd.to_datetime('2009-07-20')
+	end_date = pd.to_datetime('2017-12-31')
 
-	plotting_intervls(data_dict, start_date, end_date, 'algo')
+	plotting_intervls(data_dict, start_date, end_date, 'twins')
 
 
 
