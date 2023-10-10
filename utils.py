@@ -179,3 +179,33 @@ def combining_regional_dfs(stations, rsd, map_keys):
 	segmented_df = combined_stations[combined_stations.index.isin(map_keys)]
 
 	return segmented_df
+
+
+def get_all_data():
+
+
+	# loading all the datasets and dictonaries
+	if os.path.exists('outputs/twins_maps_with_footpoints.pkl'):
+		with open('outputs/twins_maps_with_footpoints.pkl', 'rb') as f:
+			twins = pickle.load(f)
+	else:
+		twins = loading_twins_maps()
+
+	regions, stats = loading_dicts()
+	solarwind = loading_solarwind()
+
+	# reduce the regions dict to be only the ones that have keys in the region_numbers list
+	regions = {f'region_{reg}': regions[f'region_{reg}'] for reg in region_numbers}
+
+	# Getting regions data for each region
+	for region in regions.keys():
+
+		# getting dbdt and rsd data for the region
+		regions[region]['combined_dfs'] = combining_regional_dfs(regions[region]['station'], stats[region], twins.keys())
+
+	# Attaching the algorithm maps to the twins dictionary
+	algorithm_maps = loading_algorithm_maps()
+
+	data_dict = {'twins_maps':twins, 'solarwind':solarwind, 'regions':regions, 'algorithm_maps':algorithm_maps}
+
+	return data_dict
