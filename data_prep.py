@@ -416,9 +416,6 @@ class DataPrep:
 			self.twins_x_train = self.twins_scaler.fit_transform(self.twins_x_train.reshape(-1, self.twins_x_train.shape[-1])).reshape(self.twins_x_train.shape)
 			self.twins_x_test = self.twins_scaler.transform(self.twins_x_test.reshape(-1, self.twins_x_test.shape[-1])).reshape(self.twins_x_test.shape)
 			self.twins_x_val = self.twins_scaler.transform(self.twins_x_val.reshape(-1, self.twins_x_val.shape[-1])).reshape(self.twins_x_val.shape)
-			# self.twins_x_train = self.twins_scaler.fit_transform(twins_x_train)
-			# self.twins_x_test = self.twins_scaler.transform(twins_x_test)
-			# self.twins_x_val = self.twins_scaler.transform(twins_x_val)
 
 		if not only_twins:
 			# splitting the solar wind and supermag data into training, testing, and validation sets
@@ -444,6 +441,48 @@ class DataPrep:
 			return self.X_train, self.X_test, self.X_val, self.y_train, self.y_test, self.y_val, self.twins_x_train, self.twins_x_test, self.twins_x_val
 		else:
 			return self.X_train, self.X_test, self.X_val, self.y_train, self.y_test, self.y_val
+
+
+	def classification_column(df, param, thresh, forecast, window):
+		'''
+		Creating a new column which labels whether there will be a crossing of threshold
+			by the param selected in the forecast window.
+
+		Args:
+			df (pd.dataframe): dataframe containing the param values.
+			param (str): the paramaeter that is being examined for threshold crossings (dBHt for this study).
+			thresh (float or list of floats): threshold or list of thresholds to define parameter crossing.
+			forecast (int): how far out ahead we begin looking in minutes for threshold crossings.
+								If forecast=30, will begin looking 30 minutes ahead.
+			window (int): time frame in which we look for a threshold crossing starting at t=forecast.
+								If forecast=30, window=30, we look for threshold crossings from t+30 to t+60
+
+		Returns:
+			pd.dataframe: df containing a bool column called crossing and a persistance colmun
+		'''
+
+
+		df['shifted_{0}'.format(param)] = df[param].shift(-forecast)					# creates a new column that is the shifted parameter. Because time moves foreward with increasing
+																						# index, the shift time is the negative of the forecast instead of positive.
+		indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=window)			# Yeah this is annoying, have to create a forward rolling indexer because it won't do it automatically.
+		df['window_max'] = df['shifted_{0}'.format(param)].rolling(indexer, min_periods=1).max()		# creates new column in the df labeling the maximum parameter value in the forecast:forecast+window time frame
+		df['pers_max'] = df[param].rolling(0, min_periods=1).max()						# looks backwards to find the max param value in the time history limit
+		df.reset_index(drop=True, inplace=True)											# resets the index
+
+		'''This section creates a binary column for each of the thresholds. Binary will be one if the parameter
+			goes above the given threshold, and zero if it does not.'''
+
+		conditions = [(df['window_max'] < thresh), (df['window_max'] >= thresh)]			# defining the conditions
+		pers_conditions = [(df['pers_max'] < thresh), (df['pers_max'] >= thresh)]			# defining the conditions for a persistance model
+
+		binary = [0, 1] 																	# 0 if not cross 1 if cross
+
+		df['crossing'] = np.select(conditions, binary)						# new column created using the conditions and the binary
+		df['persistance'] = np.select(pers_conditions, binary)				# creating the persistance column
+
+		df.drop(['pers_max', 'window_max', 'shifted_dBHt'], axis=1, inplace=True)			# removes the working columns for memory purposes
+
+		return df
 
 
 	def twins_only_data_prep(self, config=None):

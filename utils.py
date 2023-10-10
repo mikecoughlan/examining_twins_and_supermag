@@ -138,7 +138,7 @@ def loading_supermag(station):
 	return df
 
 
-def combining_regional_dfs(stations, rsd, map_keys):
+def combining_regional_dfs(stations, rsd, map_keys=None):
 	'''
 	Combines the regional data into one dataframe
 
@@ -174,14 +174,30 @@ def combining_regional_dfs(stations, rsd, map_keys):
 	combined_stations['reg_mean'] = mean_dbht
 	combined_stations['reg_max'] = max_dbht
 	combined_stations['rsd'] = rsd['max_rsd']['max_rsd'].rolling(indexer, min_periods=1).max()
+	# combined_stations['rsd'] = rsd['max_rsd']['max_rsd']
 	combined_stations['MLT'] = rsd['max_rsd']['MLT']
 
-	segmented_df = combined_stations[combined_stations.index.isin(map_keys)]
+	if map_keys is not None:
+		segmented_df = combined_stations[combined_stations.index.isin(map_keys)]
 
 	return segmented_df
 
 
-def get_all_data():
+def calculate_percentiles(df, mlt_span, percentile):
+
+	# splitting up the regions based on MLT value into 1 degree bins
+	mlt_bins = np.arange(0, 24, mlt_span)
+	mlt_perc = {}
+	for mlt in mlt_bins:
+		mlt_df = df['MLT'].between(mlt, mlt+mlt_span)
+		mlt_df['max'] = mlt_df.max(axis=1)
+		mlt_df.dropna(inplace=True, subset=['max'])
+		mlt_perc[f'{mlt}'] = mlt_df['max'].quantile(percentile)
+	
+	return mlt_perc
+		
+
+def get_all_data(percentile, mlt_span):
 
 
 	# loading all the datasets and dictonaries
@@ -197,15 +213,27 @@ def get_all_data():
 	# reduce the regions dict to be only the ones that have keys in the region_numbers list
 	regions = {f'region_{reg}': regions[f'region_{reg}'] for reg in region_numbers}
 
+	percentile_dataframe = pd.DataFrame()
+
 	# Getting regions data for each region
 	for region in regions.keys():
 
 		# getting dbdt and rsd data for the region
-		regions[region]['combined_dfs'] = combining_regional_dfs(regions[region]['station'], stats[region], twins.keys())
+		temp_df = combining_regional_dfs(regions[region]['station'], stats[region], twins.keys())
+
+		# segmenting the rsd data for calculating percentiles
+		percentile_dataframe = pd.concat([percentile_dataframe, temp_df['rsd', 'MLT']], axis=0, ignore_index=True)
+
+		# attaching the regional data to the regions dictionary with only the keys that are in the twins dictionary
+		regions[region]['combined_dfs'] = temp_df[temp_df.index.isin(map_keys)]
+
+	# calculating the percentiles for each region
+	mlt_perc = calculate_percentiles(percentile_dataframe, mlt_span, percentile)
 
 	# Attaching the algorithm maps to the twins dictionary
 	algorithm_maps = loading_algorithm_maps()
 
-	data_dict = {'twins_maps':twins, 'solarwind':solarwind, 'regions':regions, 'algorithm_maps':algorithm_maps}
+	data_dict = {'twins_maps':twins, 'solarwind':solarwind, 'regions':regions, 
+					'algorithm_maps':algorithm_maps, 'percentiles':mlt_perc}
 
 	return data_dict
