@@ -219,13 +219,13 @@ def get_all_data(percentile, mlt_span):
 	for region in regions.keys():
 
 		# getting dbdt and rsd data for the region
-		temp_df = combining_regional_dfs(regions[region]['station'], stats[region], twins.keys())
+		temp_df = combining_regional_dfs(regions[region]['station'], stats[region])
 
 		# segmenting the rsd data for calculating percentiles
 		percentile_dataframe = pd.concat([percentile_dataframe, temp_df['rsd', 'MLT']], axis=0, ignore_index=True)
 
 		# attaching the regional data to the regions dictionary with only the keys that are in the twins dictionary
-		regions[region]['combined_dfs'] = temp_df[temp_df.index.isin(map_keys)]
+		regions[region]['combined_dfs'] = temp_df[temp_df.index.isin(twins.keys())]
 
 	# calculating the percentiles for each region
 	mlt_perc = calculate_percentiles(percentile_dataframe, mlt_span, percentile)
