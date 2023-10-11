@@ -100,6 +100,9 @@ def get_all_data(percentile, mlt_span):
 		# getting dbdt and rsd data for the region
 		temp_df = utils.combining_regional_dfs(regions[region]['station'], stats[region])
 
+		# cutting the temp df down to the TWINS era
+		temp_df = temp_df[pd.to_datetime('2009-07-20'):pd.to_datetime('2017-12-31')]
+
 		# segmenting the rsd data for calculating percentiles
 		percentile_dataframe = pd.concat([percentile_dataframe, temp_df[['rsd', 'MLT']]], axis=0, ignore_index=True)
 
@@ -171,10 +174,13 @@ def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=
 		X.append(data_dict['twins_maps'][date.strftime('%Y-%m-%d %H:%M:%S')]['map'])
 	X = np.array(X)
 
-	# splitting the data into training, validation, and testing sets
-	x_train, x_test, x_val, y_train, y_test, y_val = utils.splitting_and_scaling(X, y, random_seed=random_seed)
+	# getting dates so they can be split with the input and target data
+	dates = target_mlt_bin.index
 
-	return x_train, x_val, x_test, y_train, y_val, y_test
+	# splitting the data into training, validation, and testing sets
+	x_train, x_test, x_val, y_train, y_test, y_val, dates_dict = utils.splitting_and_scaling(X, y, dates, random_seed=random_seed)
+
+	return x_train, x_val, x_test, y_train, y_val, y_test, dates_dict
 
 
 def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patience=10):
@@ -252,7 +258,7 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 	return model
 
 
-def making_predictions(model, Xtest, ytest):
+def making_predictions(model, Xtest, ytest, test_dates):
 	'''
 	Function using the trained models to make predictions with the testing data.
 
@@ -273,11 +279,12 @@ def making_predictions(model, Xtest, ytest):
 	predicted = model.predict(Xtest, verbose=1)						# predicting on the testing input data
 	predicted = tf.gather(predicted, [[1]], axis=1)					# grabbing the positive node
 	predicted = predicted.numpy()									# turning to a numpy array
-	predicted = pd.Series(predicted.reshape(len(predicted),))		# and then into a pd.series
+	predicted = pd.Series(predicted.reshape(len(predicted),), index=test_dates)		# and then into a pd.series
+	ytest = pd.Series(ytest[:,1].reshape(len(ytest),), index=test_dates)									# turning the ytest into a pd.series
 
-	results_df = pd.DataFrame({'y_test':ytest,
-								'predicted': predicted})						# and storing the results
-
+	results_df = pd.DataFrame(index=test_dates)						# and storing the results
+	results_df['predicted'] = predicted
+	results_df['actual'] = ytest
 
 	return results_df
 
@@ -285,25 +292,26 @@ def making_predictions(model, Xtest, ytest):
 def calculate_some_metrics(results_df):
 
 	# calculating the RMSE
-	rmse = np.sqrt(mean_squared_error(results_df['y_test'], results_df['predicted']))
+	rmse = np.sqrt(mean_squared_error(results_df['actual'], results_df['predicted']))
 	print('RMSE: '+str(rmse))
 
 	# calculating the MAE
-	mae = mean_absolute_error(results_df['y_test'], results_df['predicted'])
+	mae = mean_absolute_error(results_df['actual'], results_df['predicted'])
 	print('MAE: '+str(mae))
 
 	# calculating the MAPE
-	mape = np.mean(np.abs((results_df['y_test'] - results_df['predicted']) / results_df['y_test'])) * 100
+	mape = np.mean(np.abs((results_df['actual'] - results_df['predicted']) / results_df['actual'])) * 100
 	print('MAPE: '+str(mape))
 
 	# calculating the R^2
-	r2 = r2_score(results_df['y_test'], results_df['predicted'])
+	r2 = r2_score(results_df['actual'], results_df['predicted'])
 	print('R^2: '+str(r2))
 
 	metrics = pd.DataFrame({'rmse':rmse,
 							'mae':mae,
 							'mape':mape,
-							'r2':r2})
+							'r2':r2},
+							index=[0])
 
 	return metrics
 
@@ -319,7 +327,7 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	xtrain, xval, xtest, ytrain, yval, ytest = getting_prepared_data(mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET, percentile=0.99,\
+	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET, percentile=0.99,\
 																				start_date=pd.to_datetime('2009-07-20'), end_date=pd.to_datetime('2017-12-31'))
 
 	# creating the model
@@ -333,15 +341,16 @@ def main():
 
 	# making predictions
 	print('Making predictions...')
-	results_df = making_predictions(MODEL, xtest, ytest)
+	results_df = making_predictions(MODEL, xtest, ytest, dates_dict['test'])
+	results_df = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
 
 	# saving the results
 	print('Saving results...')
 	results_df.to_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_2.feather')
 
-	# # calculating some metrics
-	# print('Calculating metrics...')
-	# metrics = calculate_some_metrics(results_df)
+	# calculating some metrics
+	print('Calculating metrics...')
+	metrics = calculate_some_metrics(results_df)
 
 	# # saving the metrics
 	# print('Saving metrics...')

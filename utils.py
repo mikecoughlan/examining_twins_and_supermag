@@ -214,7 +214,7 @@ def calculate_percentiles(df, mlt_span, percentile):
 	return mlt_perc
 
 
-def splitting_and_scaling(input_array, target_array, scaling_method='standard', test_size=0.2, val_size=0.25, random_seed=42):
+def splitting_and_scaling(input_array, target_array, dates=None, scaling_method='standard', test_size=0.2, val_size=0.25, random_seed=42):
 		'''
 		Splits the data into training, validation, and testing sets and scales the data.
 
@@ -234,9 +234,15 @@ def splitting_and_scaling(input_array, target_array, scaling_method='standard', 
 			np.array: validation target array
 		'''
 
+		if dates is not None:
+			x_train, x_test, y_train, y_test, dates_train, dates_test = train_test_split(input_array, target_array, dates, test_size=test_size, random_state=random_seed)
+			x_train, x_val, y_train, y_val, dates_train, dates_val = train_test_split(x_train, y_train, dates_train, test_size=val_size, random_state=random_seed)
+		
+			dates_dict = {'train':dates_train, 'test':dates_test, 'val':dates_val}
+		else:
+			x_train, x_test, y_train, y_test = train_test_split(input_array, target_array, test_size=test_size, random_state=random_seed)
+			x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=val_size, random_state=random_seed)
 
-		x_train, x_test, y_train, y_test = train_test_split(input_array, target_array, test_size=test_size, random_state=random_seed)
-		x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=val_size, random_state=random_seed)
 
 		# defining the TWINS scaler
 		if scaling_method == 'standard':
@@ -251,7 +257,7 @@ def splitting_and_scaling(input_array, target_array, scaling_method='standard', 
 		x_test = scaler.transform(x_test.reshape(-1, x_test.shape[-1])).reshape(x_test.shape)
 		x_val = scaler.transform(x_val.reshape(-1, x_val.shape[-1])).reshape(x_val.shape)
 
-		return x_train, x_test, x_val, y_train, y_test, y_val
+		return x_train, x_test, x_val, y_train, y_test, y_val, dates_dict
 
 
 
