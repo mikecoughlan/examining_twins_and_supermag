@@ -34,183 +34,34 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 						62, 327, 293, 241, 107, 55, 111]
 
 
-# def loading_dicts():
-# 	'''
-# 	Loads the regional dictionaries and stats dictionaries
-
-# 	Returns:
-# 		regions (dict): dictionary containing the regional dictionaries
-# 		stats (dict): dictionary containing the regional stats dictionaries including rsd and mlt data
-# 	'''
-
-# 	print('Loading regional dictionaries....')
-
-# 	with open(regions_dict, 'rb') as f:
-# 		regions = pickle.load(f)
-
-# 	regions = {f'region_{reg}': regions[f'region_{reg}'] for reg in region_numbers}
-
-# 	with open(regions_stat_dict, 'rb') as g:
-# 		stats = pickle.load(g)
-
-# 	stats = {f'region_{reg}': stats[f'region_{reg}'] for reg in region_numbers}
-
-# 	return regions, stats
+def get_all_data():
 
 
-# def loading_twins_maps():
-# 	'''
-# 	Loads the twins maps
+	# loading all the datasets and dictonaries
+	if os.path.exists('outputs/twins_maps_with_footpoints.pkl'):
+		with open('outputs/twins_maps_with_footpoints.pkl', 'rb') as f:
+			twins = pickle.load(f)
+	else:
+		twins = utils.loading_twins_maps()
 
-# 	Returns:
-# 		maps (dict): dictionary containing the twins maps
-# 	'''
+	regions, stats = utils.loading_dicts()
+	solarwind = utils.loading_solarwind()
 
+	# reduce the regions dict to be only the ones that have keys in the region_numbers list
+	regions = {f'region_{reg}': regions[f'region_{reg}'] for reg in region_numbers}
 
-# 	print('Loading twins maps....')
-# 	times = pd.read_feather('outputs/regular_twins_map_dates.feather')
-# 	twins_files = sorted(glob.glob(twins_dir+'*.cdf', recursive=True))
+	# Getting regions data for each region
+	for region in regions.keys():
 
-# 	maps = {}
+		# getting dbdt and rsd data for the region
+		regions[region]['combined_dfs'] = utils.combining_regional_dfs(regions[region]['station'], stats[region], twins.keys())
 
-# 	for file in twins_files:
-# 		twins_map = pycdf.CDF(file)
-# 		for i, date in enumerate(twins_map['Epoch']):
-# 			if len(np.unique(twins_map['Ion_Temperature'][i][50:140,40:100])) == 1:
-# 				continue
-# 			check = pd.to_datetime(date.strftime(format='%Y-%m-%d %H:%M:%S'), format='%Y-%m-%d %H:%M:%S')
-# 			if check in times.values:
-# 				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = {}
-# 				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][35:125,40:140]
+	# Attaching the algorithm maps to the twins dictionary
+	algorithm_maps = utils.loading_algorithm_maps()
 
-# 	return maps
+	data_dict = {'twins_maps':twins, 'solarwind':solarwind, 'regions':regions, 'algorithm_maps':algorithm_maps}
 
-
-# def loading_algorithm_maps():
-
-# 	with open('outputs/twins_algo_dict.pkl', 'rb') as f:
-# 		maps = pickle.load(f)
-
-# 	times = pd.read_feather('outputs/regular_twins_map_dates.feather')
-
-# 	new_maps = {}
-# 	for date, entry in maps.items():
-# 		if date in times.values:
-# 			date = date.strftime(format('%Y-%m-%d %H:%M:%S'))
-# 			new_maps[date] = {}
-# 			new_maps[date]['map'] = entry[35:125,40:140]
-
-# 	return new_maps
-
-
-# def loading_solarwind():
-# 	'''
-# 	Loads the solar wind data
-
-# 	Returns:
-# 		df (pd.dataframe): dataframe containing the solar wind data
-# 	'''
-
-# 	print('Loading solar wind data....')
-# 	df = pd.read_feather('../data/SW/ace_data.feather')
-# 	df.set_index('ACEepoch', inplace=True, drop=True)
-# 	df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
-
-# 	return df
-
-
-# def loading_supermag(station):
-# 	'''
-# 	Loads the supermag data
-
-# 	Args:
-# 		station (string): station of interest
-
-# 	Returns:
-# 		df (pd.dataframe): dataframe containing the supermag data with a datetime index
-# 	'''
-
-# 	print(f'Loading station {station}....')
-# 	df = pd.read_feather(supermag_dir+station+'.feather')
-
-# 	# limiting the analysis to the nightside
-# 	df.set_index('Date_UTC', inplace=True, drop=True)
-# 	df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
-
-# 	return df
-
-
-# def combining_regional_dfs(stations, rsd, map_keys):
-# 	'''
-# 	Combines the regional data into one dataframe
-
-# 	Args:
-# 		stations (list): list of stations in the region
-# 		rsd (pd.dataframe): dataframe containing the rsd and mlt data for the region
-# 		map_keys (list): list of keys for the twins maps
-
-# 	Returns:
-# 		segmented_df (pd.dataframe): dataframe containing the regional dbdt, rsd, and mlt data for a given date
-# 	'''
-
-# 	print('Combining regional data....')
-# 	start_time = pd.to_datetime('2009-07-20')
-# 	end_time = pd.to_datetime('2017-12-31')
-# 	twins_time_period = pd.date_range(start=start_time, end=end_time, freq='min')
-
-# 	combined_stations = pd.DataFrame(index=twins_time_period)
-
-# 	for station in stations:
-# 		stat = loading_supermag(station)
-# 		stat = stat[start_time:end_time]
-# 		stat = stat[['dbht']]
-
-# 		stat[f'{station}_dbdt'] = stat['dbht']
-# 		combined_stations = pd.concat([combined_stations, stat[f'{station}_dbdt']], axis=1, ignore_index=False)
-
-# 	mean_dbht = combined_stations.mean(axis=1)
-# 	max_dbht = combined_stations.max(axis=1)
-
-# 	indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=12)
-
-# 	combined_stations['reg_mean'] = mean_dbht
-# 	combined_stations['reg_max'] = max_dbht
-# 	combined_stations['rsd'] = rsd['max_rsd']['max_rsd'].rolling(indexer, min_periods=1).max()
-# 	combined_stations['MLT'] = rsd['max_rsd']['MLT']
-
-# 	segmented_df = combined_stations[combined_stations.index.isin(map_keys)]
-
-# 	return segmented_df
-
-
-# def get_all_data():
-
-
-# 	# loading all the datasets and dictonaries
-# 	if os.path.exists('outputs/twins_maps_with_footpoints.pkl'):
-# 		with open('outputs/twins_maps_with_footpoints.pkl', 'rb') as f:
-# 			twins = pickle.load(f)
-# 	else:
-# 		twins = utils.loading_twins_maps()
-
-# 	regions, stats = utils.loading_dicts()
-# 	solarwind = utils.loading_solarwind()
-
-# 	# reduce the regions dict to be only the ones that have keys in the region_numbers list
-# 	regions = {f'region_{reg}': regions[f'region_{reg}'] for reg in region_numbers}
-
-# 	# Getting regions data for each region
-# 	for region in regions.keys():
-
-# 		# getting dbdt and rsd data for the region
-# 		regions[region]['combined_dfs'] = utils.combining_regional_dfs(regions[region]['station'], stats[region], twins.keys())
-
-# 	# Attaching the algorithm maps to the twins dictionary
-# 	algorithm_maps = utils.loading_algorithm_maps()
-
-# 	data_dict = {'twins_maps':twins, 'solarwind':solarwind, 'regions':regions, 'algorithm_maps':algorithm_maps}
-
-# 	return data_dict
+	return data_dict
 
 
 def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
@@ -248,26 +99,12 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 		for region in regions.keys():
 			temp_df = segmented_regions[region][segmented_regions[region]['MLT'].between(mlt, mlt+1)]
 			mlt_df = pd.concat([mlt_df, temp_df['rsd']], axis=1, ignore_index=False)
-		mlt_df.columns = [f'region_{reg}' for reg in region_numbers]
-
-		fig = plt.figure(figsize=(20,10))
-		plt.boxplot(mlt_df, vert=True, labels=[f'{region}'for region in regions.keys()], whis=[5,95])
-		plt.title(f'{mlt} MLT')
-		plt.show()
-
 		mlt_df['max'] = mlt_df.max(axis=1)
 		mlt_df.dropna(inplace=True, subset=['max'])
 
 		mlt_dict[f'{mlt}'] = mlt_df
 		print(f'Length of mlt_df for {mlt} MLT: {len(mlt_df)}. Mean max_RSD: {mlt_df["max"].mean()}. 99th Percentile: {mlt_df["max"].quantile(0.99)}')
 
-
-	# Taking the dfs in the mlt_dict and putting them in a stacked histogram
-	# fig = plt.figure(figsize=(20,10))
-	# plt.title(f'{mlt} MLT')
-	# plt.hist([mlt_df['max'] for mlt_df in mlt_dict.values()], bins=50, stacked=True, label=[f'{mlt} MLT' for mlt in mlt_bins], log=True)
-	# plt.legend()
-	# plt.show()
 
 	total_df = [mlt_df['max'].to_numpy() for mlt_df in mlt_dict.values()]
 
@@ -326,7 +163,7 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 
 def main():
 
-	data_dict = utils.get_all_data(mlt_span=1, percentile=0.99)
+	data_dict = get_all_data()
 
 	# start_date = pd.to_datetime('2012-03-08')
 	# end_date = pd.to_datetime('2012-03-10')

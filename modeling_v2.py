@@ -66,6 +66,50 @@ with open('model_config.json', 'r') as mcon:
 	MODEL_CONFIG = json.load(mcon)
 
 
+
+def get_all_data(percentile, mlt_span):
+
+
+	# loading all the datasets and dictonaries
+	if os.path.exists('outputs/twins_maps_with_footpoints.pkl'):
+		with open('outputs/twins_maps_with_footpoints.pkl', 'rb') as f:
+			twins = pickle.load(f)
+	else:
+		twins = utils.loading_twins_maps()
+
+	regions, stats = utils.loading_dicts()
+	solarwind = utils.loading_solarwind()
+
+	# reduce the regions dict to be only the ones that have keys in the region_numbers list
+	regions = {f'region_{reg}': regions[f'region_{reg}'] for reg in region_numbers}
+
+	percentile_dataframe = pd.DataFrame()
+
+	# Getting regions data for each region
+	for region in regions.keys():
+
+		# getting dbdt and rsd data for the region
+		temp_df = utils.combining_regional_dfs(regions[region]['station'], stats[region])
+
+		# segmenting the rsd data for calculating percentiles
+		percentile_dataframe = pd.concat([percentile_dataframe, temp_df[['rsd', 'MLT']]], axis=0, ignore_index=True)
+
+		# attaching the regional data to the regions dictionary with only the keys that are in the twins dictionary
+		regions[region]['combined_dfs'] = temp_df[temp_df.index.isin(twins.keys())]
+
+	# calculating the percentiles for each region
+	mlt_perc = utils.calculate_percentiles(percentile_dataframe, mlt_span, percentile)
+
+	# Attaching the algorithm maps to the twins dictionary
+	algorithm_maps = utils.loading_algorithm_maps()
+
+	data_dict = {'twins_maps':twins, 'solarwind':solarwind, 'regions':regions,
+					'algorithm_maps':algorithm_maps, 'percentiles':mlt_perc}
+
+	return data_dict
+
+
+
 def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=pd.to_datetime('2009-07-20'), end_date=pd.to_datetime('2017-12-31')):
 
 	'''
@@ -84,7 +128,7 @@ def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=
 	end_date = pd.to_datetime('2017-12-31')
 	mlt_span = 1
 
-	data_dict = utils.get_all_data(percentile=percentile, mlt_span=mlt_span)
+	data_dict = get_all_data(percentile=percentile, mlt_span=mlt_span)
 
 	# splitting up the regions based on MLT value into 1 degree bins
 	mlt_bins = np.arange(0, 24, mlt_span)

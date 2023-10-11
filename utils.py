@@ -140,6 +140,18 @@ def loading_supermag(station):
 	return df
 
 
+def getting_mean_lat(stations):
+
+	# getting the mean latitude of the stations
+	latitudes = []
+	for station in stations:
+		latitudes.append(station['MLAT'].mean())
+
+	mean_lat = np.mean(latitudes)
+
+	return mean_lat
+
+
 def combining_regional_dfs(stations, rsd, map_keys=None):
 	'''
 	Combines the regional data into one dataframe
@@ -187,7 +199,6 @@ def combining_regional_dfs(stations, rsd, map_keys=None):
 		return combined_stations
 
 
-
 def calculate_percentiles(df, mlt_span, percentile):
 
 	# splitting up the regions based on MLT value into 1 degree bins
@@ -200,49 +211,6 @@ def calculate_percentiles(df, mlt_span, percentile):
 		mlt_perc[f'{mlt}'] = mlt_df['max'].quantile(percentile)
 
 	return mlt_perc
-
-
-def get_all_data(percentile, mlt_span):
-
-
-	# loading all the datasets and dictonaries
-	if os.path.exists('outputs/twins_maps_with_footpoints.pkl'):
-		with open('outputs/twins_maps_with_footpoints.pkl', 'rb') as f:
-			twins = pickle.load(f)
-	else:
-		twins = loading_twins_maps()
-
-	regions, stats = loading_dicts()
-	solarwind = loading_solarwind()
-
-	# reduce the regions dict to be only the ones that have keys in the region_numbers list
-	regions = {f'region_{reg}': regions[f'region_{reg}'] for reg in region_numbers}
-
-	percentile_dataframe = pd.DataFrame()
-
-	# Getting regions data for each region
-	for region in regions.keys():
-
-		# getting dbdt and rsd data for the region
-		temp_df = combining_regional_dfs(regions[region]['station'], stats[region])
-
-		# segmenting the rsd data for calculating percentiles
-		percentile_dataframe = pd.concat([percentile_dataframe, temp_df[['rsd', 'MLT']]], axis=0, ignore_index=True)
-
-		# attaching the regional data to the regions dictionary with only the keys that are in the twins dictionary
-		regions[region]['combined_dfs'] = temp_df[temp_df.index.isin(twins.keys())]
-
-	# calculating the percentiles for each region
-	mlt_perc = calculate_percentiles(percentile_dataframe, mlt_span, percentile)
-
-	# Attaching the algorithm maps to the twins dictionary
-	algorithm_maps = loading_algorithm_maps()
-
-	data_dict = {'twins_maps':twins, 'solarwind':solarwind, 'regions':regions,
-					'algorithm_maps':algorithm_maps, 'percentiles':mlt_perc}
-
-	return data_dict
-
 
 
 def splitting_and_scaling(input_array, target_array, scaling_method='standard', test_size=0.2, val_size=0.25, random_seed=42):
