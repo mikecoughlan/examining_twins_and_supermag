@@ -66,6 +66,15 @@ with open('model_config.json', 'r') as mcon:
 	MODEL_CONFIG = json.load(mcon)
 
 
+twins_dir = '../data/twins/'
+supermag_dir = '../data/supermag/'
+regions_dict = '../identifying_regions/outputs/twins_era_identified_regions_min_2.pkl'
+regions_stat_dict = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
+
+region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
+						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
+						62, 327, 293, 241, 107, 55, 111]
+
 
 def get_all_data(percentile, mlt_span):
 
@@ -168,7 +177,7 @@ def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=
 	return x_train, x_val, x_test, y_train, y_val, y_test
 
 
-def create_CNN_model(n_features, loss='mse', early_stop_patience=10):
+def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patience=10):
 	'''
 	Initializing our model
 
@@ -187,7 +196,7 @@ def create_CNN_model(n_features, loss='mse', early_stop_patience=10):
 	model = Sequential()						# initalizing the model
 
 	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same',
-								activation='relu', input_shape=(CONFIG['time_history'], n_features, 1)))			# adding the CNN layer
+								activation='relu', input_shape=input_shape))			# adding the CNN layer
 	model.add(MaxPooling2D())
 	model.add(Conv2D(MODEL_CONFIG['filters']*2, 2, padding='same', activation='relu'))			# adding the CNN layer
 	model.add(MaxPooling2D())
@@ -196,7 +205,7 @@ def create_CNN_model(n_features, loss='mse', early_stop_patience=10):
 	model.add(Dropout(0.2))
 	model.add(Dense(MODEL_CONFIG['filters'], activation='relu'))
 	model.add(Dropout(0.2))
-	model.add(Dense(2, activation='linear'))
+	model.add(Dense(2, activation='softmax'))
 	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
 	model.compile(optimizer=opt, loss=loss)					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
@@ -205,7 +214,7 @@ def create_CNN_model(n_features, loss='mse', early_stop_patience=10):
 	return model, early_stop
 
 
-def fit_CNN(model, X_train, X_val, y_train, y_val, early_stop):
+def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 	'''
 	Performs the actual fitting of the model.
 
@@ -224,7 +233,7 @@ def fit_CNN(model, X_train, X_val, y_train, y_val, early_stop):
 		model: fit model ready for making predictions.
 	'''
 
-	if not os.path.exists('models/test_non_twins_model.h5'):
+	if not os.path.exists(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
@@ -234,16 +243,16 @@ def fit_CNN(model, X_train, X_val, y_train, y_val, early_stop):
 					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
 
 		# saving the model
-		model.save('models/test_non_twins_model.h5')
+		model.save(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/test_non_twins_model.h5')				# loading the models if already trained
+		model = load_model(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2.h5')				# loading the models if already trained
 
 	return model
 
 
-def making_predictions(model, X_test, y_test):
+def making_predictions(model, Xtest, ytest):
 	'''
 	Function using the trained models to make predictions with the testing data.
 
@@ -262,21 +271,13 @@ def making_predictions(model, X_test, y_test):
 	nans = pd.Series(np.isnan(Xtest.sum(axis=1).sum(axis=1)).reshape(len(np.isnan(Xtest.sum(axis=1).sum(axis=1))),))
 
 	predicted = model.predict(Xtest, verbose=1)						# predicting on the testing input data
-	predicted = tf.gather(predicted, [1], axis=1)					# grabbing the positive node
+	predicted = tf.gather(predicted, [[1]], axis=1)					# grabbing the positive node
 	predicted = predicted.numpy()									# turning to a numpy array
 	predicted = pd.Series(predicted.reshape(len(predicted),))		# and then into a pd.series
 
-	temp_df = pd.DataFrame({'predicted':predicted,
-							'nans':nans})
+	results_df = pd.DataFrame({'y_test':ytest,
+								'predicted': predicted})						# and storing the results
 
-	temp_df.loc[temp_df['nans'] == True, 'predicted'] = np.nan
-
-	results_df = {'y_test':y_test,
-					'predicted': predicted}						# and storing the results
-
-	# checking for nan data in the results
-	print('Pred has Nan: '+str(predicted.isnull().sum()))
-	print('Real has Nan: '+str(re.isnull().sum()))
 
 	return results_df
 
@@ -313,35 +314,38 @@ def main():
 
 	'''
 
+	MLT_SPAN = 2
+	MLT_BIN_TARGET = 4
+
 	# loading all data and indicies
 	print('Loading data...')
-	X_train, X_val, X_test, y_train, y_val, y_test = getting_prepared_data(mlt_span=1, mlt_bin_target=0, percentile=0.99,\
+	xtrain, xval, xtest, ytrain, yval, ytest = getting_prepared_data(mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET, percentile=0.99,\
 																				start_date=pd.to_datetime('2009-07-20'), end_date=pd.to_datetime('2017-12-31'))
 
 	# creating the model
 	print('Initalizing model...')
-	MODEL, early_stop = create_CNN_model(X_train.shape[2], loss=MODEL_CONFIG['loss'],
+	MODEL, early_stop = create_CNN_model(input_shape=(xtrain.shape[1], xtrain.shape[2], 1), loss=MODEL_CONFIG['loss'],
 											early_stop_patience=MODEL_CONFIG['early_stop_patience'])
 
 	# fitting the model
 	print('Fitting model...')
-	MODEL = fit_CNN(MODEL, X_train, X_val, y_train, y_val, early_stop)
+	MODEL = fit_CNN(MODEL, xtrain, xval, ytrain, yval, early_stop, mlt_bin=MLT_BIN_TARGET, mlt_span=MLT_SPAN)
 
 	# making predictions
 	print('Making predictions...')
-	results_df = making_predictions(MODEL, X_test, y_test)
+	results_df = making_predictions(MODEL, xtest, ytest)
 
 	# saving the results
 	print('Saving results...')
-	results_df.to_feather('outputs/non_twins_results.feather')
+	results_df.to_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_2.feather')
 
-	# calculating some metrics
-	print('Calculating metrics...')
-	metrics = calculate_some_metrics(results_df)
+	# # calculating some metrics
+	# print('Calculating metrics...')
+	# metrics = calculate_some_metrics(results_df)
 
-	# saving the metrics
-	print('Saving metrics...')
-	metrics.to_feather('outputs/non_twins_metrics.feather')
+	# # saving the metrics
+	# print('Saving metrics...')
+	# metrics.to_feather('outputs/non_twins_metrics.feather')
 
 
 

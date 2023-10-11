@@ -145,7 +145,8 @@ def getting_mean_lat(stations):
 	# getting the mean latitude of the stations
 	latitudes = []
 	for station in stations:
-		latitudes.append(station['MLAT'].mean())
+		stat = loading_supermag(station)
+		latitudes.append(stat['MLAT'].mean())
 
 	mean_lat = np.mean(latitudes)
 

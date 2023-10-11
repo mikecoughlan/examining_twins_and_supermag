@@ -4,5 +4,5 @@
 "epochs": 300,
 "batch_size": 32,
 "early_stop_patience": 10,
-"loss": "mse"
+"loss": "binary_crossentropy"
 }
