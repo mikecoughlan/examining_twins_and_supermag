@@ -42,6 +42,7 @@ from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
                                      Dense, Dropout, Flatten, Input,
                                      MaxPooling2D, concatenate)
 from tensorflow.keras.models import Model, Sequential, load_model
+from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
 
 import utils
@@ -65,7 +66,8 @@ with open('model_config.json', 'r') as mcon:
 	MODEL_CONFIG = json.load(mcon)
 
 
-def getting_prepared_data():
+def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=pd.to_datetime('2009-07-20'), end_date=pd.to_datetime('2017-12-31')):
+
 	'''
 	Calling the data prep class without the TWINS data for this version of the model.
 
@@ -78,14 +80,48 @@ def getting_prepared_data():
 		y_test (np.array): testing targets for the model
 
 	'''
+	start_date = pd.to_datetime('2009-07-20')
+	end_date = pd.to_datetime('2017-12-31')
+	mlt_span = 1
 
-	prep = DataPrep(region_path, region_number, solarwind_path, supermag_dir_path, twins_times_path,
-					rsd_path, random_seed)
+	data_dict = utils.get_all_data(percentile=percentile, mlt_span=mlt_span)
 
-	X_train, X_val, X_test, y_train, y_val, y_test = prep.do_full_data_prep(CONFIG)
+	# splitting up the regions based on MLT value into 1 degree bins
+	mlt_bins = np.arange(0, 24, mlt_span)
+	mlt_dict = {}
+	for mlt in mlt_bins:
+		# TEMPORARY DURING THE DEBUGGING PROCESS!!!!!!
+		if mlt != mlt_bin_target:
+			continue
+		mlt_df = pd.DataFrame(index=pd.date_range(start=pd.to_datetime(start_date), end=pd.to_datetime(end_date), freq='min'))
+		for region in data_dict['regions'].values():
+			temp_df = region['combined_dfs'][region['combined_dfs']['MLT'].between(mlt, mlt+mlt_span)]
+			mlt_df = pd.concat([mlt_df, temp_df['rsd']], axis=1, ignore_index=False)
+		mlt_df['max'] = mlt_df.max(axis=1)
+		mlt_df.dropna(inplace=True, subset=['max'])
+		mlt_df = utils.classification_column(df=mlt_df, param='max', thresh=data_dict['percentiles'][f'{mlt}'], forecast=0, window=0)
+		mlt_dict[f'{mlt}'] = mlt_df
 
+	# segmenting the bin that's going to be trained on
+	target_mlt_bin = mlt_dict[f'{mlt_bin_target}']
 
-	return X_train, X_val, X_test, y_train, y_val, y_test
+	# making sure the dates for the twins maps and the targets match up
+	twins_dates = [key for key in data_dict['twins_maps'].keys()]
+	target_mlt_bin = target_mlt_bin[target_mlt_bin.index.isin(twins_dates)]
+
+	# creating the target vectors
+	y = to_categorical(target_mlt_bin['classification'].to_numpy(), num_classes=2)
+
+	# creating the input vectors
+	X = []
+	for date in target_mlt_bin.index:
+		X.append(data_dict['twins_maps'][date.strftime('%Y-%m-%d %H:%M:%S')]['map'])
+	X = np.array(X)
+
+	# splitting the data into training, validation, and testing sets
+	x_train, x_test, x_val, y_train, y_test, y_val = utils.splitting_and_scaling(X, y, random_seed=random_seed)
+
+	return x_train, x_val, x_test, y_train, y_val, y_test
 
 
 def create_CNN_model(n_features, loss='mse', early_stop_patience=10):
@@ -235,7 +271,8 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	X_train, X_val, X_test, y_train, y_val, y_test = getting_prepared_data()
+	X_train, X_val, X_test, y_train, y_val, y_test = getting_prepared_data(mlt_span=1, mlt_bin_target=0, percentile=0.99,\
+																				start_date=pd.to_datetime('2009-07-20'), end_date=pd.to_datetime('2017-12-31'))
 
 	# creating the model
 	print('Initalizing model...')

@@ -17,6 +17,8 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.collections import PatchCollection
 from matplotlib.colors import Normalize
 from matplotlib.patches import Circle, Wedge
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from spacepy import pycdf
 from tqdm import tqdm
 
@@ -179,8 +181,11 @@ def combining_regional_dfs(stations, rsd, map_keys=None):
 
 	if map_keys is not None:
 		segmented_df = combined_stations[combined_stations.index.isin(map_keys)]
+		return segmented_df
 
-	return segmented_df
+	else:
+		return combined_stations
+
 
 
 def calculate_percentiles(df, mlt_span, percentile):
@@ -189,13 +194,13 @@ def calculate_percentiles(df, mlt_span, percentile):
 	mlt_bins = np.arange(0, 24, mlt_span)
 	mlt_perc = {}
 	for mlt in mlt_bins:
-		mlt_df = df['MLT'].between(mlt, mlt+mlt_span)
+		mlt_df = df[df['MLT'].between(mlt, mlt+mlt_span)]
 		mlt_df['max'] = mlt_df.max(axis=1)
 		mlt_df.dropna(inplace=True, subset=['max'])
 		mlt_perc[f'{mlt}'] = mlt_df['max'].quantile(percentile)
-	
+
 	return mlt_perc
-		
+
 
 def get_all_data(percentile, mlt_span):
 
@@ -222,7 +227,7 @@ def get_all_data(percentile, mlt_span):
 		temp_df = combining_regional_dfs(regions[region]['station'], stats[region])
 
 		# segmenting the rsd data for calculating percentiles
-		percentile_dataframe = pd.concat([percentile_dataframe, temp_df['rsd', 'MLT']], axis=0, ignore_index=True)
+		percentile_dataframe = pd.concat([percentile_dataframe, temp_df[['rsd', 'MLT']]], axis=0, ignore_index=True)
 
 		# attaching the regional data to the regions dictionary with only the keys that are in the twins dictionary
 		regions[region]['combined_dfs'] = temp_df[temp_df.index.isin(twins.keys())]
@@ -233,7 +238,95 @@ def get_all_data(percentile, mlt_span):
 	# Attaching the algorithm maps to the twins dictionary
 	algorithm_maps = loading_algorithm_maps()
 
-	data_dict = {'twins_maps':twins, 'solarwind':solarwind, 'regions':regions, 
+	data_dict = {'twins_maps':twins, 'solarwind':solarwind, 'regions':regions,
 					'algorithm_maps':algorithm_maps, 'percentiles':mlt_perc}
 
 	return data_dict
+
+
+
+def splitting_and_scaling(input_array, target_array, scaling_method='standard', test_size=0.2, val_size=0.25, random_seed=42):
+		'''
+		Splits the data into training, validation, and testing sets and scales the data.
+
+		Args:
+			scaling_method (string): scaling method to use for the solar wind and supermag data.
+									Options are 'standard' and 'minmax'. Defaults to 'standard'.
+			test_size (float): size of the testing set. Defaults to 0.2.
+			val_size (float): size of the validation set. Defaults to 0.25. This equates to a 60-20-20 split for train-val-test
+			random_seed (int): random seed for reproducibility. Defaults to 42.
+
+		Returns:
+			np.array: training input array
+			np.array: testing input array
+			np.array: validation input array
+			np.array: training target array
+			np.array: testing target array
+			np.array: validation target array
+		'''
+
+
+		x_train, x_test, y_train, y_test = train_test_split(input_array, target_array, test_size=test_size, random_state=random_seed)
+		x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=val_size, random_state=random_seed)
+
+		# defining the TWINS scaler
+		if scaling_method == 'standard':
+			scaler = StandardScaler()
+		elif scaling_method == 'minmax':
+			scaler = MinMaxScaler()
+		else:
+			raise ValueError('Must specify a valid scaling method for TWINS. Options are "standard" and "minmax".')
+
+		# scaling the TWINS data
+		x_train = scaler.fit_transform(x_train.reshape(-1, x_train.shape[-1])).reshape(x_train.shape)
+		x_test = scaler.transform(x_test.reshape(-1, x_test.shape[-1])).reshape(x_test.shape)
+		x_val = scaler.transform(x_val.reshape(-1, x_val.shape[-1])).reshape(x_val.shape)
+
+		return x_train, x_test, x_val, y_train, y_test, y_val
+
+
+
+def classification_column(df, param, thresh, forecast, window):
+		'''
+		Creating a new column which labels whether there will be a crossing of threshold
+			by the param selected in the forecast window.
+
+		Args:
+			df (pd.dataframe): dataframe containing the param values.
+			param (str): the paramaeter that is being examined for threshold crossings (dBHt for this study).
+			thresh (float or list of floats): threshold or list of thresholds to define parameter crossing.
+			forecast (int): how far out ahead we begin looking in minutes for threshold crossings.
+								If forecast=30, will begin looking 30 minutes ahead.
+			window (int): time frame in which we look for a threshold crossing starting at t=forecast.
+								If forecast=30, window=30, we look for threshold crossings from t+30 to t+60
+
+		Returns:
+			pd.dataframe: df containing a bool column called crossing and a persistance colmun
+		'''
+
+
+		df[f'shifted_{param}'] = df[param].shift(-forecast)					# creates a new column that is the shifted parameter. Because time moves foreward with increasing
+
+		if window > 0:																				# index, the shift time is the negative of the forecast instead of positive.
+			indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=window)			# Yeah this is annoying, have to create a forward rolling indexer because it won't do it automatically.
+			df['window_max'] = df[f'shifted_{param}'].rolling(indexer, min_periods=1).max()		# creates new column in the df labeling the maximum parameter value in the forecast:forecast+window time frame
+		# df['pers_max'] = df[param].rolling(0, min_periods=1).max()						# looks backwards to find the max param value in the time history limit
+		else:
+			df['window_max'] = df[f'shifted_{param}']
+		# df.reset_index(drop=False, inplace=True)											# resets the index
+
+		'''This section creates a binary column for each of the thresholds. Binary will be one if the parameter
+			goes above the given threshold, and zero if it does not.'''
+
+		conditions = [(df['window_max'] < thresh), (df['window_max'] >= thresh)]			# defining the conditions
+		# pers_conditions = [(df['pers_max'] < thresh), (df['pers_max'] >= thresh)]			# defining the conditions for a persistance model
+
+		binary = [0, 1] 																	# 0 if not cross 1 if cross
+
+		df['classification'] = np.select(conditions, binary)						# new column created using the conditions and the binary
+		# df['persistance'] = np.select(pers_conditions, binary)				# creating the persistance column
+
+		# df.drop(['pers_max', 'window_max', f'shifted_{param}'], axis=1, inplace=True)			# removes the working columns for memory purposes
+		df.drop(['window_max', f'shifted_{param}'], axis=1, inplace=True)			# removes the working columns for memory purposes
+
+		return df

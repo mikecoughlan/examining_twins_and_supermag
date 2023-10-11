@@ -443,7 +443,7 @@ class DataPrep:
 			return self.X_train, self.X_test, self.X_val, self.y_train, self.y_test, self.y_val
 
 
-	def classification_column(df, param, thresh, forecast, window):
+	def classification_column(self, df, param, thresh, forecast, window):
 		'''
 		Creating a new column which labels whether there will be a crossing of threshold
 			by the param selected in the forecast window.

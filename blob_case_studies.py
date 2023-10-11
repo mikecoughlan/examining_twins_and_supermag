@@ -248,8 +248,16 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 		for region in regions.keys():
 			temp_df = segmented_regions[region][segmented_regions[region]['MLT'].between(mlt, mlt+1)]
 			mlt_df = pd.concat([mlt_df, temp_df['rsd']], axis=1, ignore_index=False)
+		mlt_df.columns = [f'region_{reg}' for reg in region_numbers]
+
+		fig = plt.figure(figsize=(20,10))
+		plt.boxplot(mlt_df, vert=True, labels=[f'{region}'for region in regions.keys()], whis=[5,95])
+		plt.title(f'{mlt} MLT')
+		plt.show()
+
 		mlt_df['max'] = mlt_df.max(axis=1)
 		mlt_df.dropna(inplace=True, subset=['max'])
+
 		mlt_dict[f'{mlt}'] = mlt_df
 		print(f'Length of mlt_df for {mlt} MLT: {len(mlt_df)}. Mean max_RSD: {mlt_df["max"].mean()}. 99th Percentile: {mlt_df["max"].quantile(0.99)}')
 
@@ -318,7 +326,7 @@ def plotting_intervls(data_dict, start_date, end_date, twins_or_algo):
 
 def main():
 
-	data_dict = utils.get_all_data()
+	data_dict = utils.get_all_data(mlt_span=1, percentile=0.99)
 
 	# start_date = pd.to_datetime('2012-03-08')
 	# end_date = pd.to_datetime('2012-03-10')
