@@ -243,7 +243,7 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 		model: fit model ready for making predictions.
 	'''
 
-	if not os.path.exists(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2.h5'):
+	if not os.path.exists(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_3.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
@@ -253,11 +253,11 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
 
 		# saving the model
-		model.save(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2.h5')
+		model.save(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_3.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2.h5')				# loading the models if already trained
+		model = load_model(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_3.h5')				# loading the models if already trained
 
 	return model
 
