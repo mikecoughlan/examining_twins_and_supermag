@@ -41,6 +41,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
                                      Dense, Dropout, Flatten, Input,
                                      MaxPooling2D, concatenate)
+from tensorflow.keras.losses import BinaryFocalCrossentropy
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
@@ -65,11 +66,12 @@ with open('twins_config.json', 'r') as con:
 with open('model_config.json', 'r') as mcon:
 	MODEL_CONFIG = json.load(mcon)
 
+# defining global vars used for saving files
+MLT_SPAN = 2
+MLT_BIN_TARGET = 4
+VERSION = '3-1'
 
-twins_dir = '../data/twins/'
-supermag_dir = '../data/supermag/'
-regions_dict = '../identifying_regions/outputs/twins_era_identified_regions_min_2.pkl'
-regions_stat_dict = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
+
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
@@ -99,6 +101,10 @@ def get_all_data(percentile, mlt_span):
 
 		# getting dbdt and rsd data for the region
 		temp_df = utils.combining_regional_dfs(regions[region]['station'], stats[region])
+
+		# getting the mean latitude for the region and attaching it to the regions dictionary
+		mean_lat = utils.getting_mean_lat(regions[region]['station'])
+		regions[region]['mean_lat'] = mean_lat
 
 		# cutting the temp df down to the TWINS era
 		temp_df = temp_df[pd.to_datetime('2009-07-20'):pd.to_datetime('2017-12-31')]
@@ -138,7 +144,6 @@ def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=
 	'''
 	start_date = pd.to_datetime('2009-07-20')
 	end_date = pd.to_datetime('2017-12-31')
-	mlt_span = 1
 
 	data_dict = get_all_data(percentile=percentile, mlt_span=mlt_span)
 
@@ -151,11 +156,26 @@ def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=
 			continue
 		mlt_df = pd.DataFrame(index=pd.date_range(start=pd.to_datetime(start_date), end=pd.to_datetime(end_date), freq='min'))
 		for region in data_dict['regions'].values():
+
+			# segmenting one MLT wedge
 			temp_df = region['combined_dfs'][region['combined_dfs']['MLT'].between(mlt, mlt+mlt_span)]
+
 			mlt_df = pd.concat([mlt_df, temp_df['rsd']], axis=1, ignore_index=False)
+
+		mlt_df.columns = [f'region_{reg}' for reg in region_numbers]
+		max_regions = mlt_df.idxmax(axis=1)
 		mlt_df['max'] = mlt_df.max(axis=1)
+		mlt_df['region_max'] = max_regions
+
 		mlt_df.dropna(inplace=True, subset=['max'])
+
 		mlt_df = utils.classification_column(df=mlt_df, param='max', thresh=data_dict['percentiles'][f'{mlt}'], forecast=0, window=0)
+
+		mlt_df['mean_lat'] = mlt_df['region_max'].apply(lambda x: data_dict['regions'][x]['mean_lat'])
+
+		# getting only the mid and high lat data
+		mlt_df = mlt_df[mlt_df['mean_lat'] >= 55]
+
 		mlt_dict[f'{mlt}'] = mlt_df
 
 	# segmenting the bin that's going to be trained on
@@ -178,7 +198,7 @@ def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=
 	dates = target_mlt_bin.index
 
 	# splitting the data into training, validation, and testing sets
-	x_train, x_test, x_val, y_train, y_test, y_val, dates_dict = utils.splitting_and_scaling(X, y, dates, random_seed=random_seed)
+	x_train, x_test, x_val, y_train, y_test, y_val, dates_dict = utils.splitting_and_scaling(X, y, dates, test_size=0.2, val_size=0.125, random_seed=random_seed)
 
 	return x_train, x_val, x_test, y_train, y_val, y_test, dates_dict
 
@@ -216,6 +236,7 @@ def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patienc
 	model.add(Dense(MODEL_CONFIG['filters'], activation='relu'))
 	model.add(Dropout(0.2))
 	model.add(Dense(2, activation='softmax'))
+	loss = BinaryFocalCrossentropy(apply_class_balancing=True, alpha=0.5, gamma=2.0)		# loss function that is good for imbalanced data
 	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
 	model.compile(optimizer=opt, loss=loss)					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
@@ -243,7 +264,7 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 		model: fit model ready for making predictions.
 	'''
 
-	if not os.path.exists(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_3.h5'):
+	if not os.path.exists(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_{VERSION}.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
@@ -253,11 +274,11 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
 
 		# saving the model
-		model.save(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_3.h5')
+		model.save(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_{VERSION}.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_3.h5')				# loading the models if already trained
+		model = load_model(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_{VERSION}.h5')				# loading the models if already trained
 
 	return model
 
@@ -326,9 +347,6 @@ def main():
 
 	'''
 
-	MLT_SPAN = 2
-	MLT_BIN_TARGET = 4
-
 	# loading all data and indicies
 	print('Loading data...')
 	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET, percentile=0.99,\
@@ -350,7 +368,7 @@ def main():
 
 	# saving the results
 	print('Saving results...')
-	results_df.to_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_2.feather')
+	results_df.to_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather')
 
 	# calculating some metrics
 	print('Calculating metrics...')

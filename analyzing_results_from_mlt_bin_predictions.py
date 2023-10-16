@@ -11,15 +11,24 @@ from sklearn.metrics import (auc, brier_score_loss, confusion_matrix,
 
 MLT_BIN_TARGET = 4
 MLT_SPAN = 2
-VERSION = 2
+VERSION = 3
+KEY = f'mid_and_high_regions_{MLT_BIN_TARGET}'
 
-def load_predictions():
+def load_predictions(use_dict=False):
 
-	if os.path.exists(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather'):
-		predictions = pd.read_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather')
-		predictions.set_index('Date_UTC', inplace=True)
+
+	if not use_dict:
+		if os.path.exists(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather'):
+			predictions = pd.read_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather')
+			predictions.set_index('Date_UTC', inplace=True)
+		else:
+			raise(f'You fool! You need to run the script modeling_v{VERSION}.py first. Throw yourself down next time and rid us of your stupidity!')
 	else:
-		raise(f'You fool! You need to run the script modeling_v{VERSION}.py first. Throw yourself down next time and rid us of your stupidity!')
+		with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.pkl', 'rb') as f:
+			predictions = pickle.load(f)
+			predictions = predictions[KEY]
+			predictions.set_index('Date_UTC', inplace=True)
+
 
 	return predictions
 
@@ -30,6 +39,7 @@ def load_segmented_mlt_dict():
 		segmented_mlt = pickle.load(f)
 
 	return segmented_mlt
+
 
 def plotting_simple_scatter(predictions):
 
@@ -178,11 +188,21 @@ def calculating_scores(predictions):
 	Hss = 2*((Tp*Tn)-(Fp*Fn))/(((Tp+Fn)*(Tn+Fn))+((Tp+Fp)*(Tn+Fp)))
 
 	# calculating the precision and recall
-	precision = Tp/(Tp+Fp)
-	recall = Tp/(Tp+Fn)
+	try:
+		precision = Tp/(Tp+Fp)
+	except ZeroDivisionError:
+		precision = 0
+
+	try:
+		recall = Tp/(Tp+Fn)
+	except ZeroDivisionError:
+		recall = 0
 
 	# calculating the f1 score
-	f1 = 2*((precision*recall)/(precision+recall))
+	try:
+		f1 = 2*((precision*recall)/(precision+recall))
+	except ZeroDivisionError:
+		f1 = 0
 
 	# calculating the rmse
 	rmse = np.sqrt(mean_squared_error(predictions['actual'], predictions['predicted']))
@@ -203,7 +223,7 @@ def main():
 	if not os.path.exists(f'outputs/analysis_plots_modeling_v{VERSION}/'):
 		os.makedirs(f'outputs/analysis_plots_modeling_v{VERSION}/')
 
-	predictions = load_predictions()
+	predictions = load_predictions(use_dict=False)
 	segmented_mlt = load_segmented_mlt_dict()
 
 	# plotting a simple scatter plot of the predictions vs the actual values
@@ -230,6 +250,8 @@ def main():
 	# calculating the scores for the predictions
 	scores = calculating_scores(predictions)
 	scores.to_csv(f'outputs/analysis_plots_modeling_v{VERSION}/scores.csv', index=False)
+
+	print('Done!')
 
 
 

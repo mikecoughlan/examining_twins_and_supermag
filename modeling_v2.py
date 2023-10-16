@@ -100,6 +100,10 @@ def get_all_data(percentile, mlt_span):
 		# getting dbdt and rsd data for the region
 		temp_df = utils.combining_regional_dfs(regions[region]['station'], stats[region])
 
+		# getting the mean latitude for the region and attaching it to the regions dictionary
+		mean_lat = utils.getting_mean_lat(regions[region]['station'])
+		regions[region]['mean_lat'] = mean_lat
+
 		# cutting the temp df down to the TWINS era
 		temp_df = temp_df[pd.to_datetime('2009-07-20'):pd.to_datetime('2017-12-31')]
 
@@ -138,7 +142,6 @@ def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=
 	'''
 	start_date = pd.to_datetime('2009-07-20')
 	end_date = pd.to_datetime('2017-12-31')
-	mlt_span = 1
 
 	data_dict = get_all_data(percentile=percentile, mlt_span=mlt_span)
 
@@ -151,11 +154,26 @@ def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=
 			continue
 		mlt_df = pd.DataFrame(index=pd.date_range(start=pd.to_datetime(start_date), end=pd.to_datetime(end_date), freq='min'))
 		for region in data_dict['regions'].values():
+
+			# segmenting one MLT wedge
 			temp_df = region['combined_dfs'][region['combined_dfs']['MLT'].between(mlt, mlt+mlt_span)]
+
 			mlt_df = pd.concat([mlt_df, temp_df['rsd']], axis=1, ignore_index=False)
+
+		mlt_df.columns = [f'region_{reg}' for reg in region_numbers]
+		max_regions = mlt_df.idxmax(axis=1)
 		mlt_df['max'] = mlt_df.max(axis=1)
+		mlt_df['region_max'] = max_regions
+
 		mlt_df.dropna(inplace=True, subset=['max'])
+
 		mlt_df = utils.classification_column(df=mlt_df, param='max', thresh=data_dict['percentiles'][f'{mlt}'], forecast=0, window=0)
+
+		mlt_df['mean_lat'] = mlt_df['region_max'].apply(lambda x: data_dict['regions'][x]['mean_lat'])
+
+		# getting only the mid and high lat data
+		mlt_df = mlt_df[mlt_df['mean_lat'] >= 55]
+
 		mlt_dict[f'{mlt}'] = mlt_df
 
 	# segmenting the bin that's going to be trained on
@@ -178,7 +196,7 @@ def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=
 	dates = target_mlt_bin.index
 
 	# splitting the data into training, validation, and testing sets
-	x_train, x_test, x_val, y_train, y_test, y_val, dates_dict = utils.splitting_and_scaling(X, y, dates, random_seed=random_seed)
+	x_train, x_test, x_val, y_train, y_test, y_val, dates_dict = utils.splitting_and_scaling(X, y, dates, test_size=0.2, val_size=0.125, random_seed=random_seed)
 
 	return x_train, x_val, x_test, y_train, y_val, y_test, dates_dict
 
@@ -203,10 +221,6 @@ def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patienc
 
 	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same',
 								activation='relu', input_shape=input_shape))			# adding the CNN layer
-	model.add(MaxPooling2D())
-	model.add(Conv2D(MODEL_CONFIG['filters']*2, 3, padding='same', activation='relu'))			# adding the CNN layer
-	model.add(MaxPooling2D())
-	model.add(Conv2D(MODEL_CONFIG['filters']*2, 3, padding='same', activation='relu'))			# adding the CNN layer
 	model.add(MaxPooling2D())
 	model.add(Conv2D(MODEL_CONFIG['filters']*2, 2, padding='same', activation='relu'))			# adding the CNN layer
 	model.add(MaxPooling2D())
@@ -243,7 +257,7 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 		model: fit model ready for making predictions.
 	'''
 
-	if not os.path.exists(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2.h5'):
+	if not os.path.exists(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2-1.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
@@ -253,11 +267,11 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
 
 		# saving the model
-		model.save(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2.h5')
+		model.save(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2-1.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2.h5')				# loading the models if already trained
+		model = load_model(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2-1.h5')				# loading the models if already trained
 
 	return model
 
@@ -311,11 +325,10 @@ def calculate_some_metrics(results_df):
 	r2 = r2_score(results_df['actual'], results_df['predicted'])
 	print('R^2: '+str(r2))
 
-	metrics = pd.DataFrame({'rmse':rmse,
+	metrics = {'rmse':rmse,
 							'mae':mae,
 							'mape':mape,
-							'r2':r2},
-							index=[0])
+							'r2':r2}
 
 	return metrics
 
@@ -331,8 +344,16 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET, percentile=0.99,\
-																				start_date=pd.to_datetime('2009-07-20'), end_date=pd.to_datetime('2017-12-31'))
+	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET,
+																				percentile=0.99, start_date=pd.to_datetime('2009-07-20'),
+																				end_date=pd.to_datetime('2017-12-31'))
+
+	print('xtrain shape: '+str(xtrain.shape))
+	print('xval shape: '+str(xval.shape))
+	print('xtest shape: '+str(xtest.shape))
+	print('ytrain shape: '+str(ytrain.shape))
+	print('yval shape: '+str(yval.shape))
+	print('ytest shape: '+str(ytest.shape))
 
 	# creating the model
 	print('Initalizing model...')
@@ -346,11 +367,16 @@ def main():
 	# making predictions
 	print('Making predictions...')
 	results_df = making_predictions(MODEL, xtest, ytest, dates_dict['test'])
-	results_df = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
+	results_dict = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
+
+	all_results_dict = {}
+	all_results_dict[f'mid_and_high_regions_{MLT_BIN_TARGET}'] = results_dict
 
 	# saving the results
 	print('Saving results...')
-	results_df.to_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_2.feather')
+	with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_2.pkl', 'ab') as f:
+		pickle.dump(all_results_dict, f)
+	# results_df.to_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_2.feather')
 
 	# calculating some metrics
 	print('Calculating metrics...')
