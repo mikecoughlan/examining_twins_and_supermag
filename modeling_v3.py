@@ -302,7 +302,7 @@ def making_predictions(model, Xtest, ytest, test_dates):
 	predicted = tf.gather(predicted, [[1]], axis=1)					# grabbing the positive node
 	predicted = predicted.numpy()									# turning to a numpy array
 	predicted = pd.Series(predicted.reshape(len(predicted),), index=test_dates)		# and then into a pd.series
-	ytest = pd.Series(ytest[:,1].reshape(len(ytest),), index=test_dates)									# turning the ytest into a pd.series
+	ytest = pd.Series(ytest[:,1].reshape(len(ytest),), index=test_dates)			# turning the ytest into a pd.series
 
 	results_df = pd.DataFrame(index=test_dates)						# and storing the results
 	results_df['predicted'] = predicted

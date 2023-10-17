@@ -188,6 +188,7 @@ def combining_regional_dfs(stations, rsd, map_keys=None):
 
 	combined_stations['reg_mean'] = mean_dbht
 	combined_stations['reg_max'] = max_dbht
+	combined_stations['rolling_max'] = max_dbht.rolling(indexer, min_periods=1).max()
 	combined_stations['rsd'] = rsd['max_rsd']['max_rsd'].rolling(indexer, min_periods=1).max()
 	# combined_stations['rsd'] = rsd['max_rsd']['max_rsd']
 	combined_stations['MLT'] = rsd['max_rsd']['MLT']
@@ -200,16 +201,15 @@ def combining_regional_dfs(stations, rsd, map_keys=None):
 		return combined_stations
 
 
-def calculate_percentiles(df, mlt_span, percentile):
+def calculate_percentiles(df, param, mlt_span, percentile):
 
 	# splitting up the regions based on MLT value into 1 degree bins
 	mlt_bins = np.arange(0, 24, mlt_span)
 	mlt_perc = {}
 	for mlt in mlt_bins:
 		mlt_df = df[df['MLT'].between(mlt, mlt+mlt_span)]
-		mlt_df['max'] = mlt_df.max(axis=1)
-		mlt_df.dropna(inplace=True, subset=['max'])
-		mlt_perc[f'{mlt}'] = mlt_df['max'].quantile(percentile)
+		mlt_df.dropna(inplace=True, subset=[param])
+		mlt_perc[f'{mlt}'] = mlt_df[param].quantile(percentile)
 
 	return mlt_perc
 
@@ -237,7 +237,7 @@ def splitting_and_scaling(input_array, target_array, dates=None, scaling_method=
 		if dates is not None:
 			x_train, x_test, y_train, y_test, dates_train, dates_test = train_test_split(input_array, target_array, dates, test_size=test_size, random_state=random_seed)
 			x_train, x_val, y_train, y_val, dates_train, dates_val = train_test_split(x_train, y_train, dates_train, test_size=val_size, random_state=random_seed)
-		
+
 			dates_dict = {'train':dates_train, 'test':dates_test, 'val':dates_val}
 		else:
 			x_train, x_test, y_train, y_test = train_test_split(input_array, target_array, test_size=test_size, random_state=random_seed)

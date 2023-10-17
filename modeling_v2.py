@@ -65,18 +65,15 @@ with open('twins_config.json', 'r') as con:
 with open('model_config.json', 'r') as mcon:
 	MODEL_CONFIG = json.load(mcon)
 
-
-twins_dir = '../data/twins/'
-supermag_dir = '../data/supermag/'
-regions_dict = '../identifying_regions/outputs/twins_era_identified_regions_min_2.pkl'
-regions_stat_dict = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
-
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
 						62, 327, 293, 241, 107, 55, 111]
 
+MLT_SPAN = 2
+MLT_BIN_TARGET = 4
+VERSION = '2-dbdt'
 
-def get_all_data(percentile, mlt_span):
+def get_all_data(prediction_param, percentile, mlt_span):
 
 
 	# loading all the datasets and dictonaries
@@ -108,13 +105,13 @@ def get_all_data(percentile, mlt_span):
 		temp_df = temp_df[pd.to_datetime('2009-07-20'):pd.to_datetime('2017-12-31')]
 
 		# segmenting the rsd data for calculating percentiles
-		percentile_dataframe = pd.concat([percentile_dataframe, temp_df[['rsd', 'MLT']]], axis=0, ignore_index=True)
+		percentile_dataframe = pd.concat([percentile_dataframe, temp_df[[prediction_param, 'MLT']]], axis=0, ignore_index=True)
 
 		# attaching the regional data to the regions dictionary with only the keys that are in the twins dictionary
 		regions[region]['combined_dfs'] = temp_df[temp_df.index.isin(twins.keys())]
 
 	# calculating the percentiles for each region
-	mlt_perc = utils.calculate_percentiles(percentile_dataframe, mlt_span, percentile)
+	mlt_perc = utils.calculate_percentiles(df=percentile_dataframe, param='reg_max', mlt_span=mlt_span, percentile=percentile)
 
 	# Attaching the algorithm maps to the twins dictionary
 	algorithm_maps = utils.loading_algorithm_maps()
@@ -126,7 +123,7 @@ def get_all_data(percentile, mlt_span):
 
 
 
-def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=pd.to_datetime('2009-07-20'), end_date=pd.to_datetime('2017-12-31')):
+def getting_prepared_data(prediction_param, mlt_span, mlt_bin_target, percentile=0.99, start_date=pd.to_datetime('2009-07-20'), end_date=pd.to_datetime('2017-12-31')):
 
 	'''
 	Calling the data prep class without the TWINS data for this version of the model.
@@ -143,22 +140,22 @@ def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=
 	start_date = pd.to_datetime('2009-07-20')
 	end_date = pd.to_datetime('2017-12-31')
 
-	data_dict = get_all_data(percentile=percentile, mlt_span=mlt_span)
+	data_dict = get_all_data(prediction_param=prediction_param, percentile=percentile, mlt_span=mlt_span)
 
 	# splitting up the regions based on MLT value into 1 degree bins
 	mlt_bins = np.arange(0, 24, mlt_span)
 	mlt_dict = {}
 	for mlt in mlt_bins:
 		# TEMPORARY DURING THE DEBUGGING PROCESS!!!!!!
-		if mlt != mlt_bin_target:
-			continue
+		# if mlt != mlt_bin_target:
+		# 	continue
 		mlt_df = pd.DataFrame(index=pd.date_range(start=pd.to_datetime(start_date), end=pd.to_datetime(end_date), freq='min'))
 		for region in data_dict['regions'].values():
 
 			# segmenting one MLT wedge
 			temp_df = region['combined_dfs'][region['combined_dfs']['MLT'].between(mlt, mlt+mlt_span)]
 
-			mlt_df = pd.concat([mlt_df, temp_df['rsd']], axis=1, ignore_index=False)
+			mlt_df = pd.concat([mlt_df, temp_df[prediction_param]], axis=1, ignore_index=False)
 
 		mlt_df.columns = [f'region_{reg}' for reg in region_numbers]
 		max_regions = mlt_df.idxmax(axis=1)
@@ -173,6 +170,8 @@ def getting_prepared_data(mlt_span, mlt_bin_target, percentile=0.99, start_date=
 
 		# getting only the mid and high lat data
 		mlt_df = mlt_df[mlt_df['mean_lat'] >= 55]
+
+		print(f'Percent of positive class for MLT {mlt}: {mlt_df["classification"].sum()/len(mlt_df)}')
 
 		mlt_dict[f'{mlt}'] = mlt_df
 
@@ -257,7 +256,7 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 		model: fit model ready for making predictions.
 	'''
 
-	if not os.path.exists(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2-1.h5'):
+	if not os.path.exists(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_{VERSION}.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
@@ -267,11 +266,11 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
 
 		# saving the model
-		model.save(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2-1.h5')
+		model.save(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_{VERSION}.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_2-1.h5')				# loading the models if already trained
+		model = load_model(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_{VERSION}.h5')				# loading the models if already trained
 
 	return model
 
@@ -298,7 +297,7 @@ def making_predictions(model, Xtest, ytest, test_dates):
 	predicted = tf.gather(predicted, [[1]], axis=1)					# grabbing the positive node
 	predicted = predicted.numpy()									# turning to a numpy array
 	predicted = pd.Series(predicted.reshape(len(predicted),), index=test_dates)		# and then into a pd.series
-	ytest = pd.Series(ytest[:,1].reshape(len(ytest),), index=test_dates)									# turning the ytest into a pd.series
+	ytest = pd.Series(ytest[:,1].reshape(len(ytest),), index=test_dates)			# turning the ytest into a pd.series
 
 	results_df = pd.DataFrame(index=test_dates)						# and storing the results
 	results_df['predicted'] = predicted
@@ -339,12 +338,9 @@ def main():
 
 	'''
 
-	MLT_SPAN = 2
-	MLT_BIN_TARGET = 4
-
 	# loading all data and indicies
 	print('Loading data...')
-	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET,
+	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(prediction_param='rolling_max', mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET,
 																				percentile=0.99, start_date=pd.to_datetime('2009-07-20'),
 																				end_date=pd.to_datetime('2017-12-31'))
 
@@ -369,14 +365,14 @@ def main():
 	results_df = making_predictions(MODEL, xtest, ytest, dates_dict['test'])
 	results_dict = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
 
-	all_results_dict = {}
-	all_results_dict[f'mid_and_high_regions_{MLT_BIN_TARGET}'] = results_dict
+	# all_results_dict = {}
+	# all_results_dict[f'mid_and_high_regions_{MLT_BIN_TARGET}'] = results_dict
 
-	# saving the results
-	print('Saving results...')
-	with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_2.pkl', 'ab') as f:
-		pickle.dump(all_results_dict, f)
-	# results_df.to_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_2.feather')
+	# # saving the results
+	# print('Saving results...')
+	# with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_.pkl', 'ab') as f:
+	# 	pickle.dump(all_results_dict, f)
+	results_df.to_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather')
 
 	# calculating some metrics
 	print('Calculating metrics...')
