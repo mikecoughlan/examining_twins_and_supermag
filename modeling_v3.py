@@ -21,7 +21,6 @@ import pickle
 import subprocess
 import time
 
-import keras
 import matplotlib
 import matplotlib.animation as animation
 import matplotlib.image as mpimg
@@ -36,7 +35,6 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from spacepy import pycdf
-from tensorflow.keras.backend import clear_session
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
                                      Dense, Dropout, Flatten, Input,
@@ -44,7 +42,6 @@ from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
 from tensorflow.keras.losses import BinaryFocalCrossentropy
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.utils import to_categorical
-from tensorflow.python.keras.backend import get_session
 
 import utils
 from data_prep import DataPrep
@@ -237,7 +234,7 @@ def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patienc
 	model.add(Dropout(0.2))
 	model.add(Dense(2, activation='softmax'))
 	loss = BinaryFocalCrossentropy(apply_class_balancing=True, alpha=0.5, gamma=2.0)		# loss function that is good for imbalanced data
-	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
+	opt = tf.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
 	model.compile(optimizer=opt, loss=loss)					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
@@ -250,12 +247,12 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 	Performs the actual fitting of the model.
 
 	Args:
-		model (keras model): model as defined in the create_model function.
+		model ( model): model as defined in the create_model function.
 		xtrain (3D np.array): training data inputs
 		xval (3D np.array): validation inputs
 		ytrain (2D np.array): training target vectors
 		yval (2D np.array): validation target vectors
-		early_stop (keras early stopping dict): predefined early stopping function
+		early_stop ( early stopping dict): predefined early stopping function
 		split (int): split being trained. Used for saving model.
 		station (str): station being trained.
 		first_time (bool, optional): if True model will be trainined, False model will be loaded. Defaults to True.

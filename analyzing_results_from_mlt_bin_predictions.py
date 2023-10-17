@@ -11,7 +11,7 @@ from sklearn.metrics import (auc, brier_score_loss, confusion_matrix,
 
 MLT_BIN_TARGET = 4
 MLT_SPAN = 2
-VERSION = 3
+VERSION = '3-1'
 KEY = f'mid_and_high_regions_{MLT_BIN_TARGET}'
 
 def load_predictions(use_dict=False):
