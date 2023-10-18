@@ -103,7 +103,7 @@ def loading_algorithm_maps():
 	return new_maps
 
 
-def loading_solarwind():
+def loading_solarwind(omni=False):
 	'''
 	Loads the solar wind data
 
@@ -112,9 +112,14 @@ def loading_solarwind():
 	'''
 
 	print('Loading solar wind data....')
-	df = pd.read_feather('../data/SW/ace_data.feather')
-	df.set_index('ACEepoch', inplace=True, drop=True)
-	df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
+	if omni:
+		df = pd.read_feather('../data/SW/omniData.feather')
+		df.set_index('Epoch', inplace=True, drop=True)
+		df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
+	else:
+		df = pd.read_feather('../data/SW/ace_data.feather')
+		df.set_index('ACEepoch', inplace=True, drop=True)
+		df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
 
 	return df
 
@@ -136,6 +141,7 @@ def loading_supermag(station):
 	# limiting the analysis to the nightside
 	df.set_index('Date_UTC', inplace=True, drop=True)
 	df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
+	df['theta'] = (np.arctan2(df['N'], df['E']) * 180 / np.pi)	# calculates the angle of B_H
 
 	return df
 
@@ -153,7 +159,7 @@ def getting_mean_lat(stations):
 	return mean_lat
 
 
-def combining_regional_dfs(stations, rsd, map_keys=None):
+def combining_regional_dfs(stations, rsd, map_keys=None, features=None):
 	'''
 	Combines the regional data into one dataframe
 
@@ -173,13 +179,22 @@ def combining_regional_dfs(stations, rsd, map_keys=None):
 
 	combined_stations = pd.DataFrame(index=twins_time_period)
 
+	feature_calculating_dict = {}
+	for feature in features:
+		feature_calculating_dict[feature] = pd.DataFrame(index=twins_time_period)
+
 	for station in stations:
 		stat = loading_supermag(station)
 		stat = stat[start_time:end_time]
-		stat = stat[['dbht']]
+		if features is not None:
+			stat = stat[features]
+			for feature in features:
+				feature_calculating_dict[feature][f'{station}_{feature}'] = stat[feature]
 
-		stat[f'{station}_dbdt'] = stat['dbht']
-		combined_stations = pd.concat([combined_stations, stat[f'{station}_dbdt']], axis=1, ignore_index=False)
+		else:
+			stat = stat[['dbht']]
+			stat[f'{station}_dbdt'] = stat['dbht']
+			combined_stations = pd.concat([combined_stations, stat[f'{station}_dbdt']], axis=1, ignore_index=False)
 
 	mean_dbht = combined_stations.mean(axis=1)
 	max_dbht = combined_stations.max(axis=1)
