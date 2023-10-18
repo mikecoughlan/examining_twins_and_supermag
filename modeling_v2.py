@@ -71,7 +71,7 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 
 MLT_SPAN = 2
 MLT_BIN_TARGET = 4
-VERSION = '2-dbdt'
+VERSION = '2-2'
 
 def get_all_data(prediction_param, percentile, mlt_span):
 
@@ -111,7 +111,7 @@ def get_all_data(prediction_param, percentile, mlt_span):
 		regions[region]['combined_dfs'] = temp_df[temp_df.index.isin(twins.keys())]
 
 	# calculating the percentiles for each region
-	mlt_perc = utils.calculate_percentiles(df=percentile_dataframe, param='reg_max', mlt_span=mlt_span, percentile=percentile)
+	mlt_perc = utils.calculate_percentiles(df=percentile_dataframe, param=prediction_param, mlt_span=mlt_span, percentile=percentile)
 
 	# Attaching the algorithm maps to the twins dictionary
 	algorithm_maps = utils.loading_algorithm_maps()
@@ -155,7 +155,7 @@ def getting_prepared_data(prediction_param, mlt_span, mlt_bin_target, percentile
 			# segmenting one MLT wedge
 			temp_df = region['combined_dfs'][region['combined_dfs']['MLT'].between(mlt, mlt+mlt_span)]
 
-			mlt_df = pd.concat([mlt_df, temp_df[prediction_param]], axis=1, ignore_index=False)
+			mlt_df = pd.concat([mlt_df, temp_df[f'rolling_{prediction_param}']], axis=1, ignore_index=False)
 
 		mlt_df.columns = [f'region_{reg}' for reg in region_numbers]
 		max_regions = mlt_df.idxmax(axis=1)
@@ -340,7 +340,7 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(prediction_param='rolling_max', mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET,
+	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(prediction_param='rsd', mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET,
 																				percentile=0.99, start_date=pd.to_datetime('2009-07-20'),
 																				end_date=pd.to_datetime('2017-12-31'))
 
@@ -363,7 +363,7 @@ def main():
 	# making predictions
 	print('Making predictions...')
 	results_df = making_predictions(MODEL, xtest, ytest, dates_dict['test'])
-	results_dict = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
+	results_df = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
 
 	# all_results_dict = {}
 	# all_results_dict[f'mid_and_high_regions_{MLT_BIN_TARGET}'] = results_dict
@@ -372,6 +372,7 @@ def main():
 	# print('Saving results...')
 	# with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_.pkl', 'ab') as f:
 	# 	pickle.dump(all_results_dict, f)
+	# results_df.reset_index(inplace=True, drop=False).rename(columns={'index':'Date_UTC'})
 	results_df.to_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather')
 
 	# calculating some metrics
