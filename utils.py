@@ -186,9 +186,9 @@ def combining_regional_dfs(stations, rsd, map_keys=None):
 
 	indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=12)
 
-	combined_stations['reg_mean'] = mean_dbht
-	combined_stations['reg_max'] = max_dbht
-	combined_stations['rolling_max'] = max_dbht.rolling(indexer, min_periods=1).max()
+	combined_stations['dbdt_mean'] = mean_dbht
+	combined_stations['dbdt_max'] = max_dbht
+	combined_stations['rolling_dbdt_max'] = max_dbht.rolling(indexer, min_periods=1).max()
 	combined_stations['rsd'] = rsd['max_rsd']['max_rsd']
 	combined_stations['rolling_rsd'] = rsd['max_rsd']['max_rsd'].rolling(indexer, min_periods=1).max()
 	# combined_stations['rsd'] = rsd['max_rsd']['max_rsd']

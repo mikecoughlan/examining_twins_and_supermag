@@ -71,7 +71,7 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 
 MLT_SPAN = 2
 MLT_BIN_TARGET = 4
-VERSION = '2-2'
+VERSION = '2-dbdt'
 
 def get_all_data(prediction_param, percentile, mlt_span):
 
@@ -340,7 +340,7 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(prediction_param='rsd', mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET,
+	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(prediction_param='dbdt_max', mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET,
 																				percentile=0.99, start_date=pd.to_datetime('2009-07-20'),
 																				end_date=pd.to_datetime('2017-12-31'))
 
