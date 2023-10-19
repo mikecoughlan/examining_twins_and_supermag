@@ -10,8 +10,13 @@ from sklearn.tree import DecisionTreeClassifier
 
 import utils
 
-REGIONS = [163]
-FEATURES = ['']
+# list of regions. Taking two from each cluster and two low lat non cluster regions
+REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
+
+# supermag features to use
+FEATURES = ['N', 'E', 'theta', 'MAGNITUDE', 'dbht']
+
+# version number
 VERSION = 0
 
 
@@ -63,6 +68,10 @@ def loading_data():
 	regions, stats = utils.loading_dicts()
 	solarwind = utils.loading_solarwind(omni=True)
 
+	# converting the solarwind data to log10
+	solarwind['logT'] = np.log10(solarwind['T'])
+	solarwind.drop(columns=['T'], inplace=True)
+
 	# reduce the regions dict to be only the ones that have keys in the region_numbers list
 	regions = {f'region_{reg}': regions[f'region_{reg}'] for reg in REGIONS}
 
@@ -106,23 +115,42 @@ def finding_correlations(df, target, region):
 
 	# calculating the correlations
 	correlations = df.corr()
+	target_corrs = correlations[target].sort_values(ascending=False)
 
-	# plotting the correlations
+	# plotting the target correlations
 	plt.figure(figsize=(10,10))
-	plt.imshow(correlations, cmap='coolwarm', interpolation='none')
+	plt.imshow(target_corrs.values.reshape(-1,1), cmap='hot', interpolation='nearest')
 	plt.colorbar()
-	plt.xticks(range(len(correlations)), correlations.columns, rotation=90)
-	plt.yticks(range(len(correlations)), correlations.columns)
+	plt.yticks(np.arange(len(target_corrs.index)), target_corrs.index)
+	plt.xticks([])
 	plt.title('Correlations between features and target')
-	plt.savefig(f'plots/feature_engineering/region_{region}_correlations_v{VERSION}.png')
+	plt.savefig(f'plots/feature_engineering/{region}_target {target}_correlations_v{VERSION}.png')
+
+	# plotting the correlations between the features
+	plt.figure(figsize=(10,10))
+	plt.imshow(correlations.values, cmap='bwr', interpolation='nearest')
+	plt.colorbar()
+	plt.yticks(np.arange(len(correlations.index)), correlations.index)
+	plt.xticks(np.arange(len(correlations.columns)), correlations.columns, rotation=90)
+	plt.title('Correlations between features')
+	plt.savefig(f'plots/feature_engineering/{region}_features_correlations_v{VERSION}.png')
+
+	return correlations
 
 
 def main():
 
 	data_dict = loading_data()
 	data_dict = merging_solarwind_and_supermag(data_dict)
+	correlation_dict = {}
 	for region in data_dict['regions'].keys():
-		finding_correlations(data_dict['regions'][region]['merged_df'], target='rolling_rsd', region=region)
+		corr = finding_correlations(data_dict['regions'][region]['merged_df'], target='rolling_rsd', region=region)
+		correlation_dict[region] = corr
+	
+	print(correlation_dict['region_163']['rolling_rsd'].sort_values(ascending=False))
+
+	with open(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl', 'wb') as f:
+		pickle.dump(correlation_dict, f)
 
 
 if __name__ == '__main__':
