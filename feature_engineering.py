@@ -6,12 +6,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklern.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeClassifier
 
 import utils
 
-REGIONS = []
-FEATURES = []
+REGIONS = [163]
+FEATURES = ['']
+VERSION = 0
 
 
 def combining_stations_into_regions(stations, rsd, features, mean=False, std=False, maximum=False, median=False):
@@ -55,7 +56,7 @@ def combining_stations_into_regions(stations, rsd, features, mean=False, std=Fal
 	return regional_df
 
 
-def loading_data(prediction_param):
+def loading_data():
 
 	# loading all the datasets and dictonaries
 
@@ -82,8 +83,47 @@ def loading_data(prediction_param):
 	return data_dict
 
 
-def finding_correlations(df, target):
+def merging_solarwind_and_supermag(data_dict):
 
-	correlations = df.corr()[target].sort_values(ascending=False)
+	# merging the solarwind and supermag dataframes
+	for region in data_dict['regions'].keys():
+		data_dict['regions'][region]['merged_df'] = pd.merge(data_dict['regions'][region]['regional_df'], \
+																data_dict['solarwind'], left_index=True, \
+																right_index=True, how='inner')
 
-	return correlations
+	return data_dict
+
+
+def finding_correlations(df, target, region):
+	'''
+	Calculates and plots the correlations between the features and the target
+
+	Args:
+		df (pandas dataframe): df of all the input features and the target variable
+		target (string): string of the column name of the target variable
+		region (string): string of the region name
+	'''
+
+	# calculating the correlations
+	correlations = df.corr()
+
+	# plotting the correlations
+	plt.figure(figsize=(10,10))
+	plt.imshow(correlations, cmap='coolwarm', interpolation='none')
+	plt.colorbar()
+	plt.xticks(range(len(correlations)), correlations.columns, rotation=90)
+	plt.yticks(range(len(correlations)), correlations.columns)
+	plt.title('Correlations between features and target')
+	plt.savefig(f'plots/feature_engineering/region_{region}_correlations_v{VERSION}.png')
+
+
+def main():
+
+	data_dict = loading_data()
+	data_dict = merging_solarwind_and_supermag(data_dict)
+	for region in data_dict['regions'].keys():
+		finding_correlations(data_dict['regions'][region]['merged_df'], target='rolling_rsd', region=region)
+
+
+if __name__ == '__main__':
+	main()

@@ -180,8 +180,7 @@ def combining_regional_dfs(stations, rsd, map_keys=None, features=None):
 	combined_stations = pd.DataFrame(index=twins_time_period)
 
 	feature_calculating_dict = {}
-	for feature in features:
-		feature_calculating_dict[feature] = pd.DataFrame(index=twins_time_period)
+	# feature_calculating_dict[feature] = pd.DataFrame(index=twins_time_period)
 
 	for station in stations:
 		stat = loading_supermag(station)
