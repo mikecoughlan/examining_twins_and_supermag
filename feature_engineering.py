@@ -118,25 +118,25 @@ def finding_correlations(df, target, region):
 
 	# calculating the correlations
 	correlations = df.corr()
-	target_corrs = correlations[target].sort_values(ascending=False)
+	# target_corrs = correlations[target].sort_values(ascending=False)
 
-	# plotting the target correlations
-	plt.figure(figsize=(10,10))
-	plt.imshow(target_corrs.values.reshape(-1,1), cmap='bwr', vmin=-1, vmax=1)
-	plt.colorbar()
-	plt.yticks(np.arange(len(target_corrs.index)), target_corrs.index)
-	plt.xticks([])
-	plt.title('Correlations between features and target')
-	plt.savefig(f'plots/feature_engineering/{region}_target {target}_correlations_v{VERSION}.png')
+	# # plotting the target correlations
+	# plt.figure(figsize=(10,10))
+	# plt.imshow(target_corrs.values.reshape(-1,1), cmap='bwr', vmin=-1, vmax=1)
+	# plt.colorbar()
+	# plt.yticks(np.arange(len(target_corrs.index)), target_corrs.index)
+	# plt.xticks([])
+	# plt.title('Correlations between features and target')
+	# plt.savefig(f'plots/feature_engineering/{region}_target {target}_correlations_v{VERSION}.png')
 
-	# plotting the correlations between the features
-	plt.figure(figsize=(10,10))
-	plt.imshow(correlations.values, cmap='bwr', vmin=-1, vmax=1)
-	plt.colorbar()
-	plt.yticks(np.arange(len(correlations.index)), correlations.index)
-	plt.xticks(np.arange(len(correlations.columns)), correlations.columns, rotation=90)
-	plt.title('Correlations between features')
-	plt.savefig(f'plots/feature_engineering/{region}_features_correlations_v{VERSION}.png')
+	# # plotting the correlations between the features
+	# plt.figure(figsize=(10,10))
+	# plt.imshow(correlations.values, cmap='bwr', vmin=-1, vmax=1)
+	# plt.colorbar()
+	# plt.yticks(np.arange(len(correlations.index)), correlations.index)
+	# plt.xticks(np.arange(len(correlations.columns)), correlations.columns, rotation=90)
+	# plt.title('Correlations between features')
+	# plt.savefig(f'plots/feature_engineering/{region}_features_correlations_v{VERSION}.png')
 
 	return correlations
 
