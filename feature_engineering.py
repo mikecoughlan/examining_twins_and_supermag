@@ -11,7 +11,10 @@ from sklearn.tree import DecisionTreeClassifier
 import utils
 
 # list of regions. Taking two from each cluster and two low lat non cluster regions
-REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
+# REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
+REGIONS = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
+						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
+						62, 327, 293, 241, 107, 55, 111]
 
 # supermag features to use
 FEATURES = ['N', 'E', 'theta', 'MAGNITUDE', 'dbht']
@@ -119,7 +122,7 @@ def finding_correlations(df, target, region):
 
 	# plotting the target correlations
 	plt.figure(figsize=(10,10))
-	plt.imshow(target_corrs.values.reshape(-1,1), cmap='hot', interpolation='nearest')
+	plt.imshow(target_corrs.values.reshape(-1,1), cmap='bwr', vmin=-1, vmax=1)
 	plt.colorbar()
 	plt.yticks(np.arange(len(target_corrs.index)), target_corrs.index)
 	plt.xticks([])
@@ -128,7 +131,7 @@ def finding_correlations(df, target, region):
 
 	# plotting the correlations between the features
 	plt.figure(figsize=(10,10))
-	plt.imshow(correlations.values, cmap='bwr', interpolation='nearest')
+	plt.imshow(correlations.values, cmap='bwr', vmin=-1, vmax=1)
 	plt.colorbar()
 	plt.yticks(np.arange(len(correlations.index)), correlations.index)
 	plt.xticks(np.arange(len(correlations.columns)), correlations.columns, rotation=90)
@@ -138,16 +141,42 @@ def finding_correlations(df, target, region):
 	return correlations
 
 
+def plotting_correlations_as_funtion_of_latitude(correlations, regions, variables, file_tag):
+
+
+	corr_dict, lats = {var:[] for var in variables}, []
+	for region in regions:
+		lats.append(regions[region]['mean_lat'])
+		for var in variables:
+			corr_dict[var].append(correlations[region]['rolling_rsd'][var])
+		
+	plt.figure(figsize=(10,10))
+	for var in variables:
+		plt.scatter(lats, corr_dict[var], label=var)
+	plt.legend()
+	plt.xlabel('Mean Latitude')
+	plt.ylabel('Correlation')
+	plt.title(f'Correlation between {file_tag} and rolling_rsd as a function of latitude')
+	plt.savefig(f'plots/feature_engineering/{file_tag}_correlation_vs_latitude_v{VERSION}.png')
+
+
 def main():
 
 	data_dict = loading_data()
 	data_dict = merging_solarwind_and_supermag(data_dict)
-	correlation_dict = {}
-	for region in data_dict['regions'].keys():
-		corr = finding_correlations(data_dict['regions'][region]['merged_df'], target='rolling_rsd', region=region)
-		correlation_dict[region] = corr
-	
-	print(correlation_dict['region_163']['rolling_rsd'].sort_values(ascending=False))
+
+	if os.path.exists(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl'):
+		with open(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl', 'rb') as f:
+			correlation_dict = pickle.load(f)
+
+	else:
+		correlation_dict = {}
+		for region in data_dict['regions'].keys():
+			corr = finding_correlations(data_dict['regions'][region]['merged_df'], target='rolling_rsd', region=region)
+			correlation_dict[region] = corr
+
+	plotting_correlations_as_funtion_of_latitude(correlation_dict, data_dict['regions'], variables=['Vx'], file_tag='Vx')
+	plotting_correlations_as_funtion_of_latitude(correlation_dict, data_dict['regions'], variables=['BZ_GSM', 'BY_GSM', 'B_Total'], file_tag='IMF')
 
 	with open(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl', 'wb') as f:
 		pickle.dump(correlation_dict, f)
