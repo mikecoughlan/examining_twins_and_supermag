@@ -1,6 +1,7 @@
 import math
 import os
 import pickle
+import gc
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -69,7 +70,7 @@ def loading_data():
 	# loading all the datasets and dictonaries
 
 	regions, stats = utils.loading_dicts()
-	solarwind = utils.loading_solarwind(omni=True)
+	solarwind = utils.loading_solarwind(omni=True, limit_to_twins=True)
 
 	# converting the solarwind data to log10
 	solarwind['logT'] = np.log10(solarwind['T'])
@@ -99,6 +100,7 @@ def merging_solarwind_and_supermag(data_dict):
 
 	# merging the solarwind and supermag dataframes
 	for region in data_dict['regions'].keys():
+
 		data_dict['regions'][region]['merged_df'] = pd.merge(data_dict['regions'][region]['regional_df'], \
 																data_dict['solarwind'], left_index=True, \
 																right_index=True, how='inner')
@@ -116,8 +118,16 @@ def finding_correlations(df, target, region):
 		region (string): string of the region name
 	'''
 
+	# normalizing the variables between 0 and 1 before calculating correlation
+	print(f'Normalizing the variables in {region}')
+	for col in df.columns:
+		df[col] = (df[col] - df[col].min()) / (df[col].max() - df[col].min())
+	gc.collect()
+
 	# calculating the correlations
 	correlations = df.corr()
+	del df
+	gc.collect()
 	# target_corrs = correlations[target].sort_values(ascending=False)
 
 	# # plotting the target correlations
@@ -160,10 +170,46 @@ def plotting_correlations_as_funtion_of_latitude(correlations, regions, variable
 	plt.savefig(f'plots/feature_engineering/{file_tag}_correlation_vs_latitude_v{VERSION}.png')
 
 
+def plotting_correlation_sum_as_funtion_of_latitude(correlations, regions, target, sw_params, mag_params, file_tag):
+
+	sw_corr_sum, mag_corr_sum, lats = [], [], []
+
+	for region in regions:
+		lats.append(regions[region]['mean_lat'])
+		corrs_abs = correlations[region][target].abs()
+		sw_corrs = corrs_abs[sw_params]
+		mag_corrs = corrs_abs[mag_params]
+
+		if target in sw_params:
+			sw_corrs.drop(target, inplace=True)
+		if target in mag_params:
+			mag_corrs.drop(target, inplace=True)
+
+		sw_corr_sum.append(sw_corrs.sum())
+		mag_corr_sum.append(mag_corrs.sum())
+		gc.collect()
+		
+	plt.figure(figsize=(10,10))
+	ax0 = plt.subplot(111)
+	ax0.scatter(lats, sw_corr_sum, label='SW params', color='blue')
+	ax1 = ax0.twinx()
+	ax1.scatter(lats, mag_corr_sum, label='MAG params', color='orange')
+	plt.legend()
+	plt.xlabel('Mean Latitude')
+	plt.ylabel('Sum of Correlations')
+	plt.title(f'Sum of Correlations between features and {target} as a function of latitude')
+	plt.savefig(f'plots/feature_engineering/{file_tag}_sum_correlation_vs_latitude_v{VERSION}.png')
+
+
 def main():
 
 	data_dict = loading_data()
 	data_dict = merging_solarwind_and_supermag(data_dict)
+
+	sw_parameters = [param for param in data_dict['solarwind'].columns if param != 'Date_UTC']
+	mag_parameters = [param for param in data_dict['regions']['region_163']['merged_df'].columns if param not in sw_parameters or param in ['Date_UTC', 'rsd']]
+
+	gc.collect()
 
 	if os.path.exists(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl'):
 		with open(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl', 'rb') as f:
@@ -174,8 +220,14 @@ def main():
 		for region in data_dict['regions'].keys():
 			corr = finding_correlations(data_dict['regions'][region]['merged_df'], target='rolling_rsd', region=region)
 			correlation_dict[region] = corr
+			gc.collect()
+	
+	plotting_correlation_sum_as_funtion_of_latitude(correlation_dict, data_dict['regions'], target='rolling_rsd',\
+													sw_params=sw_parameters, mag_params=mag_parameters,\
+													file_tag='SW_and_mag')
 
 	plotting_correlations_as_funtion_of_latitude(correlation_dict, data_dict['regions'], variables=['Vx'], file_tag='Vx')
+	gc.collect()
 	plotting_correlations_as_funtion_of_latitude(correlation_dict, data_dict['regions'], variables=['BZ_GSM', 'BY_GSM', 'B_Total'], file_tag='IMF')
 
 	with open(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl', 'wb') as f:

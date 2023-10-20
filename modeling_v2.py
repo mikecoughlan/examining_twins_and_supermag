@@ -365,13 +365,13 @@ def main():
 	results_df = making_predictions(MODEL, xtest, ytest, dates_dict['test'])
 	results_df = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
 
-	# all_results_dict = {}
-	# all_results_dict[f'mid_and_high_regions_{MLT_BIN_TARGET}'] = results_dict
+	all_results_dict = {}
+	all_results_dict[f'mid_and_high_regions_{MLT_BIN_TARGET}_version_{VERSION}'] = results_df
 
-	# # saving the results
-	# print('Saving results...')
-	# with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_.pkl', 'ab') as f:
-	# 	pickle.dump(all_results_dict, f)
+	# saving the results
+	print('Saving results...')
+	with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_2.pkl', 'ab') as f:
+		pickle.dump(all_results_dict, f)
 	# results_df.reset_index(inplace=True, drop=False).rename(columns={'index':'Date_UTC'})
 	results_df.to_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather')
 

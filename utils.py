@@ -24,8 +24,9 @@ from tqdm import tqdm
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
 
+data_dir = '../../../../data/'
 twins_dir = '../data/twins/'
-supermag_dir = '../data/supermag/'
+supermag_dir = 'supermag/feather_files/'
 regions_dict = '../identifying_regions/outputs/twins_era_identified_regions_min_2.pkl'
 regions_stat_dict = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
 
@@ -103,7 +104,7 @@ def loading_algorithm_maps():
 	return new_maps
 
 
-def loading_solarwind(omni=False):
+def loading_solarwind(omni=False, limit_to_twins=False):
 	'''
 	Loads the solar wind data
 
@@ -121,6 +122,9 @@ def loading_solarwind(omni=False):
 		df.set_index('ACEepoch', inplace=True, drop=True)
 		df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
 
+	if limit_to_twins:
+		df = df[pd.to_datetime('2009-07-20'):pd.to_datetime('2017-12-31')]
+
 	return df
 
 
@@ -136,7 +140,7 @@ def loading_supermag(station):
 	'''
 
 	print(f'Loading station {station}....')
-	df = pd.read_feather(supermag_dir+station+'.feather')
+	df = pd.read_feather(data_dir+supermag_dir+station+'.feather')
 
 	# limiting the analysis to the nightside
 	df.set_index('Date_UTC', inplace=True, drop=True)

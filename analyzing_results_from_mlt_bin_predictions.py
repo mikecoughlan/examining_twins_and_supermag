@@ -11,8 +11,8 @@ from sklearn.metrics import (auc, brier_score_loss, confusion_matrix,
 
 MLT_BIN_TARGET = 4
 MLT_SPAN = 2
-VERSION = '2-2'
-KEY = f'mid_and_high_regions_{MLT_BIN_TARGET}'
+VERSION = '2-dbdt'
+KEY = f'mid_and_high_regions_{MLT_BIN_TARGET}_version_{VERSION}_dbdt'
 
 def load_predictions(use_dict=False):
 
@@ -35,7 +35,7 @@ def load_predictions(use_dict=False):
 
 def load_segmented_mlt_dict():
 
-	with open(f'outputs/mlt_span_{MLT_SPAN}.pkl', 'rb') as f:
+	with open(f'outputs/mlt_span_{MLT_SPAN}_dbdt.pkl', 'rb') as f:
 		segmented_mlt = pickle.load(f)
 
 	return segmented_mlt
