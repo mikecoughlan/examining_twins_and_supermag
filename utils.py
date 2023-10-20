@@ -202,7 +202,7 @@ def combining_regional_dfs(stations, rsd, map_keys=None, features=None):
 	mean_dbht = combined_stations.mean(axis=1)
 	max_dbht = combined_stations.max(axis=1)
 
-	indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=12)
+	indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=15)
 
 	combined_stations['dbdt_mean'] = mean_dbht
 	combined_stations['dbdt_max'] = max_dbht

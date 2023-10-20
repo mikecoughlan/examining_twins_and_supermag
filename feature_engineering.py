@@ -1,11 +1,14 @@
+import gc
 import math
 import os
 import pickle
-import gc
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from feature_engine.selection import (RecursiveFeatureElimination,
+                                      SmartCorrelatedSelection)
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
 
@@ -21,7 +24,7 @@ REGIONS = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166,
 FEATURES = ['N', 'E', 'theta', 'MAGNITUDE', 'dbht']
 
 # version number
-VERSION = 0
+VERSION = 1
 
 
 def combining_stations_into_regions(stations, rsd, features, mean=False, std=False, maximum=False, median=False):
@@ -45,15 +48,24 @@ def combining_stations_into_regions(stations, rsd, features, mean=False, std=Fal
 
 	for feature in features:
 		if mean:
-			regional_df[f'{feature}_mean'] = feature_dfs[feature].mean(axis=1)
+			if feature == 'N' or feature == 'E':
+				regional_df[f'{feature}_mean'] = feature_dfs[feature].abs().mean(axis=1)
+			else:
+				regional_df[f'{feature}_mean'] = feature_dfs[feature].mean(axis=1)
 		if std:
 			regional_df[f'{feature}_std'] = feature_dfs[feature].std(axis=1)
 		if maximum:
-			regional_df[f'{feature}_max'] = feature_dfs[feature].max(axis=1)
+			if feature == 'N' or feature == 'E':
+				regional_df[f'{feature}_max'] = feature_dfs[feature].abs().max(axis=1)
+			else:
+				regional_df[f'{feature}_max'] = feature_dfs[feature].max(axis=1)
 		if median:
-			regional_df[f'{feature}_median'] = feature_dfs[feature].median(axis=1)
+			if feature == 'N' or feature == 'E':
+				regional_df[f'{feature}_median'] = feature_dfs[feature].abs().median(axis=1)
+			else:
+				regional_df[f'{feature}_median'] = feature_dfs[feature].median(axis=1)
 
-	indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=12)
+	indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=15)
 
 	regional_df['rsd'] = rsd['max_rsd']['max_rsd']
 	regional_df['rolling_rsd'] = rsd['max_rsd']['max_rsd'].rolling(indexer, min_periods=1).max()
@@ -128,25 +140,25 @@ def finding_correlations(df, target, region):
 	correlations = df.corr()
 	del df
 	gc.collect()
-	# target_corrs = correlations[target].sort_values(ascending=False)
+	target_corrs = correlations[target].sort_values(ascending=False)
 
-	# # plotting the target correlations
-	# plt.figure(figsize=(10,10))
-	# plt.imshow(target_corrs.values.reshape(-1,1), cmap='bwr', vmin=-1, vmax=1)
-	# plt.colorbar()
-	# plt.yticks(np.arange(len(target_corrs.index)), target_corrs.index)
-	# plt.xticks([])
-	# plt.title('Correlations between features and target')
-	# plt.savefig(f'plots/feature_engineering/{region}_target {target}_correlations_v{VERSION}.png')
+	# plotting the target correlations
+	plt.figure(figsize=(10,10))
+	plt.imshow(target_corrs.values.reshape(-1,1), cmap='bwr', vmin=-1, vmax=1)
+	plt.colorbar()
+	plt.yticks(np.arange(len(target_corrs.index)), target_corrs.index)
+	plt.xticks([])
+	plt.title('Correlations between features and target')
+	plt.savefig(f'plots/feature_engineering/{region}_target {target}_correlations_v{VERSION}.png')
 
-	# # plotting the correlations between the features
-	# plt.figure(figsize=(10,10))
-	# plt.imshow(correlations.values, cmap='bwr', vmin=-1, vmax=1)
-	# plt.colorbar()
-	# plt.yticks(np.arange(len(correlations.index)), correlations.index)
-	# plt.xticks(np.arange(len(correlations.columns)), correlations.columns, rotation=90)
-	# plt.title('Correlations between features')
-	# plt.savefig(f'plots/feature_engineering/{region}_features_correlations_v{VERSION}.png')
+	# plotting the correlations between the features
+	plt.figure(figsize=(10,10))
+	plt.imshow(correlations.values, cmap='bwr', vmin=-1, vmax=1)
+	plt.colorbar()
+	plt.yticks(np.arange(len(correlations.index)), correlations.index)
+	plt.xticks(np.arange(len(correlations.columns)), correlations.columns, rotation=90)
+	plt.title('Correlations between features')
+	plt.savefig(f'plots/feature_engineering/{region}_features_correlations_v{VERSION}.png')
 
 	return correlations
 
@@ -159,7 +171,7 @@ def plotting_correlations_as_funtion_of_latitude(correlations, regions, variable
 		lats.append(regions[region]['mean_lat'])
 		for var in variables:
 			corr_dict[var].append(correlations[region]['rolling_rsd'][var])
-		
+
 	plt.figure(figsize=(10,10))
 	for var in variables:
 		plt.scatter(lats, corr_dict[var], label=var)
@@ -188,7 +200,7 @@ def plotting_correlation_sum_as_funtion_of_latitude(correlations, regions, targe
 		sw_corr_sum.append(sw_corrs.sum())
 		mag_corr_sum.append(mag_corrs.sum())
 		gc.collect()
-		
+
 	plt.figure(figsize=(10,10))
 	ax0 = plt.subplot(111)
 	ax0.scatter(lats, sw_corr_sum, label='SW params', color='blue')
@@ -199,6 +211,36 @@ def plotting_correlation_sum_as_funtion_of_latitude(correlations, regions, targe
 	plt.ylabel('Sum of Correlations')
 	plt.title(f'Sum of Correlations between features and {target} as a function of latitude')
 	plt.savefig(f'plots/feature_engineering/{file_tag}_sum_correlation_vs_latitude_v{VERSION}.png')
+
+
+def feature_elimination(df, target, region, threshold=0.1):
+
+	print('Eliminating correlated features...')
+
+	df.dropna(inplace=True, subset=[target])
+
+	target = df[target]
+
+	df.drop(columns=['rsd', 'rolling_rsd'], inplace=True)
+
+	smart_correlation = SmartCorrelatedSelection(threshold=0.7, method='pearson', selection_method='variance')
+	smart_correlation.fit(df)
+	corr_feature_names = smart_correlation.features_to_drop_
+	df = smart_correlation.transform(df)
+
+	print(f'Features eliminated by correlated features for region {region}: {corr_feature_names}')
+
+	print('Eliminating features using recursive feature elimination...')
+	recursor = RecursiveFeatureElimination(estimator=RandomForestClassifier(random_state=42), scoring='roc_auc', cv=3, threshold=0.05)
+
+	recursor.fit(df, target)
+	recursor_feature_names = recursor.features_to_drop_
+	df = recursor.transform(df)
+
+	print(f'Features eliminated by recursive feature elimination for region {region}: {recursor_feature_names}')
+
+	return df
+
 
 
 def main():
@@ -221,17 +263,27 @@ def main():
 			corr = finding_correlations(data_dict['regions'][region]['merged_df'], target='rolling_rsd', region=region)
 			correlation_dict[region] = corr
 			gc.collect()
-	
+
 	plotting_correlation_sum_as_funtion_of_latitude(correlation_dict, data_dict['regions'], target='rolling_rsd',\
 													sw_params=sw_parameters, mag_params=mag_parameters,\
 													file_tag='SW_and_mag')
 
-	plotting_correlations_as_funtion_of_latitude(correlation_dict, data_dict['regions'], variables=['Vx'], file_tag='Vx')
+	plotting_correlations_as_funtion_of_latitude(correlation_dict, data_dict['regions'], variables=['E_std', 'N_std', 'MAGNITUDE_std'], file_tag='mag_std')
 	gc.collect()
-	plotting_correlations_as_funtion_of_latitude(correlation_dict, data_dict['regions'], variables=['BZ_GSM', 'BY_GSM', 'B_Total'], file_tag='IMF')
+	plotting_correlations_as_funtion_of_latitude(correlation_dict, data_dict['regions'], variables=['E_mean', 'N_mean', 'MAGNITUDE_mean'], file_tag='mag_means')
 
 	with open(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl', 'wb') as f:
 		pickle.dump(correlation_dict, f)
+
+	gc.collect()
+
+	selected_regions = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
+
+	for region in selected_regions:
+		df = feature_elimination(data_dict['regions'][f'region_{region}']['merged_df'], target='rolling_rsd', region=region)
+		df.to_feather(f'outputs/feature_engineering/eliminated_region_{region}_v{VERSION}.feather')
+
+		gc.collect()
 
 
 if __name__ == '__main__':
