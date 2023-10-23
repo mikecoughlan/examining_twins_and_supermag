@@ -50,19 +50,32 @@ from data_prep import DataPrep
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
 
-supermag_dir = '../data/supermag/'
-regions_dict = '../identifying_regions/outputs/twins_era_identified_regions_min_2.pkl'
-regions_stat_dict = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
+data_directory = '../../../../data/'
+supermag_dir = '../data/supermag/feather_files/'
+regions_dict = 'mike_working_dir/identifying_regions_data/identifying_regions_data/twins_era_identified_regions_min_2.pkl'
+regions_stat_dict = 'mike_working_dir/identifying_regions_data/identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
 
 random_seed = 42
 
 
 # loading config and specific model config files. Using them as dictonaries
-with open('twins_config.json', 'r') as con:
-	CONFIG = json.load(con)
+# with open('twins_config.json', 'r') as con:
+# 	CONFIG = json.load(con)
 
-with open('model_config.json', 'r') as mcon:
-	MODEL_CONFIG = json.load(mcon)
+# with open('model_config.json', 'r') as mcon:
+# 	MODEL_CONFIG = json.load(mcon)
+
+CONFIG = {'region_number': 387,
+			'load_twins':False,
+			'mag_features':[],
+			'solarwind_features':[],
+			'delay':False,
+			'rolling':False,
+			'to_drop':[],
+			'omni_or_ace':
+
+}
+
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
@@ -70,48 +83,10 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 
 MLT_SPAN = 2
 MLT_BIN_TARGET = 4
-VERSION = '0'
+VERSION = 0
+test_region = 387
 
-def get_all_data(prediction_param, percentile, mlt_span):
-
-
-	# loading all the datasets and dictonaries
-
-	regions, stats = utils.loading_dicts()
-	solarwind = utils.loading_solarwind(omni=True)
-
-	# reduce the regions dict to be only the ones that have keys in the region_numbers list
-	regions = {f'region_{reg}': regions[f'region_{reg}'] for reg in region_numbers}
-
-	percentile_dataframe = pd.DataFrame()
-
-	# Getting regions data for each region
-	for region in regions.keys():
-
-		# getting dbdt and rsd data for the region
-		temp_df = utils.combining_regional_dfs(regions[region]['station'], stats[region])
-
-		# getting the mean latitude for the region and attaching it to the regions dictionary
-		mean_lat = utils.getting_mean_lat(regions[region]['station'])
-		regions[region]['mean_lat'] = mean_lat
-
-		# cutting the temp df down to the TWINS era
-		temp_df = temp_df[pd.to_datetime('2009-07-20'):pd.to_datetime('2017-12-31')]
-
-		# segmenting the rsd data for calculating percentiles
-		percentile_dataframe = pd.concat([percentile_dataframe, temp_df[[prediction_param, 'MLT']]], axis=0, ignore_index=True)
-
-	# calculating the percentiles for each region
-	mlt_perc = utils.calculate_percentiles(df=percentile_dataframe, param=prediction_param, mlt_span=mlt_span, percentile=percentile)
-
-	data_dict = {'solarwind':solarwind, 'regions':regions, 'percentiles':mlt_perc}
-
-	return data_dict
-
-
-
-def getting_prepared_data(prediction_param, mlt_span, mlt_bin_target, percentile=0.99, start_date=pd.to_datetime('2009-07-20'), end_date=pd.to_datetime('2017-12-31')):
-
+def getting_prepared_data():
 	'''
 	Calling the data prep class without the TWINS data for this version of the model.
 
@@ -124,65 +99,14 @@ def getting_prepared_data(prediction_param, mlt_span, mlt_bin_target, percentile
 		y_test (np.array): testing targets for the model
 
 	'''
-	start_date = pd.to_datetime('2009-07-20')
-	end_date = pd.to_datetime('2017-12-31')
 
-	data_dict = get_all_data(prediction_param=prediction_param, percentile=percentile, mlt_span=mlt_span)
+	prep = DataPrep(region_path, region_number, solarwind_path, supermag_dir_path, twins_times_path,
+					rsd_path, random_seed)
 
-	# splitting up the regions based on MLT value into 1 degree bins
-	mlt_bins = np.arange(0, 24, mlt_span)
-	mlt_dict = {}
-	for mlt in mlt_bins:
-		# TEMPORARY DURING THE DEBUGGING PROCESS!!!!!!
-		# if mlt != mlt_bin_target:
-		# 	continue
-		mlt_df = pd.DataFrame(index=pd.date_range(start=pd.to_datetime(start_date), end=pd.to_datetime(end_date), freq='min'))
-		for region in data_dict['regions'].values():
-
-			# segmenting one MLT wedge
-			temp_df = region['combined_dfs'][region['combined_dfs']['MLT'].between(mlt, mlt+mlt_span)]
-
-			mlt_df = pd.concat([mlt_df, temp_df[f'rolling_{prediction_param}']], axis=1, ignore_index=False)
-
-		mlt_df.columns = [f'region_{reg}' for reg in region_numbers]
-		max_regions = mlt_df.idxmax(axis=1)
-		mlt_df['max'] = mlt_df.max(axis=1)
-		mlt_df['region_max'] = max_regions
-
-		mlt_df.dropna(inplace=True, subset=['max'])
-
-		mlt_df = utils.classification_column(df=mlt_df, param='max', thresh=data_dict['percentiles'][f'{mlt}'], forecast=0, window=0)
-
-		mlt_df['mean_lat'] = mlt_df['region_max'].apply(lambda x: data_dict['regions'][x]['mean_lat'])
-
-		# getting only the mid and high lat data
-		mlt_df = mlt_df[mlt_df['mean_lat'] >= 55]
-
-		print(f'Percent of positive class for MLT {mlt}: {mlt_df["classification"].sum()/len(mlt_df)}')
-
-		mlt_dict[f'{mlt}'] = mlt_df
-
-	# segmenting the bin that's going to be trained on
-	target_mlt_bin = mlt_dict[f'{mlt_bin_target}']
+	X_train, X_val, X_test, y_train, y_val, y_test = prep.do_full_data_prep(CONFIG)
 
 
-
-	# creating the target vectors
-	y = to_categorical(target_mlt_bin['classification'].to_numpy(), num_classes=2)
-
-	# creating the input vectors
-	X = []
-	for date in target_mlt_bin.index:
-		X.append(data_dict['twins_maps'][date.strftime('%Y-%m-%d %H:%M:%S')]['map'])
-	X = np.array(X)
-
-	# getting dates so they can be split with the input and target data
-	dates = target_mlt_bin.index
-
-	# splitting the data into training, validation, and testing sets
-	x_train, x_test, x_val, y_train, y_test, y_val, dates_dict = utils.splitting_and_scaling(X, y, dates, test_size=0.2, val_size=0.125, random_seed=random_seed)
-
-	return x_train, x_val, x_test, y_train, y_val, y_test, dates_dict
+	return X_train, X_val, X_test, y_train, y_val, y_test
 
 
 def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patience=10):

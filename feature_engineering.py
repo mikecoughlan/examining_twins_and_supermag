@@ -11,14 +11,15 @@ from feature_engine.selection import (RecursiveFeatureElimination,
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
+from tqdm import tqdm
 
 import utils
 
 # list of regions. Taking two from each cluster and two low lat non cluster regions
-# REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
-REGIONS = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
-						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
-						62, 327, 293, 241, 107, 55, 111]
+REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
+# REGIONS = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
+# 						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
+# 						62, 327, 293, 241, 107, 55, 111]
 
 # supermag features to use
 FEATURES = ['N', 'E', 'theta', 'MAGNITUDE', 'dbht']
@@ -111,7 +112,7 @@ def loading_data():
 def merging_solarwind_and_supermag(data_dict):
 
 	# merging the solarwind and supermag dataframes
-	for region in data_dict['regions'].keys():
+	for region in tqdm(data_dict['regions'].keys()):
 
 		data_dict['regions'][region]['merged_df'] = pd.merge(data_dict['regions'][region]['regional_df'], \
 																data_dict['solarwind'], left_index=True, \
@@ -217,21 +218,28 @@ def feature_elimination(df, target, region, threshold=0.1):
 
 	print('Eliminating correlated features...')
 
-	df.dropna(inplace=True, subset=[target])
+	df.dropna(inplace=True)
 
-	target = df[target]
+	perc = df['rsd'].quantile(0.99)
+	df = utils.classification_column(df=df, param=target, thresh=perc, forecast=0, window=0)
+	target = df['classification'].to_numpy()
 
-	df.drop(columns=['rsd', 'rolling_rsd'], inplace=True)
+	df.drop(columns=['rsd', 'rolling_rsd', 'MLT', 'classification'], inplace=True)
+
+	print(f'Nans before corr: {df.isna().sum()}')
 
 	smart_correlation = SmartCorrelatedSelection(threshold=0.7, method='pearson', selection_method='variance')
 	smart_correlation.fit(df)
 	corr_feature_names = smart_correlation.features_to_drop_
 	df = smart_correlation.transform(df)
 
+	print(f'Nans after corr: {df.isna().sum()}')
+	print(f'Length before dropping rows: {len(df)}')
+
 	print(f'Features eliminated by correlated features for region {region}: {corr_feature_names}')
 
 	print('Eliminating features using recursive feature elimination...')
-	recursor = RecursiveFeatureElimination(estimator=RandomForestClassifier(random_state=42), scoring='roc_auc', cv=3, threshold=0.05)
+	recursor = RecursiveFeatureElimination(estimator=RandomForestClassifier(random_state=42), scoring='roc_auc', cv=3, threshold=0.15)
 
 	recursor.fit(df, target)
 	recursor_feature_names = recursor.features_to_drop_
@@ -245,42 +253,55 @@ def feature_elimination(df, target, region, threshold=0.1):
 
 def main():
 
-	data_dict = loading_data()
-	data_dict = merging_solarwind_and_supermag(data_dict)
-
-	sw_parameters = [param for param in data_dict['solarwind'].columns if param != 'Date_UTC']
-	mag_parameters = [param for param in data_dict['regions']['region_163']['merged_df'].columns if param not in sw_parameters or param in ['Date_UTC', 'rsd']]
-
-	gc.collect()
-
-	if os.path.exists(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl'):
-		with open(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl', 'rb') as f:
-			correlation_dict = pickle.load(f)
+	if os.path.exists(f'../../../../data/mike_working_dir/feature_engineering/data_dict.pkl'):
+		with open(f'../../../../data/mike_working_dir/feature_engineering/data_dict.pkl', 'rb') as f:
+			data_dict = pickle.load(f)
 
 	else:
-		correlation_dict = {}
-		for region in data_dict['regions'].keys():
-			corr = finding_correlations(data_dict['regions'][region]['merged_df'], target='rolling_rsd', region=region)
-			correlation_dict[region] = corr
-			gc.collect()
+		data_dict = loading_data()
+		data_dict = merging_solarwind_and_supermag(data_dict)
+		with open(f'../../../../data/mike_working_dir/feature_engineering/data_dict.pkl', 'wb') as f:
+			pickle.dump(data_dict, f)
 
-	plotting_correlation_sum_as_funtion_of_latitude(correlation_dict, data_dict['regions'], target='rolling_rsd',\
-													sw_params=sw_parameters, mag_params=mag_parameters,\
-													file_tag='SW_and_mag')
 
-	plotting_correlations_as_funtion_of_latitude(correlation_dict, data_dict['regions'], variables=['E_std', 'N_std', 'MAGNITUDE_std'], file_tag='mag_std')
-	gc.collect()
-	plotting_correlations_as_funtion_of_latitude(correlation_dict, data_dict['regions'], variables=['E_mean', 'N_mean', 'MAGNITUDE_mean'], file_tag='mag_means')
 
-	with open(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl', 'wb') as f:
-		pickle.dump(correlation_dict, f)
+	# sw_parameters = [param for param in data_dict['solarwind'].columns if param != 'Date_UTC']
+	# mag_parameters = [param for param in data_dict['regions']['region_163']['merged_df'].columns if param not in sw_parameters or param in ['Date_UTC', 'rsd']]
 
-	gc.collect()
+	# gc.collect()
+
+	# if os.path.exists(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl'):
+	# 	with open(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl', 'rb') as f:
+	# 		correlation_dict = pickle.load(f)
+
+	# else:
+	# 	correlation_dict = {}
+	# 	for region in data_dict['regions'].keys():
+	# 		corr = finding_correlations(data_dict['regions'][region]['merged_df'], target='rolling_rsd', region=region)
+	# 		correlation_dict[region] = corr
+	# 		gc.collect()
+
+	# plotting_correlation_sum_as_funtion_of_latitude(correlation_dict, data_dict['regions'], target='rolling_rsd',\
+	# 												sw_params=sw_parameters, mag_params=mag_parameters,\
+	# 												file_tag='SW_and_mag')
+
+	# plotting_correlations_as_funtion_of_latitude(correlation_dict, data_dict['regions'], variables=['E_std', 'N_std', 'MAGNITUDE_std'], file_tag='mag_std')
+	# gc.collect()
+	# plotting_correlations_as_funtion_of_latitude(correlation_dict, data_dict['regions'], variables=['E_mean', 'N_mean', 'MAGNITUDE_mean'], file_tag='mag_means')
+
+	# with open(f'outputs/feature_engineering/correlation_dict_v{VERSION}.pkl', 'wb') as f:
+	# 	pickle.dump(correlation_dict, f)
+
+	# gc.collect()
 
 	selected_regions = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
 
 	for region in selected_regions:
-		df = feature_elimination(data_dict['regions'][f'region_{region}']['merged_df'], target='rolling_rsd', region=region)
+		print(f'Initial length of the dataframe: {len(data_dict["regions"][f"region_{region}"]["merged_df"])}')
+		df = utils.storm_extract(data_dict['regions'][f'region_{region}']['merged_df'])
+		print(f'Length after storm extraction: {len(df)}')
+		df = feature_elimination(df, target='rolling_rsd', region=region)
+		df.reset_index(inplace=True, drop=False)
 		df.to_feather(f'outputs/feature_engineering/eliminated_region_{region}_v{VERSION}.feather')
 
 		gc.collect()

@@ -218,11 +218,6 @@ class DataPrep:
 		if to_drop is not None:
 			self.regional_dataframe.drop(to_drop, axis=1, inplace=True)
 
-		print(self.rsd.loc['2009-07-20 00:00:00':'2009-07-20 00:31:00'])
-		print(self.regional_dataframe[:20])
-		print(self.regional_dataframe.iloc[62575:62590])
-		print(self.regional_dataframe.loc['2009-07-20 00:00:00':'2009-07-20 00:31:00'])
-
 		return self.regional_dataframe
 
 
@@ -462,25 +457,22 @@ class DataPrep:
 		'''
 
 
-		df['shifted_{0}'.format(param)] = df[param].shift(-forecast)					# creates a new column that is the shifted parameter. Because time moves foreward with increasing
+		df[f'shifted_{param}'] = df[param].shift(-forecast)					# creates a new column that is the shifted parameter. Because time moves foreward with increasing
 																						# index, the shift time is the negative of the forecast instead of positive.
 		indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=window)			# Yeah this is annoying, have to create a forward rolling indexer because it won't do it automatically.
-		df['window_max'] = df['shifted_{0}'.format(param)].rolling(indexer, min_periods=1).max()		# creates new column in the df labeling the maximum parameter value in the forecast:forecast+window time frame
-		df['pers_max'] = df[param].rolling(0, min_periods=1).max()						# looks backwards to find the max param value in the time history limit
+		df['window_max'] = df[f'shifted_{param}'].rolling(indexer, min_periods=1).max()		# creates new column in the df labeling the maximum parameter value in the forecast:forecast+window time frame
 		df.reset_index(drop=True, inplace=True)											# resets the index
 
 		'''This section creates a binary column for each of the thresholds. Binary will be one if the parameter
 			goes above the given threshold, and zero if it does not.'''
 
 		conditions = [(df['window_max'] < thresh), (df['window_max'] >= thresh)]			# defining the conditions
-		pers_conditions = [(df['pers_max'] < thresh), (df['pers_max'] >= thresh)]			# defining the conditions for a persistance model
 
 		binary = [0, 1] 																	# 0 if not cross 1 if cross
 
-		df['crossing'] = np.select(conditions, binary)						# new column created using the conditions and the binary
-		df['persistance'] = np.select(pers_conditions, binary)				# creating the persistance column
+		df['classification'] = np.select(conditions, binary)						# new column created using the conditions and the binary
 
-		df.drop(['pers_max', 'window_max', 'shifted_dBHt'], axis=1, inplace=True)			# removes the working columns for memory purposes
+		df.drop(['window_max', f'shifted_{param}'], axis=1, inplace=True)			# removes the working columns for memory purposes
 
 		return df
 

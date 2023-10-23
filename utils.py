@@ -324,3 +324,72 @@ def classification_column(df, param, thresh, forecast, window):
 		df.drop(['window_max', f'shifted_{param}'], axis=1, inplace=True)			# removes the working columns for memory purposes
 
 		return df
+
+
+
+def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False):
+
+	'''
+	Pulling out storms using a defined list of datetime strings, adding a lead and recovery time to it and
+	appending each storm to a list which will be later processed.
+
+	Args:
+		data (list of pd.dataframes): ACE and supermag data with the test set's already removed.
+		lead (int): how much time in hours to add to the beginning of the storm.
+		recovery (int): how much recovery time in hours to add to the end of the storm.
+		sw_only (bool): True if this is the solar wind only data, will drop dbht from the feature list.
+
+	Returns:
+		list: ace and supermag dataframes for storm times
+		list: np.arrays of shape (n,2) containing a one hot encoded boolean target array
+	'''
+	storms = list()				# initalizing the lists
+	all_storms = pd.DataFrame()
+
+	# setting the datetime index
+	if 'Date_UTC' in df.columns:
+		pd.to_datetime(df['Date_UTC'], format='%Y-%m-%d %H:%M:%S')
+		df.reset_index(drop=True, inplace=True)
+		df.set_index('Date_UTC', inplace=True, drop=True)
+	else:
+		print('Date_UTC not in columns. Check to make sure index is datetime not integer.')
+
+	df.index = pd.to_datetime(df.index)
+
+	# loading the storm list
+	if twins:
+		storm_list = pd.read_feather('outputs/regular_twins_map_dates.feather')	
+		print(storm_list)	
+		storm_list = storm_list['dates']
+	else:
+		storm_list = pd.read_csv('stormList.csv', header=None, names=['Date_UTC'])
+		storm_list = storm_list['Date_UTC']
+
+	stime, etime = [], []					# will store the resulting time stamps here then append them to the storm time df
+
+	# will loop through the storm dates, create a datetime object for the lead and recovery time stamps and append those to different lists
+	for date in storm_list:
+		if twins:
+			stime.append(date.round('T')-pd.Timedelta(minutes=lead))
+			etime.append(date.round('T')+pd.Timedelta(minutes=recovery))
+		else:
+			stime.append((datetime.strptime(date, '%Y-%m-%d %H:%M:%S'))-pd.Timedelta(hours=lead))
+			etime.append((datetime.strptime(date, '%Y-%m-%d %H:%M:%S'))+pd.Timedelta(hours=recovery))
+
+	# adds the time stamp lists to the storm_list dataframes
+	storm_list['stime'] = stime
+	storm_list['etime'] = etime
+	for start, end in zip(storm_list['stime'], storm_list['etime']):		# looping through the storms to remove the data from the larger df
+		if start < df.index[0] or end > df.index[-1]:						# if the storm is outside the range of the data, skip it
+			continue
+		storm = df[(df.index >= start) & (df.index <= end)]
+
+		if len(storm) != 0:
+			storms.append(storm)			# creates a list of smaller storm time dataframes
+
+	for storm in storms:
+		all_storms = pd.concat([all_storms, storm], axis=0, ignore_index=False)
+		storm.reset_index(drop=True, inplace=True)		# resetting the storm index and simultaniously dropping the date so it doesn't get trained on
+
+	return all_storms
+
