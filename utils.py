@@ -26,9 +26,9 @@ os.environ["CDF_LIB"] = "~/CDF/lib"
 
 data_dir = '../../../../data/'
 twins_dir = '../data/twins/'
-supermag_dir = 'supermag/feather_files/'
-regions_dict = '../identifying_regions/outputs/twins_era_identified_regions_min_2.pkl'
-regions_stat_dict = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
+supermag_dir = data_dir+'supermag/feather_files/'
+regions_dict = data_dir+'mike_working_dir/identifying_regions_data/twins_era_identified_regions_min_2.pkl'
+regions_stat_dict = data_dir+'mike_working_dir/identifying_regions_data/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
