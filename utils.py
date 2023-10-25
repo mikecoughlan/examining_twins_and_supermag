@@ -163,61 +163,60 @@ def getting_mean_lat(stations):
 	return mean_lat
 
 
-def combining_regional_dfs(stations, rsd, map_keys=None, features=None):
-	'''
-	Combines the regional data into one dataframe
+def combining_stations_into_regions(stations, rsd, features=None, mean=False, std=False, maximum=False, median=False, map_keys=None):
 
-	Args:
-		stations (list): list of stations in the region
-		rsd (pd.dataframe): dataframe containing the rsd and mlt data for the region
-		map_keys (list): list of keys for the twins maps
-
-	Returns:
-		segmented_df (pd.dataframe): dataframe containing the regional dbdt, rsd, and mlt data for a given date
-	'''
-
-	print('Combining regional data....')
 	start_time = pd.to_datetime('2009-07-20')
 	end_time = pd.to_datetime('2017-12-31')
 	twins_time_period = pd.date_range(start=start_time, end=end_time, freq='min')
 
-	combined_stations = pd.DataFrame(index=twins_time_period)
+	regional_df = pd.DataFrame(index=twins_time_period)
 
-	feature_calculating_dict = {}
-	# feature_calculating_dict[feature] = pd.DataFrame(index=twins_time_period)
+	# creating a dataframe for each feature with the twins time period as the index and storing them in a dict
+	feature_dfs = {}
+	if features is not None:
+		for feature in features:
+			feature_dfs[feature] = pd.DataFrame(index=twins_time_period)
 
-	for station in stations:
-		stat = loading_supermag(station)
-		stat = stat[start_time:end_time]
+	for stat in stations:
+		df = loading_supermag(stat)
+		df = df[start_time:end_time]
 		if features is not None:
-			stat = stat[features]
 			for feature in features:
-				feature_calculating_dict[feature][f'{station}_{feature}'] = stat[feature]
-
-		else:
-			stat = stat[['dbht']]
-			stat[f'{station}_dbdt'] = stat['dbht']
-			combined_stations = pd.concat([combined_stations, stat[f'{station}_dbdt']], axis=1, ignore_index=False)
-
-	mean_dbht = combined_stations.mean(axis=1)
-	max_dbht = combined_stations.max(axis=1)
+				feature_dfs[feature][f'{stat}_{feature}'] = df[feature]
+	if features is not None:
+		for feature in features:
+			if mean:
+				if feature == 'N' or feature == 'E':
+					regional_df[f'{feature}_mean'] = feature_dfs[feature].abs().mean(axis=1)
+				else:
+					regional_df[f'{feature}_mean'] = feature_dfs[feature].mean(axis=1)
+			if std:
+				regional_df[f'{feature}_std'] = feature_dfs[feature].std(axis=1)
+			if maximum:
+				if feature == 'N' or feature == 'E':
+					regional_df[f'{feature}_max'] = feature_dfs[feature].abs().max(axis=1)
+				else:
+					regional_df[f'{feature}_max'] = feature_dfs[feature].max(axis=1)
+			if median:
+				if feature == 'N' or feature == 'E':
+					regional_df[f'{feature}_median'] = feature_dfs[feature].abs().median(axis=1)
+				else:
+					regional_df[f'{feature}_median'] = feature_dfs[feature].median(axis=1)
 
 	indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=15)
 
-	combined_stations['dbdt_mean'] = mean_dbht
-	combined_stations['dbdt_max'] = max_dbht
-	combined_stations['rolling_dbdt_max'] = max_dbht.rolling(indexer, min_periods=1).max()
-	combined_stations['rsd'] = rsd['max_rsd']['max_rsd']
-	combined_stations['rolling_rsd'] = rsd['max_rsd']['max_rsd'].rolling(indexer, min_periods=1).max()
-	# combined_stations['rsd'] = rsd['max_rsd']['max_rsd']
-	combined_stations['MLT'] = rsd['max_rsd']['MLT']
+	regional_df['rsd'] = rsd['max_rsd']['max_rsd']
+	regional_df['rolling_rsd'] = rsd['max_rsd']['max_rsd'].rolling(indexer, min_periods=1).max()
+	regional_df['MLT'] = rsd['max_rsd']['MLT']
+	regional_df['cosMLT'] = np.cos(regional_df['MLT'] * 2 * np.pi * 15 / 360)
+	regional_df['sinMLT'] = np.sin(regional_df['MLT'] * 2 * np.pi * 15 / 360)
 
 	if map_keys is not None:
-		segmented_df = combined_stations[combined_stations.index.isin(map_keys)]
+		segmented_df = regional_df[regional_df.index.isin(map_keys)]
 		return segmented_df
 
 	else:
-		return combined_stations
+		return regional_df
 
 
 def calculate_percentiles(df, param, mlt_span, percentile):
@@ -327,7 +326,7 @@ def classification_column(df, param, thresh, forecast, window):
 
 
 
-def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False):
+def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=False, target_var=None, concat=False):
 
 	'''
 	Pulling out storms using a defined list of datetime strings, adding a lead and recovery time to it and
@@ -343,8 +342,8 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False):
 		list: ace and supermag dataframes for storm times
 		list: np.arrays of shape (n,2) containing a one hot encoded boolean target array
 	'''
-	storms = list()				# initalizing the lists
-	all_storms = pd.DataFrame()
+	storms, y = list(), list()				# initalizing the lists
+	all_storms, all_targets = pd.DataFrame(), pd.DataFrame()
 
 	# setting the datetime index
 	if 'Date_UTC' in df.columns:
@@ -358,8 +357,7 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False):
 
 	# loading the storm list
 	if twins:
-		storm_list = pd.read_feather('outputs/regular_twins_map_dates.feather')	
-		print(storm_list)	
+		storm_list = pd.read_feather('outputs/regular_twins_map_dates.feather')
 		storm_list = storm_list['dates']
 	else:
 		storm_list = pd.read_csv('stormList.csv', header=None, names=['Date_UTC'])
@@ -385,11 +383,22 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False):
 		storm = df[(df.index >= start) & (df.index <= end)]
 
 		if len(storm) != 0:
-			storms.append(storm)			# creates a list of smaller storm time dataframes
+			if target:
+				y.append(storm[target_var].values)
+				storm.drop(target_var, axis=1, inplace=True)
+				storms.append(storm)
+			else:
+				storms.append(storm)			# creates a list of smaller storm time dataframes
 
-	for storm in storms:
-		all_storms = pd.concat([all_storms, storm], axis=0, ignore_index=False)
-		storm.reset_index(drop=True, inplace=True)		# resetting the storm index and simultaniously dropping the date so it doesn't get trained on
+	if concat:
+		for storm, tar in zip(storms, y):
+			all_storms = pd.concat([all_storms, storm], axis=0, ignore_index=False)
+			storm.reset_index(drop=True, inplace=True)		# resetting the storm index and simultaniously dropping the date so it doesn't get trained on
+			all_targets = pd.concat([all_targets, pd.DataFrame(tar)], axis=0, ignore_index=True)
+			all_targets.reset_index(drop=True, inplace=True)
 
-	return all_storms
+		return all_storms
+
+	else:
+		return storms, y
 
