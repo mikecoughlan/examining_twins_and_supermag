@@ -91,10 +91,10 @@ def loading_data(target_var, percentile=0.99):
 	regions, stats = utils.loading_dicts()
 	solarwind = utils.loading_solarwind(omni=True, limit_to_twins=True)
 
-	with open('outputs/feature_engineering/solarwind_corr_dict.pkl', 'rb') as f:
-		solarwind_corr_dict = pickle.load(f)
-	with open('outputs/feature_engineering/mag_corr_dict.pkl', 'rb') as f:
-		supermag_corr_dict = pickle.load(f)
+	# with open('outputs/feature_engineering/solarwind_corr_dict.pkl', 'rb') as f:
+	# 	solarwind_corr_dict = pickle.load(f)
+	# with open('outputs/feature_engineering/mag_corr_dict.pkl', 'rb') as f:
+	# 	supermag_corr_dict = pickle.load(f)
 
 	# converting the solarwind data to log10
 	solarwind['logT'] = np.log10(solarwind['T'])
@@ -102,20 +102,18 @@ def loading_data(target_var, percentile=0.99):
 
 	# reduce the regions dict to be only the ones that have keys in the region_numbers list
 	regions = regions[f'region_{CONFIG["region_number"]}']
+	stats = stats[f'region_{CONFIG["region_number"]}']
 
-	# Getting regions data for each region
-	for region in regions.keys():
+	# getting dbdt and rsd data for the region
+	supermag_df = utils.combining_stations_into_regions(regions['station'], stats, features=['dbht', 'MAGNITUDE', 'theta', 'N', 'E'], mean=True, std=True, maximum=True, median=True)
 
-		# getting dbdt and rsd data for the region
-		supermag_df = utils.combining_stations_into_regions(regions[region]['station'], stats[region], features=['dbht', 'MAGNITUDE', 'theta', 'N', 'E'], mean=True, std=True, maximum=True, median=True)
-
-		# getting the mean latitude for the region and attaching it to the regions dictionary
-		mean_lat = utils.getting_mean_lat(regions[region]['station'])
+	# getting the mean latitude for the region and attaching it to the regions dictionary
+	mean_lat = utils.getting_mean_lat(regions['station'])
 
 	percentile = supermag_df[target_var].quantile(percentile)
 
-	supermag_df.drop(columns=supermag_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr'], inplace=True)
-	solarwind.drop(columns=solarwind_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr'], inplace=True)
+	# supermag_df.drop(columns=supermag_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr'], inplace=True)
+	# solarwind.drop(columns=solarwind_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr'], inplace=True)
 
 	merged_df = pd.merge(supermag_df, solarwind, left_index=True, right_index=True, how='inner')
 
