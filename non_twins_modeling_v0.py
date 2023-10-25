@@ -107,7 +107,7 @@ def loading_data(target_var, percentile=0.99):
 	for region in regions.keys():
 
 		# getting dbdt and rsd data for the region
-		supermag_df = combining_stations_into_regions(regions[region]['station'], stats[region], features=FEATURES, mean=True, std=True, maximum=True, median=True)
+		supermag_df = utils.combining_stations_into_regions(regions[region]['station'], stats[region], features=['dbht', 'MAGNITUDE', 'theta', 'N', 'E'], mean=True, std=True, maximum=True, median=True)
 
 		# getting the mean latitude for the region and attaching it to the regions dictionary
 		mean_lat = utils.getting_mean_lat(regions[region]['station'])
