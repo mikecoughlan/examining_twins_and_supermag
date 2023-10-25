@@ -54,6 +54,7 @@ data_directory = '../../../../data/'
 supermag_dir = '../data/supermag/feather_files/'
 regions_dict = 'mike_working_dir/identifying_regions_data/identifying_regions_data/twins_era_identified_regions_min_2.pkl'
 regions_stat_dict = 'mike_working_dir/identifying_regions_data/identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
+working_dir = data_directory+'mike_working_dir/twins_data_modeling/'
 
 random_seed = 42
 
@@ -72,7 +73,8 @@ CONFIG = {'region_number': 387,
 			'delay':False,
 			'rolling':False,
 			'to_drop':[],
-			'omni_or_ace':'omni'}
+			'omni_or_ace':'omni',
+			'time_history':30}
 
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
@@ -141,10 +143,21 @@ def getting_prepared_data(target_var):
 	merged_df = utils.classification_column(merged_df, param=f'rolling_{target_var}', thresh=threshold, forecast=0, window=0)
 
 	target = merged_df['classification']
-	merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
+	print(f'Target value positive percentage: {target.sum()/len(target)}')
+	# merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
 
+	if os.path.exists(working_dir+f'twins_method_storm_extraction_time_history_{CONFIG["time_history"]}.pkl'):
+		with open(working_dir+f'twins_method_storm_extraction_time_history_{CONFIG["time_history"]}.pkl', 'rb') as f:
+			storms_extracted_dict = pickle.load(f)
+		storms = storms_extracted_dict['storms']
+		target = storms_extracted_dict['target']
+
+	else:
 	# getting the data corresponding to the twins maps
-	storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=10, twins=True, target=True, target_var='classification', concat=False)
+		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=10, twins=True, target=True, target_var='classification', concat=False)
+		storms_extracted_dict = {'storms':storms, 'target':target}
+		with open(working_dir+f'twins_method_storm_extraction_time_history_{CONFIG["time_history"]}.pkl', 'wb') as f:
+			pickle.dump(storms_extracted_dict, f)
 
 	# splitting the data on a month to month basis to reduce data leakage
 	month_df = pd.date_range(start=pd.to_datetime('2009-06-01'), end=pd.to_datetime('2018-01-01'), freq='SM')
@@ -165,22 +178,37 @@ def getting_prepared_data(target_var):
 	for month in test_months:
 		test_dates_df.append(pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min'))
 
+	data_dict = {'train':[], 'val':[], 'test':[]}
+
 	# getting the data corresponding to the dates
 	for storm, y in zip(storms, target):
 		if storm.index[0] in train_dates_df:
 			x_train.append(storm)
-			y_train.append(y)
+			y_train.append(to_categorical(y.to_numpy(), num_classes=2))
+			data_dict['train'].append(storm.index[-10:])
 		elif storm.index[0] in val_dates_df:
 			x_val.append(storm)
-			y_val.append(y)
+			y_val.append(to_categorical(y.to_numpy(), num_classes=2))
+			data_dict['val'].append(storm.index[-10:])
 		elif storm.index[0] in test_dates_df:
 			x_test.append(storm)
-			y_test.append(y)
+			y_test.append(to_categorical(y.to_numpy(), num_classes=2))
+			data_dict['test'].append(storm.index[-10:])
 
 
+	to_scale_with = pd.concat(x_train, axis=0)
+	scaler = StandardScaler()
+	scaler.fit(to_scale_with)
+	x_train = [scaler.transform(x) for x in x_train]
+	x_val = [scaler.transform(x) for x in x_val]
+	x_test = [scaler.transform(x) for x in x_test]
 
+	# splitting the sequences for input to the CNN
+	x_train, y_train = utils.split_sequences(x_train, y_train, n_steps=30)
+	x_val, y_val = utils.split_sequences(x_val, y_val, n_steps=30)
+	x_test, y_test = utils.split_sequences(x_test, y_test, n_steps=30)
 
-	return X_train, X_val, X_test, y_train, y_val, y_test, dates_dict
+	return x_train, x_val, x_test, y_train, y_val, y_test, dates_dict
 
 
 def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patience=10):

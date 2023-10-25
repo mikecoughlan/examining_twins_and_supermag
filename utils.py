@@ -402,3 +402,37 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=F
 	else:
 		return storms, y
 
+
+def split_sequences(sequences, targets=None, n_steps=30, include_target=True):
+	'''
+		Takes input from the input array and creates the input and target arrays that can go into the models.
+
+		Args:
+			sequences (np.array): input features. Shape = (length of data, number of input features)
+			results_y: series data of the targets for each threshold. Shape = (length of data, 1)
+			n_steps (int): the time history that will define the 2nd demension of the resulting array.
+			include_target (bool): true if there will be a target output. False for the testing data.
+
+		Returns:
+			np.array (n, time history, n_features): array for model input
+			np.array (n, 1): target array
+		'''
+
+	X, y = list(), list()							# creating lists for storing results
+	for sequence, target in zip(sequences, targets):	# looping through the sequences and targets
+		for i in range(len(sequence)-n_steps):			# going to the end of the dataframes
+			end_ix = i + n_steps						# find the end of this pattern
+			if end_ix > len(sequence):					# check if we are beyond the dataset
+				break
+			seq_x = sequence[i:end_ix, :]				# grabs the appropriate chunk of the data
+			if include_target:
+				if np.isnan(seq_x).any():				# doesn't add arrays with nan values to the training set
+					continue
+				seq_y1 = target[end_ix, :]				# gets the appropriate target
+				y.append(seq_y1)
+			X.append(seq_x)
+
+	if include_target:
+		return np.array(X), np.array(y)
+	if not include_target:
+		return np.array(X)
