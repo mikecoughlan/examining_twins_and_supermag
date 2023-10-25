@@ -110,7 +110,7 @@ def loading_data(target_var, percentile=0.99):
 	# getting the mean latitude for the region and attaching it to the regions dictionary
 	mean_lat = utils.getting_mean_lat(regions['station'])
 
-	percentile = supermag_df[target_var].quantile(percentile)
+	threshold = supermag_df[target_var].quantile(percentile)
 
 	# supermag_df.drop(columns=supermag_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr'], inplace=True)
 	# solarwind.drop(columns=solarwind_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr'], inplace=True)
@@ -118,7 +118,7 @@ def loading_data(target_var, percentile=0.99):
 	merged_df = pd.merge(supermag_df, solarwind, left_index=True, right_index=True, how='inner')
 
 
-	return merged_df, mean_lat, percentile
+	return merged_df, mean_lat, threshold
 
 
 
@@ -136,9 +136,9 @@ def getting_prepared_data(target_var):
 
 	'''
 
-	merged_df, mean_lat, percentile = loading_data(target_var=target_var, percentile=0.99)
+	merged_df, mean_lat, threshold = loading_data(target_var=target_var, percentile=0.99)
 
-	merged_df = utils.classification_column(merged_df, param=f'rolling_{target_var}', percentile=percentile, forcast=0, window=0)
+	merged_df = utils.classification_column(merged_df, param=f'rolling_{target_var}', thresh=threshold, forecast=0, window=0)
 
 	target = merged_df['classification']
 	merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
