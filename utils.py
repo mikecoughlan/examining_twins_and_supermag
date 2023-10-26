@@ -428,7 +428,7 @@ def split_sequences(sequences, targets=None, n_steps=30, include_target=True, da
 			if include_target:
 				if np.isnan(seq_x).any():
 					if dates is not None:				# doesn't add arrays with nan values to the training set
-						dates[j].drop(dates[j].index[i], inplace=True)
+						dates[j].drop(dates[j].iloc[i], inplace=True)
 					continue
 				seq_y1 = target[end_ix, :]				# gets the appropriate target
 				y.append(seq_y1)
