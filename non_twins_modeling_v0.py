@@ -48,12 +48,17 @@ from tensorflow.python.keras.backend import get_session
 import utils
 from data_prep import DataPrep
 
+# from datetime import strftime
+
+
+
 os.environ["CDF_LIB"] = "~/CDF/lib"
 
 data_directory = '../../../../data/'
 supermag_dir = '../data/supermag/feather_files/'
 regions_dict = 'mike_working_dir/identifying_regions_data/identifying_regions_data/twins_era_identified_regions_min_2.pkl'
 regions_stat_dict = 'mike_working_dir/identifying_regions_data/identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
+working_dir = data_directory+'mike_working_dir/twins_data_modeling/'
 
 random_seed = 42
 
@@ -72,9 +77,15 @@ CONFIG = {'region_number': 387,
 			'delay':False,
 			'rolling':False,
 			'to_drop':[],
-			'omni_or_ace':
+			'omni_or_ace':'omni',
+			'time_history':30,
+			'random_seed':42}
 
-}
+MODEL_CONFIG = {'filters':128,
+				'initial_learning_rate':1e-6,
+				'epochs':300,
+				'loss':'binary_crossentropy',
+				'early_stop_patience':10}
 
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
@@ -84,9 +95,47 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 MLT_SPAN = 2
 MLT_BIN_TARGET = 4
 VERSION = 0
-test_region = 387
 
-def getting_prepared_data():
+
+def loading_data(target_var, percentile=0.99):
+
+	# loading all the datasets and dictonaries
+
+	regions, stats = utils.loading_dicts()
+	solarwind = utils.loading_solarwind(omni=True, limit_to_twins=True)
+
+	with open('outputs/feature_engineering/solarwind_corr_dict.pkl', 'rb') as f:
+		solarwind_corr_dict = pickle.load(f)
+	with open('outputs/feature_engineering/mag_corr_dict.pkl', 'rb') as f:
+		supermag_corr_dict = pickle.load(f)
+
+	# converting the solarwind data to log10
+	solarwind['logT'] = np.log10(solarwind['T'])
+	solarwind.drop(columns=['T'], inplace=True)
+
+	# reduce the regions dict to be only the ones that have keys in the region_numbers list
+	regions = regions[f'region_{CONFIG["region_number"]}']
+	stats = stats[f'region_{CONFIG["region_number"]}']
+
+	# getting dbdt and rsd data for the region
+	supermag_df = utils.combining_stations_into_regions(regions['station'], stats, features=['dbht', 'MAGNITUDE', 'theta', 'N', 'E'], mean=True, std=True, maximum=True, median=True)
+
+	# getting the mean latitude for the region and attaching it to the regions dictionary
+	mean_lat = utils.getting_mean_lat(regions['station'])
+
+	threshold = supermag_df[target_var].quantile(percentile)
+
+	supermag_df.drop(columns=supermag_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr'], inplace=True)
+	solarwind.drop(columns=solarwind_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr_features'], inplace=True)
+
+	merged_df = pd.merge(supermag_df, solarwind, left_index=True, right_index=True, how='inner')
+
+
+	return merged_df, mean_lat, threshold
+
+
+
+def getting_prepared_data(target_var):
 	'''
 	Calling the data prep class without the TWINS data for this version of the model.
 
@@ -100,13 +149,107 @@ def getting_prepared_data():
 
 	'''
 
-	prep = DataPrep(region_path, region_number, solarwind_path, supermag_dir_path, twins_times_path,
-					rsd_path, random_seed)
+	merged_df, mean_lat, threshold = loading_data(target_var=target_var, percentile=0.99)
 
-	X_train, X_val, X_test, y_train, y_val, y_test = prep.do_full_data_prep(CONFIG)
+	merged_df = utils.classification_column(merged_df, param=f'rolling_{target_var}', thresh=threshold, forecast=0, window=0)
 
+	target = merged_df['classification']
+	print(f'Target value positive percentage: {target.sum()/len(target)}')
+	# merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
 
-	return X_train, X_val, X_test, y_train, y_val, y_test
+	if os.path.exists(working_dir+f'twins_method_storm_extraction_time_history_{CONFIG["time_history"]}.pkl'):
+		with open(working_dir+f'twins_method_storm_extraction_time_history_{CONFIG["time_history"]}.pkl', 'rb') as f:
+			storms_extracted_dict = pickle.load(f)
+		storms = storms_extracted_dict['storms']
+		target = storms_extracted_dict['target']
+
+	else:
+	# getting the data corresponding to the twins maps
+		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var='classification', concat=False)
+		storms_extracted_dict = {'storms':storms, 'target':target}
+		with open(working_dir+f'twins_method_storm_extraction_time_history_{CONFIG["time_history"]}.pkl', 'wb') as f:
+			pickle.dump(storms_extracted_dict, f)
+
+	# splitting the data on a month to month basis to reduce data leakage
+	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
+
+	train_months, test_months = train_test_split(month_df, test_size=0.2, shuffle=True, random_state=CONFIG['random_seed'])
+	train_months, val_months = train_test_split(train_months, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
+
+	train_dates_df, val_dates_df, test_dates_df = pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]})
+	x_train, x_val, x_test, y_train, y_val, y_test = [], [], [], [], [], []
+
+	# using the months to split the data
+	for month in train_months:
+		train_dates_df = pd.concat([train_dates_df, pd.DataFrame({'dates':pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min')})], axis=0)
+
+	for month in val_months:
+		val_dates_df = pd.concat([val_dates_df, pd.DataFrame({'dates':pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min')})], axis=0)
+
+	for month in test_months:
+		test_dates_df = pd.concat([test_dates_df, pd.DataFrame({'dates':pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min')})], axis=0)
+
+	train_dates_df.set_index('dates', inplace=True)
+	val_dates_df.set_index('dates', inplace=True)
+	test_dates_df.set_index('dates', inplace=True)
+
+	train_dates_df.index = pd.to_datetime(train_dates_df.index)
+	val_dates_df.index = pd.to_datetime(val_dates_df.index)
+	test_dates_df.index = pd.to_datetime(test_dates_df.index)
+
+	date_dict = {'train':pd.DataFrame(), 'val':pd.DataFrame(), 'test':pd.DataFrame()}
+
+	# getting the data corresponding to the dates
+	for storm, y in zip(storms, target):
+
+		copied_storm = storm.copy()
+		copied_storm = copied_storm.reset_index(inplace=False, drop=False).rename(columns={'index':'Date_UTC'})
+
+		if storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in train_dates_df.index:
+			x_train.append(storm)
+			y_train.append(to_categorical(y, num_classes=2))
+			date_dict['train'] = pd.concat([date_dict['train'], copied_storm['Date_UTC'][-10:]], axis=0)
+		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in val_dates_df.index:
+			x_val.append(storm)
+			y_val.append(to_categorical(y, num_classes=2))
+			date_dict['val'] = pd.concat([date_dict['val'], copied_storm['Date_UTC'][-10:]], axis=0)
+		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in test_dates_df.index:
+			x_test.append(storm)
+			y_test.append(to_categorical(y, num_classes=2))
+			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
+
+	date_dict['train'] = date_dict['train'].reset_index(drop=True, inplace=False)
+	date_dict['val'] = date_dict['val'].reset_index(drop=True, inplace=False)
+	date_dict['test'] = date_dict['test'].reset_index(drop=True, inplace=False)
+
+	to_scale_with = pd.concat(x_train, axis=0)
+	scaler = StandardScaler()
+	scaler.fit(to_scale_with)
+	x_train = [scaler.transform(x) for x in x_train]
+	x_val = [scaler.transform(x) for x in x_val]
+	x_test = [scaler.transform(x) for x in x_test]
+
+	print(f'shape of x_train: {len(x_train)}')
+	print(f'shape of x_val: {len(x_val)}')
+	print(f'shape of x_test: {len(x_test)}')
+
+	# splitting the sequences for input to the CNN
+	x_train, y_train, train_dates_to_drop = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'])
+	x_val, y_val, val_dates_to_drop = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'])
+	x_test, y_test, test_dates_to_drop  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'])
+
+	# dropping the dates that correspond to arrays that would have had nan values
+	date_dict['train'] = date_dict['train'].drop(train_dates_to_drop, axis=0)
+	date_dict['val'] = date_dict['val'].drop(val_dates_to_drop, axis=0)
+	date_dict['test'] = date_dict['test'].drop(test_dates_to_drop, axis=0)
+
+	print(f'Total training dates: {len(date_dict["train"])}')
+
+	print(f'shape of x_train: {x_train.shape}')
+	print(f'shape of x_val: {x_val.shape}')
+	print(f'shape of x_test: {x_test.shape}')
+
+	return x_train, x_val, x_test, y_train, y_val, y_test, date_dict
 
 
 def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patience=10):
@@ -249,9 +392,7 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(prediction_param='dbdt_max', mlt_span=MLT_SPAN, mlt_bin_target=MLT_BIN_TARGET,
-																				percentile=0.99, start_date=pd.to_datetime('2009-07-20'),
-																				end_date=pd.to_datetime('2017-12-31'))
+	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(target_var='rsd')
 
 	print('xtrain shape: '+str(xtrain.shape))
 	print('xval shape: '+str(xval.shape))
