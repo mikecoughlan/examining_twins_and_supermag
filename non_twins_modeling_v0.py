@@ -48,6 +48,10 @@ from tensorflow.python.keras.backend import get_session
 import utils
 from data_prep import DataPrep
 
+# from datetime import strftime
+
+
+
 os.environ["CDF_LIB"] = "~/CDF/lib"
 
 data_directory = '../../../../data/'
@@ -74,7 +78,7 @@ CONFIG = {'region_number': 387,
 			'rolling':False,
 			'to_drop':[],
 			'omni_or_ace':'omni',
-			'time_history':30}
+			'time_history':30, 'random_seed':42}
 
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
@@ -154,46 +158,55 @@ def getting_prepared_data(target_var):
 
 	else:
 	# getting the data corresponding to the twins maps
-		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=10, twins=True, target=True, target_var='classification', concat=False)
+		storms, target = utils.storm_extract(df=merged_df, lead=29, recovery=9, twins=True, target=True, target_var='classification', concat=False)
 		storms_extracted_dict = {'storms':storms, 'target':target}
 		with open(working_dir+f'twins_method_storm_extraction_time_history_{CONFIG["time_history"]}.pkl', 'wb') as f:
 			pickle.dump(storms_extracted_dict, f)
 
 	# splitting the data on a month to month basis to reduce data leakage
-	month_df = pd.date_range(start=pd.to_datetime('2009-06-01'), end=pd.to_datetime('2018-01-01'), freq='SM')
+	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
 
-	train_months, test_months = train_test_split(month_df, test_size=0.2, shuffle=True)
-	train_months, val_months = train_test_split(train_months, test_size=0.125, shuffle=True)
+	train_months, test_months = train_test_split(month_df, test_size=0.2, shuffle=True, random_state=CONFIG['random_seed'])
+	train_months, val_months = train_test_split(train_months, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
 
-	train_dates_df, val_dates_df, test_dates_df = [], [], []
+	train_dates_df, val_dates_df, test_dates_df = pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]})
 	x_train, x_val, x_test, y_train, y_val, y_test = [], [], [], [], [], []
 
 	# using the months to split the data
 	for month in train_months:
-		train_dates_df.append(pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min'))
+		train_dates_df = pd.concat([train_dates_df, pd.DataFrame({'dates':pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min')})], axis=0)
 
 	for month in val_months:
-		val_dates_df.append(pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min'))
+		val_dates_df = pd.concat([val_dates_df, pd.DataFrame({'dates':pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min')})], axis=0)
 
 	for month in test_months:
-		test_dates_df.append(pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min'))
+		test_dates_df = pd.concat([test_dates_df, pd.DataFrame({'dates':pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min')})], axis=0)
 
-	data_dict = {'train':[], 'val':[], 'test':[]}
+	train_dates_df.set_index('dates', inplace=True)
+	val_dates_df.set_index('dates', inplace=True)
+	test_dates_df.set_index('dates', inplace=True)
+
+	train_dates_df.index = pd.to_datetime(train_dates_df.index)
+	val_dates_df.index = pd.to_datetime(val_dates_df.index)
+	test_dates_df.index = pd.to_datetime(test_dates_df.index)
+
+	date_dict = {'train':[], 'val':[], 'test':[]}
 
 	# getting the data corresponding to the dates
 	for storm, y in zip(storms, target):
-		if storm.index[0] in train_dates_df:
+
+		if storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in train_dates_df.index:
 			x_train.append(storm)
-			y_train.append(to_categorical(y.to_numpy(), num_classes=2))
-			data_dict['train'].append(storm.index[-10:])
-		elif storm.index[0] in val_dates_df:
+			y_train.append(to_categorical(y, num_classes=2))
+			date_dict['train'].append(storm.index[-10:])
+		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in val_dates_df.index:
 			x_val.append(storm)
-			y_val.append(to_categorical(y.to_numpy(), num_classes=2))
-			data_dict['val'].append(storm.index[-10:])
-		elif storm.index[0] in test_dates_df:
+			y_val.append(to_categorical(y, num_classes=2))
+			date_dict['val'].append(storm.index[-10:])
+		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in test_dates_df.index:
 			x_test.append(storm)
-			y_test.append(to_categorical(y.to_numpy(), num_classes=2))
-			data_dict['test'].append(storm.index[-10:])
+			y_test.append(to_categorical(y, num_classes=2))
+			date_dict['test'].append(storm.index[-10:])
 
 
 	to_scale_with = pd.concat(x_train, axis=0)
@@ -203,12 +216,20 @@ def getting_prepared_data(target_var):
 	x_val = [scaler.transform(x) for x in x_val]
 	x_test = [scaler.transform(x) for x in x_test]
 
-	# splitting the sequences for input to the CNN
-	x_train, y_train = utils.split_sequences(x_train, y_train, n_steps=30)
-	x_val, y_val = utils.split_sequences(x_val, y_val, n_steps=30)
-	x_test, y_test = utils.split_sequences(x_test, y_test, n_steps=30)
+	print(f'shape of x_train: {len(x_train)}')
+	print(f'shape of x_val: {len(x_val)}')
+	print(f'shape of x_test: {len(x_test)}')
 
-	return x_train, x_val, x_test, y_train, y_val, y_test, dates_dict
+	# splitting the sequences for input to the CNN
+	x_train, y_train, train_dates = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'])
+	x_val, y_val, val_dates = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'])
+	x_test, y_test, test_dates  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'])
+
+	print(f'shape of x_train: {x_train.shape}')
+	print(f'shape of x_val: {x_val.shape}')
+	print(f'shape of x_test: {x_test.shape}')
+
+	return x_train, x_val, x_test, y_train, y_val, y_test, date_dict
 
 
 def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patience=10):

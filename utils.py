@@ -403,7 +403,7 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=F
 		return storms, y
 
 
-def split_sequences(sequences, targets=None, n_steps=30, include_target=True):
+def split_sequences(sequences, targets=None, n_steps=30, include_target=True, dates=None):
 	'''
 		Takes input from the input array and creates the input and target arrays that can go into the models.
 
@@ -419,20 +419,28 @@ def split_sequences(sequences, targets=None, n_steps=30, include_target=True):
 		'''
 
 	X, y = list(), list()							# creating lists for storing results
-	for sequence, target in zip(sequences, targets):	# looping through the sequences and targets
+	for j, (sequence, target) in enumerate(zip(sequences, targets)):	# looping through the sequences and targets
 		for i in range(len(sequence)-n_steps):			# going to the end of the dataframes
 			end_ix = i + n_steps						# find the end of this pattern
 			if end_ix > len(sequence):					# check if we are beyond the dataset
 				break
 			seq_x = sequence[i:end_ix, :]				# grabs the appropriate chunk of the data
 			if include_target:
-				if np.isnan(seq_x).any():				# doesn't add arrays with nan values to the training set
+				if np.isnan(seq_x).any():
+					if dates is not None:				# doesn't add arrays with nan values to the training set
+						dates[j].drop(dates[j].index[i], inplace=True)
 					continue
 				seq_y1 = target[end_ix, :]				# gets the appropriate target
 				y.append(seq_y1)
 			X.append(seq_x)
 
 	if include_target:
-		return np.array(X), np.array(y)
+		if dates is not None:
+			return np.array(X), np.array(y), dates
+		else:
+			return np.array(X), np.array(y)
 	if not include_target:
-		return np.array(X)
+		if dates is not None:
+			return np.array(X), dates
+		else:
+			return np.array(X)
