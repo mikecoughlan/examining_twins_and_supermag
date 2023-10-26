@@ -418,8 +418,9 @@ def split_sequences(sequences, targets=None, n_steps=30, include_target=True, da
 			np.array (n, 1): target array
 		'''
 
-	X, y = list(), list()							# creating lists for storing results
-	for j, (sequence, target) in enumerate(zip(sequences, targets)):	# looping through the sequences and targets
+	X, y, to_drop = list(), list(), list()							# creating lists for storing results
+	index_to_drop = 0
+	for sequence, target in zip(sequences, targets):	# looping through the sequences and targets
 		for i in range(len(sequence)-n_steps):			# going to the end of the dataframes
 			end_ix = i + n_steps						# find the end of this pattern
 			if end_ix > len(sequence):					# check if we are beyond the dataset
@@ -428,19 +429,21 @@ def split_sequences(sequences, targets=None, n_steps=30, include_target=True, da
 			if include_target:
 				if np.isnan(seq_x).any():
 					if dates is not None:				# doesn't add arrays with nan values to the training set
-						dates[j].drop(dates[j].iloc[i], inplace=True)
+						to_drop.append(index_to_drop)
+						index_to_drop += 1
 					continue
 				seq_y1 = target[end_ix, :]				# gets the appropriate target
 				y.append(seq_y1)
 			X.append(seq_x)
+			index_to_drop += 1
 
 	if include_target:
 		if dates is not None:
-			return np.array(X), np.array(y), dates
+			return np.array(X), np.array(y), to_drop
 		else:
 			return np.array(X), np.array(y)
 	if not include_target:
 		if dates is not None:
-			return np.array(X), dates
+			return np.array(X), to_drop
 		else:
 			return np.array(X)

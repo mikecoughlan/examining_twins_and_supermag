@@ -78,7 +78,14 @@ CONFIG = {'region_number': 387,
 			'rolling':False,
 			'to_drop':[],
 			'omni_or_ace':'omni',
-			'time_history':30, 'random_seed':42}
+			'time_history':30,
+			'random_seed':42}
+
+MODEL_CONFIG = {'filters':128,
+				'initial_learning_rate':1e-6,
+				'epochs':300,
+				'loss':'binary_crossentropy',
+				'early_stop_patience':10}
 
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
@@ -97,10 +104,10 @@ def loading_data(target_var, percentile=0.99):
 	regions, stats = utils.loading_dicts()
 	solarwind = utils.loading_solarwind(omni=True, limit_to_twins=True)
 
-	# with open('outputs/feature_engineering/solarwind_corr_dict.pkl', 'rb') as f:
-	# 	solarwind_corr_dict = pickle.load(f)
-	# with open('outputs/feature_engineering/mag_corr_dict.pkl', 'rb') as f:
-	# 	supermag_corr_dict = pickle.load(f)
+	with open('outputs/feature_engineering/solarwind_corr_dict.pkl', 'rb') as f:
+		solarwind_corr_dict = pickle.load(f)
+	with open('outputs/feature_engineering/mag_corr_dict.pkl', 'rb') as f:
+		supermag_corr_dict = pickle.load(f)
 
 	# converting the solarwind data to log10
 	solarwind['logT'] = np.log10(solarwind['T'])
@@ -118,8 +125,8 @@ def loading_data(target_var, percentile=0.99):
 
 	threshold = supermag_df[target_var].quantile(percentile)
 
-	# supermag_df.drop(columns=supermag_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr'], inplace=True)
-	# solarwind.drop(columns=solarwind_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr'], inplace=True)
+	supermag_df.drop(columns=supermag_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr'], inplace=True)
+	solarwind.drop(columns=solarwind_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr_features'], inplace=True)
 
 	merged_df = pd.merge(supermag_df, solarwind, left_index=True, right_index=True, how='inner')
 
@@ -158,7 +165,7 @@ def getting_prepared_data(target_var):
 
 	else:
 	# getting the data corresponding to the twins maps
-		storms, target = utils.storm_extract(df=merged_df, lead=29, recovery=9, twins=True, target=True, target_var='classification', concat=False)
+		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var='classification', concat=False)
 		storms_extracted_dict = {'storms':storms, 'target':target}
 		with open(working_dir+f'twins_method_storm_extraction_time_history_{CONFIG["time_history"]}.pkl', 'wb') as f:
 			pickle.dump(storms_extracted_dict, f)
@@ -190,24 +197,30 @@ def getting_prepared_data(target_var):
 	val_dates_df.index = pd.to_datetime(val_dates_df.index)
 	test_dates_df.index = pd.to_datetime(test_dates_df.index)
 
-	date_dict = {'train':[], 'val':[], 'test':[]}
+	date_dict = {'train':pd.DataFrame(), 'val':pd.DataFrame(), 'test':pd.DataFrame()}
 
 	# getting the data corresponding to the dates
 	for storm, y in zip(storms, target):
 
+		copied_storm = storm.copy()
+		copied_storm = copied_storm.reset_index(inplace=False, drop=False).rename(columns={'index':'Date_UTC'})
+
 		if storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in train_dates_df.index:
 			x_train.append(storm)
 			y_train.append(to_categorical(y, num_classes=2))
-			date_dict['train'].append(storm.index[-10:])
+			date_dict['train'] = pd.concat([date_dict['train'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in val_dates_df.index:
 			x_val.append(storm)
 			y_val.append(to_categorical(y, num_classes=2))
-			date_dict['val'].append(storm.index[-10:])
+			date_dict['val'] = pd.concat([date_dict['val'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in test_dates_df.index:
 			x_test.append(storm)
 			y_test.append(to_categorical(y, num_classes=2))
-			date_dict['test'].append(storm.index[-10:])
+			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
 
+	date_dict['train'] = date_dict['train'].reset_index(drop=True, inplace=False)
+	date_dict['val'] = date_dict['val'].reset_index(drop=True, inplace=False)
+	date_dict['test'] = date_dict['test'].reset_index(drop=True, inplace=False)
 
 	to_scale_with = pd.concat(x_train, axis=0)
 	scaler = StandardScaler()
@@ -221,9 +234,16 @@ def getting_prepared_data(target_var):
 	print(f'shape of x_test: {len(x_test)}')
 
 	# splitting the sequences for input to the CNN
-	x_train, y_train, train_dates = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'])
-	x_val, y_val, val_dates = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'])
-	x_test, y_test, test_dates  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'])
+	x_train, y_train, train_dates_to_drop = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'])
+	x_val, y_val, val_dates_to_drop = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'])
+	x_test, y_test, test_dates_to_drop  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'])
+
+	# dropping the dates that correspond to arrays that would have had nan values
+	date_dict['train'] = date_dict['train'].drop(train_dates_to_drop, axis=0)
+	date_dict['val'] = date_dict['val'].drop(val_dates_to_drop, axis=0)
+	date_dict['test'] = date_dict['test'].drop(test_dates_to_drop, axis=0)
+
+	print(f'Total training dates: {len(date_dict["train"])}')
 
 	print(f'shape of x_train: {x_train.shape}')
 	print(f'shape of x_val: {x_val.shape}')
