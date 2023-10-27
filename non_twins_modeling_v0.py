@@ -21,7 +21,6 @@ import pickle
 import subprocess
 import time
 
-import keras
 import matplotlib
 import matplotlib.animation as animation
 import matplotlib.image as mpimg

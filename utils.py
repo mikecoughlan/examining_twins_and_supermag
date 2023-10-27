@@ -27,7 +27,7 @@ os.environ["CDF_LIB"] = "~/CDF/lib"
 data_dir = '../../../../data/'
 twins_dir = '../data/twins/'
 supermag_dir = data_dir+'supermag/feather_files/'
-regions_dict = data_dir+'mike_working_dir/identifying_regions_data/twins_era_identified_regions_min_2.pkl'
+regions_dict = data_dir+'mike_working_dir/identifying_regions_data/adjusted_regions.pkl'
 regions_stat_dict = data_dir+'mike_working_dir/identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
@@ -140,7 +140,7 @@ def loading_supermag(station):
 	'''
 
 	print(f'Loading station {station}....')
-	df = pd.read_feather(data_dir+supermag_dir+station+'.feather')
+	df = pd.read_feather(supermag_dir+station+'.feather')
 
 	# limiting the analysis to the nightside
 	df.set_index('Date_UTC', inplace=True, drop=True)
