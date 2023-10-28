@@ -387,6 +387,10 @@ def main(region):
 	Pulls all the above functions together. Outputs a saved file with the results.
 
 	'''
+	if not os.path.exists(f'outputs/{TARGET}'):
+		os.makedirs(f'outputs/{TARGET}')
+	if not os.path.exists(f'models/{TARGET}'):
+		os.makedirs(f'models/{TARGET}')
 
 	# loading all data and indicies
 	print('Loading data...')
