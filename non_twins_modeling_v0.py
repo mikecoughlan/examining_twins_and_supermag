@@ -69,7 +69,7 @@ random_seed = 42
 # with open('model_config.json', 'r') as mcon:
 # 	MODEL_CONFIG = json.load(mcon)
 
-CONFIG = {'region_number': 387,
+CONFIG = {'region_numbers': [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163],
 			'load_twins':False,
 			'mag_features':[],
 			'solarwind_features':[],
@@ -82,9 +82,9 @@ CONFIG = {'region_number': 387,
 
 MODEL_CONFIG = {'filters':128,
 				'initial_learning_rate':1e-6,
-				'epochs':300,
+				'epochs':500,
 				'loss':'binary_crossentropy',
-				'early_stop_patience':10}
+				'early_stop_patience':25}
 
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
@@ -96,7 +96,7 @@ MLT_BIN_TARGET = 4
 VERSION = 0
 
 
-def loading_data(target_var, percentile=0.99):
+def loading_data(target_var, region, percentile=0.99):
 
 	# loading all the datasets and dictonaries
 
@@ -113,8 +113,8 @@ def loading_data(target_var, percentile=0.99):
 	solarwind.drop(columns=['T'], inplace=True)
 
 	# reduce the regions dict to be only the ones that have keys in the region_numbers list
-	regions = regions[f'region_{CONFIG["region_number"]}']
-	stats = stats[f'region_{CONFIG["region_number"]}']
+	regions = regions[f'region_{region}']
+	stats = stats[f'region_{region}']
 
 	# getting dbdt and rsd data for the region
 	supermag_df = utils.combining_stations_into_regions(regions['station'], stats, features=['dbht', 'MAGNITUDE', 'theta', 'N', 'E'], mean=True, std=True, maximum=True, median=True)
@@ -124,8 +124,8 @@ def loading_data(target_var, percentile=0.99):
 
 	threshold = supermag_df[target_var].quantile(percentile)
 
-	supermag_df.drop(columns=supermag_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr'], inplace=True)
-	solarwind.drop(columns=solarwind_corr_dict[f'region_{CONFIG["region_number"]}']['twins_corr_features'], inplace=True)
+	supermag_df.drop(columns=supermag_corr_dict[f'region_{region}']['twins_corr'], inplace=True)
+	solarwind.drop(columns=solarwind_corr_dict[f'region_{region}']['twins_corr_features'], inplace=True)
 
 	merged_df = pd.merge(supermag_df, solarwind, left_index=True, right_index=True, how='inner')
 
@@ -134,7 +134,7 @@ def loading_data(target_var, percentile=0.99):
 
 
 
-def getting_prepared_data(target_var):
+def getting_prepared_data(target_var, region):
 	'''
 	Calling the data prep class without the TWINS data for this version of the model.
 
@@ -148,7 +148,7 @@ def getting_prepared_data(target_var):
 
 	'''
 
-	merged_df, mean_lat, threshold = loading_data(target_var=target_var, percentile=0.99)
+	merged_df, mean_lat, threshold = loading_data(target_var=target_var, region=region, percentile=0.99)
 
 	merged_df = utils.classification_column(merged_df, param=f'rolling_{target_var}', thresh=threshold, forecast=0, window=0)
 
@@ -156,8 +156,8 @@ def getting_prepared_data(target_var):
 	print(f'Target value positive percentage: {target.sum()/len(target)}')
 	# merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
 
-	if os.path.exists(working_dir+f'twins_method_storm_extraction_time_history_{CONFIG["time_history"]}.pkl'):
-		with open(working_dir+f'twins_method_storm_extraction_time_history_{CONFIG["time_history"]}.pkl', 'rb') as f:
+	if os.path.exists(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}.pkl'):
+		with open(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}.pkl', 'rb') as f:
 			storms_extracted_dict = pickle.load(f)
 		storms = storms_extracted_dict['storms']
 		target = storms_extracted_dict['target']
@@ -166,7 +166,7 @@ def getting_prepared_data(target_var):
 	# getting the data corresponding to the twins maps
 		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var='classification', concat=False)
 		storms_extracted_dict = {'storms':storms, 'target':target}
-		with open(working_dir+f'twins_method_storm_extraction_time_history_{CONFIG["time_history"]}.pkl', 'wb') as f:
+		with open(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}.pkl', 'wb') as f:
 			pickle.dump(storms_extracted_dict, f)
 
 	# splitting the data on a month to month basis to reduce data leakage
@@ -288,7 +288,7 @@ def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patienc
 	return model, early_stop
 
 
-def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
+def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, region):
 	'''
 	Performs the actual fitting of the model.
 
@@ -307,7 +307,7 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 		model: fit model ready for making predictions.
 	'''
 
-	if not os.path.exists(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_{VERSION}.h5'):
+	if not os.path.exists(f'models/non_twins_region_{region}_v{VERSION}.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
@@ -317,11 +317,11 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, mlt_bin, mlt_span):
 					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
 
 		# saving the model
-		model.save(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_{VERSION}.h5')
+		model.save(f'models/non_twins_region_{region}_v{VERSION}.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model(f'models/mlt_bin_{mlt_bin}_span_{mlt_span}_version_{VERSION}.h5')				# loading the models if already trained
+		model = load_model(f'models/non_twins_region_{region}_v{VERSION}.h5')				# loading the models if already trained
 
 	return model
 
@@ -383,7 +383,7 @@ def calculate_some_metrics(results_df):
 	return metrics
 
 
-def main():
+def main(region):
 	'''
 	Pulls all the above functions together. Outputs a saved file with the results.
 
@@ -391,7 +391,7 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(target_var='rsd')
+	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(target_var='rsd', region=region)
 
 	print('xtrain shape: '+str(xtrain.shape))
 	print('xval shape: '+str(xval.shape))
@@ -407,7 +407,7 @@ def main():
 
 	# fitting the model
 	print('Fitting model...')
-	MODEL = fit_CNN(MODEL, xtrain, xval, ytrain, yval, early_stop, mlt_bin=MLT_BIN_TARGET, mlt_span=MLT_SPAN)
+	MODEL = fit_CNN(MODEL, xtrain, xval, ytrain, yval, early_stop, region=region)
 
 	# making predictions
 	print('Making predictions...')
@@ -435,5 +435,7 @@ def main():
 
 
 if __name__ == '__main__':
-	main()
+	for region in CONFIG['region_numbers']:
+		print(region)
+		main(region)
 	print('It ran. God job!')
