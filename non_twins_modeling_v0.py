@@ -422,7 +422,7 @@ def main(region):
 	# with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_.pkl', 'ab') as f:
 	# 	pickle.dump(all_results_dict, f)
 	# results_df.reset_index(inplace=True, drop=False).rename(columns={'index':'Date_UTC'})
-	results_df.to_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather')
+	results_df.to_feather(f'outputs/non_twins_modeling_region_{region}_version_{VERSION}.feather')
 
 	# calculating some metrics
 	print('Calculating metrics...')

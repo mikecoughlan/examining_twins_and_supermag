@@ -9,25 +9,17 @@ from sklearn.metrics import (auc, brier_score_loss, confusion_matrix,
                              mean_absolute_error, mean_squared_error,
                              precision_recall_curve, r2_score, roc_curve)
 
-MLT_BIN_TARGET = 4
-MLT_SPAN = 2
-VERSION = '2-dbdt'
-KEY = f'mid_and_high_regions_{MLT_BIN_TARGET}_version_{VERSION}_dbdt'
+REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
 
-def load_predictions(use_dict=False):
+VERSION = 0
 
+def load_predictions():
 
-	if not use_dict:
-		if os.path.exists(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather'):
-			predictions = pd.read_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather')
-			predictions.set_index('Date_UTC', inplace=True)
-		else:
-			raise(f'You fool! You need to run the script modeling_v{VERSION}.py first. Throw yourself down next time and rid us of your stupidity!')
+	if os.path.exists(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather'):
+		predictions = pd.read_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather')
+		predictions.set_index('Date_UTC', inplace=True)
 	else:
-		with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.pkl', 'rb') as f:
-			predictions = pickle.load(f)
-			predictions = predictions[KEY]
-			predictions.set_index('Date_UTC', inplace=True)
+		raise(f'You fool! You need to run the script modeling_v{VERSION}.py first. Throw yourself down next time and rid us of your stupidity!')
 
 
 	return predictions
