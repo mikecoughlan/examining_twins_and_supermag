@@ -15,8 +15,8 @@ VERSION = 0
 
 def load_predictions():
 
-	if os.path.exists(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather'):
-		predictions = pd.read_feather(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_{VERSION}.feather')
+	if os.path.exists(f'outputs/non_twins_modeling_region_{region}_version_{VERSION}.feather'):
+		predictions = pd.read_feather(f'outputs/non_twins_modeling_region_{region}_version_{VERSION}.feather')
 		predictions.set_index('Date_UTC', inplace=True)
 	else:
 		raise(f'You fool! You need to run the script modeling_v{VERSION}.py first. Throw yourself down next time and rid us of your stupidity!')

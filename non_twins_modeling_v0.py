@@ -91,8 +91,7 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
 						62, 327, 293, 241, 107, 55, 111]
 
-MLT_SPAN = 2
-MLT_BIN_TARGET = 4
+TARGET = 'rsd'
 VERSION = 0
 
 
@@ -391,7 +390,7 @@ def main(region):
 
 	# loading all data and indicies
 	print('Loading data...')
-	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(target_var='rsd', region=region)
+	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(target_var=TARGET, region=region)
 
 	print('xtrain shape: '+str(xtrain.shape))
 	print('xval shape: '+str(xval.shape))
@@ -422,7 +421,7 @@ def main(region):
 	# with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_.pkl', 'ab') as f:
 	# 	pickle.dump(all_results_dict, f)
 	# results_df.reset_index(inplace=True, drop=False).rename(columns={'index':'Date_UTC'})
-	results_df.to_feather(f'outputs/non_twins_modeling_region_{region}_version_{VERSION}.feather')
+	results_df.to_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather')
 
 	# calculating some metrics
 	print('Calculating metrics...')
