@@ -349,9 +349,11 @@ def making_predictions(model, Xtest, ytest, test_dates):
 	predicted = pd.Series(predicted.reshape(len(predicted),), index=test_dates)		# and then into a pd.series
 	ytest = pd.Series(ytest[:,1].reshape(len(ytest),), index=test_dates)			# turning the ytest into a pd.series
 
-	results_df = pd.DataFrame(index=test_dates)						# and storing the results
-	results_df['predicted'] = predicted
-	results_df['actual'] = ytest
+	# results_df = pd.DataFrame()						# and storing the results
+	# results_df['predicted'] = predicted
+	# results_df['actual'] = ytest
+	# dates = pd.Series(test_dates.reshape(len(test_dates),))
+	results_df = pd.DataFrame({'predicted':predicted, 'actual':ytest, 'dates':test_dates['Date_UTC']})
 
 	return results_df
 
@@ -415,7 +417,7 @@ def main(region):
 	# making predictions
 	print('Making predictions...')
 	results_df = making_predictions(MODEL, xtest, ytest, dates_dict['test'])
-	results_df = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
+	# results_df = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
 
 	# all_results_dict = {}
 	# all_results_dict[f'mid_and_high_regions_{MLT_BIN_TARGET}'] = results_dict

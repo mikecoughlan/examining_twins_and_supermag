@@ -18,11 +18,13 @@ regions_dict = data_dir+'mike_working_dir/identifying_regions_data/adjusted_regi
 VERSION = 0
 TARGET = 'rsd'
 
-def load_predictions():
+def load_predictions(region):
 
 	if os.path.exists(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather'):
 		predictions = pd.read_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather')
 		predictions.set_index('Date_UTC', inplace=True)
+		predictions.index = pd.to_datetime(predictions.index, format = '%Y-%m-%d %H:%M:%S')
+
 	else:
 		raise(f'Fool of a Took! You need to run the script modeling_v{VERSION}.py first. Throw yourself down next time and rid us of your stupidity!')
 
@@ -37,7 +39,7 @@ def attaching_mlt(predictions, region):
 	with open(regions_dict, 'rb') as f:
 		regions = pickle.load(f)
 
-	stations = regions[region]['station']
+	stations = regions[f'region_{region}']['station']
 
 	longitudes = {}
 	latitudes = []
@@ -56,14 +58,14 @@ def attaching_mlt(predictions, region):
 	# getting the MLT information for each prediction
 	predictions = predictions.join(mlt, how='left')
 
-	return predictions, latitudes.mean()
+	return predictions, np.mean(latitudes)
 
 
 def plotting_simple_scatter(all_predictions):
 
 	''' Function that plots a simple scatter plot of the predictions vs the actual values'''
 
-	for region all_predictions.keys():
+	for region in all_predictions.keys():
 		predictions = all_predictions[region]['dataframe']
 		fig = plt.figure(figsize=(20,10))
 		ax = fig.add_subplot(111)
@@ -125,7 +127,7 @@ def plotting_precision_recall_curve(all_predictions):
 		# getting the area under the curve
 		auc_score = auc(recall, precision)
 
-		plt..plot(recall, precision, label=f'{all_predictions[region]['average_mlat']}; AUC: {auc_score:.3f}')
+		plt.plot(recall, precision, label=f'{all_predictions[region]["average_mlat"]}; AUC: {auc_score:.3f}')
 	ax.set_xlabel('Recall')
 	ax.set_ylabel('Precision')
 	ax.set_title(f'Precision Recall Curve; AUC: {auc_score:.3f}')
@@ -212,8 +214,8 @@ def main():
 	all_predictions = {region:{} for region in REGIONS}
 
 	for region in REGIONS:
-		predictions = load_predictions()
-		predictions, average_mlat = attaching_mlt(predictions)
+		predictions = load_predictions(region)
+		predictions, average_mlat = attaching_mlt(predictions, region)
 		all_predictions[region]['dataframe'] = predictions
 		all_predictions[region]['average_mlat'] = average_mlat
 
@@ -221,16 +223,13 @@ def main():
 	plotting_simple_scatter(all_predictions)
 
 	# plotting a simple scatter plot of the predictions vs the actual values with the latitude information for each prediction
-	prediction_error_vs_MLT(all_predictions, average_mlat)
+	prediction_error_vs_MLT(all_predictions)
 
 	# plotting the reliability diagram for the predictions
 	plotting_reliability_diagram(all_predictions)
 
 	# plotting the precision recall curve for the predictions
 	plotting_precision_recall_curve(all_predictions)
-
-	# plotting the actual values vs the latitude for each prediction
-	plotting_actual_values_vs_latitude(all_predictions)
 
 	# plotting the predicted values vs the latitude for each prediction
 	plotting_predicted_values_vs_latitude(all_predictions)
