@@ -403,7 +403,7 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=F
 		return storms, y
 
 
-def split_sequences(sequences, targets=None, n_steps=30, include_target=True, dates=None):
+def split_sequences(sequences, targets=None, n_steps=30, include_target=True, dates=None, model_type='classification'):
 	'''
 		Takes input from the input array and creates the input and target arrays that can go into the models.
 
@@ -432,7 +432,16 @@ def split_sequences(sequences, targets=None, n_steps=30, include_target=True, da
 						to_drop.append(index_to_drop)
 						index_to_drop += 1
 					continue
-				seq_y1 = target[end_ix, :]				# gets the appropriate target
+				if model_type == 'classification':
+					if np.isnan(target[end_ix, :]):
+						continue
+					seq_y1 = target[end_ix, :]				# gets the appropriate target
+				elif model_type == 'regression':
+					if np.isnan(target[end_ix]):
+						continue
+					seq_y1 = target[end_ix]					# gets the appropriate target
+				else:
+					raise ValueError('Must specify a valid model type. Options are "classification" and "regression".')
 				y.append(seq_y1)
 			X.append(seq_x)
 			index_to_drop += 1

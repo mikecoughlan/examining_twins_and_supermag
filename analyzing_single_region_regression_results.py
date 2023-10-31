@@ -18,7 +18,7 @@ data_dir = '../../../../data/'
 supermag_dir = data_dir+'supermag/feather_files/'
 regions_dict = data_dir+'mike_working_dir/identifying_regions_data/adjusted_regions.pkl'
 
-VERSION = 0
+VERSION = 1
 TARGET = 'rsd'
 
 def load_predictions(region):
@@ -70,16 +70,17 @@ def plotting_simple_scatter(all_predictions):
 	''' Function that plots a simple scatter plot of the predictions vs the actual values'''
 
 	for region in all_predictions.keys():
-		predictions = all_predictions[region]['dataframe']
+		predictions = all_predictions[region]['dataframe'].dropna(inplace=False, subset=['actual', 'predicted'])
 		fig = plt.figure(figsize=(20,10))
 		ax = fig.add_subplot(111)
-		ax.scatter(predictions['actual'], predictions['predicted'], s=10)
+		ax.scatter(predictions['actual'], predictions['predicted'], s=10, label=f'R^2: {r2_score(predictions["actual"], predictions["predicted"]):.3f}')
+		plt.legend()
 		ax.set_xlabel('Actual Values')
 		ax.set_ylabel('Predictions')
 		ax.set_title(f'Predictions vs Actual Values {region}')
 		ax.plot([0, 1], [0, 1], transform=ax.transAxes, ls='--', c='r')
 
-		plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{VERSION}/simple_scatter_plot.png')
+		plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{VERSION}/{region}_simple_scatter_plot.png')
 
 
 def prediction_error_vs_MLT(all_predictions):
@@ -97,6 +98,26 @@ def prediction_error_vs_MLT(all_predictions):
 		ax.set_title(f'Error vs MLT   Lat: {all_predictions[region]["average_mlat"]}')
 
 		plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{VERSION}/hist2d_plot_with_latitude_{region}.png')
+
+
+def correlations_vs_mlat(all_predictions):
+
+	r2 = []
+
+	for region in all_predictions:
+		predictions = all_predictions[region]['dataframe'].dropna(inplace=False, subset=['actual', 'predicted'])
+		r2.append(r2_score(predictions['actual'], predictions['predicted']))
+
+	mlat = [all_predictions[region]['average_mlat'] for region in all_predictions.keys()]
+
+	fig = plt.figure(figsize=(10,10))
+	ax = fig.add_subplot(111)
+	ax.scatter(mlat, r2, s=10)
+	ax.set_xlabel('Latitude')
+	ax.set_ylabel('R^2')
+	ax.set_title('R^2 vs Latitude')
+
+	plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{VERSION}/r2_vs_latitude.png')
 
 
 def plotting_reliability_diagram(all_predictions):
@@ -230,18 +251,17 @@ def main():
 	# plotting a simple scatter plot of the predictions vs the actual values with the latitude information for each prediction
 	prediction_error_vs_MLT(all_predictions)
 
-	# plotting the reliability diagram for the predictions
-	plotting_reliability_diagram(all_predictions)
+	correlations_vs_mlat(all_predictions)
 
-	# plotting the precision recall curve for the predictions
-	plotting_precision_recall_curve(all_predictions)
+	# plotting the reliability diagram for the predictions
+	# plotting_reliability_diagram(all_predictions)
 
 	# plotting the predicted values vs the latitude for each prediction
-	plotting_predicted_values_vs_latitude(all_predictions)
+	# plotting_predicted_values_vs_latitude(all_predictions)
 
 	# calculating the scores for the predictions
-	scores = calculating_scores(all_predictions)
-	scores.to_csv(f'outputs/{TARGET}/analysis_plots_modeling_v{VERSION}/scores.csv')
+	# scores = calculating_scores(all_predictions)
+	# scores.to_csv(f'outputs/{TARGET}/analysis_plots_modeling_v{VERSION}/scores.csv')
 
 	print('Done!')
 
