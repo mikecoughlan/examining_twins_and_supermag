@@ -18,7 +18,7 @@ data_dir = '../../../../data/'
 supermag_dir = data_dir+'supermag/feather_files/'
 regions_dict = data_dir+'mike_working_dir/identifying_regions_data/adjusted_regions.pkl'
 
-VERSION = 1
+VERSION = 2
 TARGET = 'rsd'
 
 def load_predictions(region, version=VERSION):
@@ -336,11 +336,11 @@ def checking_error_distributions(all_predictions, version=VERSION):
 
 	errors_df = pd.Series()
 	for region in all_predictions.keys():
-		errors = (all_predictions[region]['dataframe']['actual'] - all_predictions[region]['dataframe']['predicted'])
+		errors = (all_predictions[region]['dataframe']['actual'] - all_predictions[region]['dataframe']['predicted_mean'])
 		errors_df = pd.concat([errors_df, errors])
 
 	fig = plt.figure(figsize=(10,5))
-	plt.hist(errors_df)
+	plt.hist(errors_df, bins=100, log=True)
 	plt.xlabel('errors')
 	plt.ylabel('count')
 	plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/error_distributions.png')
