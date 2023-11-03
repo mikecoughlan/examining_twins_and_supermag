@@ -27,16 +27,18 @@ import matplotlib.animation as animation
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
+import optuna
 import pandas as pd
 import tensorflow as tf
 import tqdm
+from optuna_dashboard import run_server
 from scipy.special import expit, inv_boxcox
 from scipy.stats import boxcox
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from spacepy import pycdf
-from tensorflow.keras.backend import clear_session
+from tensorflow.keras.backend import clear_session, int_shape
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
                                      Dense, Dropout, Flatten, Input,
@@ -49,7 +51,6 @@ import utils
 from data_prep import DataPrep
 
 # from datetime import strftime
-
 
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
@@ -327,7 +328,7 @@ def calculate_crps(epsilon, sig):
 	return crps
 
 
-def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patience=10):
+def create_CNN_model(input_shape, trial, early_stop_patience=10):
 	'''
 	Initializing our model
 
@@ -342,21 +343,35 @@ def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patienc
 		object: early stopping conditions
 	'''
 
+	# defining the hyperparameters to be tuned
+
+	initial_filters = trial.suggest_categorical('initial_filters', [32, 64, 128])
+	learning_rate = trial.suggest_loguniform('learning_rate', 1e-7, 1e-2)
+	window_size = trial.suggest_int('window_size', 1, 5)
+	stride_length = trial.suggest_int('stride_length', 1, 5)
+	cnn_layers = trial.suggest_int('layers', 1, 4)
+	dense_layers = trial.suggest_int('dense_layers', 1, 4)
+	initial_dense_nodes = trial.suggest_categorical('initial_dense_nodes', [128, 256, 512, 1024])
+	dense_node_decrease_step = trial.suggest_categorical('dense_node_decrease_step', [2, 4])
+	dropout_rate = trial.suggest_uniform('dropout_percentage', 0.2, 0.6)
+	activation = trial.suggest_categorical('activation', ['relu', 'tanh', 'sigmoid'])
+
 
 	model = Sequential()						# initalizing the model
 
-	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same',
-								activation='relu', input_shape=input_shape))			# adding the CNN layer
+	model.add(Conv2D(initial_filters, window_size, padding='same', activation=activation, input_shape=input_shape))			# adding the CNN layer
 	model.add(MaxPooling2D())
-	model.add(Conv2D(MODEL_CONFIG['filters']*2, 2, padding='same', activation='relu'))			# adding the CNN layer
-	model.add(MaxPooling2D())
+	for i in cnn_layers-1:
+		model.add(Conv2D(initial_filters*2, 2, padding='same', activation=activation))			# adding the CNN layer
+		model.add(MaxPooling2D())
 	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
-	model.add(Dense(MODEL_CONFIG['filters']*2, activation='relu'))		# Adding dense layers with dropout in between
-	model.add(Dropout(0.2))
-	model.add(Dense(MODEL_CONFIG['filters'], activation='relu'))
-	model.add(Dropout(0.2))
+	model.add(Dense(initial_dense_nodes, activation=activation))		# Adding dense layers with dropout in between
+	model.add(Dropout(dropout_rate))
+	for j in range(dense_layers-1):
+		model.add(Dense(int(initial_dense_nodes/dense_node_decrease_step), activation=activation))
+		model.add(Dropout(dropout_rate))
 	model.add(Dense(2, activation='linear'))
-	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
+	opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)		# learning rate that actually started producing good results
 	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
@@ -364,109 +379,20 @@ def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patienc
 	return model, early_stop
 
 
-def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, region):
-	'''
-	Performs the actual fitting of the model.
+def objective(trial, xtrain, ytrain, xval, yval, xtest, ytest, input_shape):
 
-	Args:
-		model (keras model): model as defined in the create_model function.
-		xtrain (3D np.array): training data inputs
-		xval (3D np.array): validation inputs
-		ytrain (2D np.array): training target vectors
-		yval (2D np.array): validation target vectors
-		early_stop (keras early stopping dict): predefined early stopping function
-		split (int): split being trained. Used for saving model.
-		station (str): station being trained.
-		first_time (bool, optional): if True model will be trainined, False model will be loaded. Defaults to True.
+	model, early_stop = create_CNN_model(input_shape, trial)
+	print(model.summary())
+	clear_session()
+	try:
+		model.fit(xtrain, ytrain, validation_data=(xval, yval),
+				verbose=1, shuffle=True, epochs=500,
+				callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
+	except:
+		print('Resource Exhausted Error')
+		return None
 
-	Returns:
-		model: fit model ready for making predictions.
-	'''
-
-	if not os.path.exists(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5'):
-
-		# reshaping the model input vectors for a single channel
-		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
-		Xval = xval.reshape((xval.shape[0], xval.shape[1], xval.shape[2], 1))
-
-		model.fit(Xtrain, ytrain, validation_data=(Xval, yval),
-					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
-
-		# saving the model
-		model.save(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5')
-
-	else:
-		# loading the model if it has already been trained.
-		model = load_model(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5')				# loading the models if already trained
-
-	return model
-
-
-def making_predictions(model, Xtest, ytest, test_dates):
-	'''
-	Function using the trained models to make predictions with the testing data.
-
-	Args:
-		model (object): pre-trained model
-		test_dict (dict): dictonary with the testing model inputs and the real data for comparison
-		split (int): which split is being tested
-
-	Returns:
-		dict: test dict now containing columns in the dataframe with the model predictions for this split
-	'''
-
-	Xtest = Xtest.reshape((Xtest.shape[0], Xtest.shape[1], Xtest.shape[2], 1))			# reshpaing for one channel input
-	print('Test input Nans: '+str(np.isnan(Xtest).sum()))
-
-	nans = pd.Series(np.isnan(Xtest.sum(axis=1).sum(axis=1)).reshape(len(np.isnan(Xtest.sum(axis=1).sum(axis=1))),))
-
-	predicted = model.predict(Xtest, verbose=1)						# predicting on the testing input data
-
-	predicted_mean = tf.gather(predicted, [[0]], axis=1)					# grabbing the positive node
-	predicted_std = tf.gather(predicted, [[1]], axis=1)					# grabbing the positive node
-
-	predicted_mean = predicted_mean.numpy()									# turning to a numpy array
-	predicted_std = predicted_std.numpy()									# turning to a numpy array
-
-	predicted_mean = pd.Series(predicted_mean.reshape(len(predicted_mean),))		# and then into a pd.series
-	predicted_std = pd.Series(predicted_std.reshape(len(predicted_std),))		# and then into a pd.series
-
-	ytest = pd.Series(ytest.reshape(len(ytest),))			# turning the ytest into a pd.series
-
-	# results_df = pd.DataFrame()						# and storing the results
-	# results_df['predicted'] = predicted
-	# results_df['actual'] = ytest
-	# dates = pd.Series(test_dates.reshape(len(test_dates),))
-	dates = pd.Series(test_dates['Date_UTC'])
-	results_df = pd.DataFrame({'predicted_mean':predicted_mean, 'predicted_std':predicted_std, 'actual':ytest, 'dates':test_dates['Date_UTC']})
-
-	return results_df
-
-
-def calculate_some_metrics(results_df):
-
-	# calculating the RMSE
-	rmse = np.sqrt(mean_squared_error(results_df['actual'], results_df['predicted']))
-	print('RMSE: '+str(rmse))
-
-	# calculating the MAE
-	mae = mean_absolute_error(results_df['actual'], results_df['predicted'])
-	print('MAE: '+str(mae))
-
-	# calculating the MAPE
-	mape = np.mean(np.abs((results_df['actual'] - results_df['predicted']) / results_df['actual'])) * 100
-	print('MAPE: '+str(mape))
-
-	# calculating the R^2
-	r2 = r2_score(results_df['actual'], results_df['predicted'])
-	print('R^2: '+str(r2))
-
-	metrics = {'rmse':rmse,
-							'mae':mae,
-							'mape':mape,
-							'r2':r2}
-
-	return metrics
+	return model.evaluate(xtest, ytest, verbose=1)
 
 
 def main(region):
@@ -483,6 +409,13 @@ def main(region):
 	print('Loading data...')
 	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(target_var=TARGET, region=region)
 
+	input_shape = (xtrain.shape[1], xtrain.shape[2], xtrain.shape[3])
+
+	xtrain = xtrain[:(int(len(xtrain)*0.2)),:,:]
+	ytrain = ytrain[:(int(len(ytrain)*0.2)),:,:]
+	xval = xval[:(int(len(xval)*0.2)),:,:]
+	yval = yval[:(int(len(yval)*0.2)),:,:]
+
 	print('xtrain shape: '+str(xtrain.shape))
 	print('xval shape: '+str(xval.shape))
 	print('xtest shape: '+str(xtest.shape))
@@ -493,37 +426,25 @@ def main(region):
 	with open(f'outputs/dates_dict_version_{VERSION}.pkl', 'wb') as f:
 		pickle.dump(dates_dict, f)
 
-	# creating the model
-	print('Initalizing model...')
-	MODEL, early_stop = create_CNN_model(input_shape=(xtrain.shape[1], xtrain.shape[2], 1), loss=MODEL_CONFIG['loss'],
-											early_stop_patience=MODEL_CONFIG['early_stop_patience'])
 
-	# fitting the model
-	print('Fitting model...')
-	MODEL = fit_CNN(MODEL, xtrain, xval, ytrain, yval, early_stop, region=region)
+	storage = optuna.storages.InMemoryStorage()
+	# reshaping the model input vectors for a single channel
+	study = optuna.create_study(direction='minimize', study_name='non_twins_model_optimization_trial')
+	study.optimize(lambda trial: objective(trial, xtrain, ytrain, xval, yval, xtest, ytest, input_shape), n_trials=50, callbacks=[lambda study, trial: gc.collect()])
+	print(study.best_params)
 
-	# making predictions
-	print('Making predictions...')
-	results_df = making_predictions(MODEL, xtest, ytest, dates_dict['test'])
-	# results_df = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
+	print(f'Best Params: {study.best_params}')
 
-	# all_results_dict = {}
-	# all_results_dict[f'mid_and_high_regions_{MLT_BIN_TARGET}'] = results_dict
+	run_server(storage)
 
-	# # saving the results
-	# print('Saving results...')
-	# with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_.pkl', 'ab') as f:
-	# 	pickle.dump(all_results_dict, f)
-	# results_df.reset_index(inplace=True, drop=False).rename(columns={'index':'Date_UTC'})
-	results_df.to_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather')
+	best_model, ___ = create_CNN_model(input_shape, study.best_params)
 
-	# calculating some metrics
-	print('Calculating metrics...')
-	# metrics = calculate_some_metrics(results_df)
+	best_model.evaluate(xtest, ytest)
 
-	# # saving the metrics
-	# print('Saving metrics...')
-	# metrics.to_feather('outputs/non_twins_metrics.feather')
+	best_model.save('models/best_CNN.h5')
+
+	optuna.visualization.plot_optimization_history(study).write_image('plots/optimization_history.png')
+
 
 
 

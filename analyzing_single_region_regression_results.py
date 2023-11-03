@@ -145,7 +145,7 @@ def plotting_continuious_reliability_diagram(all_predictions, version=VERSION):
 		predicted_mean = predictions['predicted_mean']
 		predicted_std = predictions['predicted_std']
 
-		standard_error = (actual-predicted_mean)/(np.sqrt(2) * predicted_std.to_numpy()) #Standard error for each parameter
+		standard_error = (actual - predicted_mean)/(np.sqrt(2) * predicted_std.to_numpy()) #Standard error for each parameter
 		print(standard_error.isnull().sum())
 		cumulative_dist = np.zeros((len(x), 1)) #Cumulative distribution for each parameter
 		for i in standard_error.index:
