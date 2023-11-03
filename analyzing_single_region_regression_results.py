@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import colors
+from scipy.special import erf
 from sklearn.calibration import calibration_curve
 from sklearn.metrics import (auc, brier_score_loss, confusion_matrix,
                              mean_absolute_error, mean_squared_error,
@@ -120,24 +121,69 @@ def correlations_vs_mlat(all_predictions, version=VERSION):
 	plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/r2_vs_latitude.png')
 
 
-def plotting_reliability_diagram(all_predictions, version=VERSION):
+def plotting_continuious_reliability_diagram(all_predictions, version=VERSION):
 
 	''' Function that plots the reliability diagram for the predictions.'''
 
-	fig = plt.figure(figsize=(20,10))
-	ax = fig.add_subplot(111)
-	for region in all_predictions.keys():
-		# getting the reliability diagram
-		predictions = all_predictions[region]['dataframe']
-		fraction_of_positives, mean_predicted_value = calibration_curve(predictions['actual'], predictions['predicted'], n_bins=10)
-		plt.plot(mean_predicted_value, fraction_of_positives, 's-', label=all_predictions[region]['average_mlat'])
-	ax.plot([0, 1], [0, 1], '--', color='gray', label='Perfectly Calibrated')
-	ax.set_xlabel('Mean Predicted Value')
-	ax.set_ylabel('Fraction of Positives')
-	ax.set_title('Reliability Diagram')
-	ax.legend()
+	x = np.linspace(0, 1, 1000)
 
-	plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/reliability_diagram.png')
+
+
+	# actual = pd.DataFrame({region:all_predictions[region]['dataframe']['actual'] for region in all_predictions.keys()})
+	# predicted_mean = pd.DataFrame({region:all_predictions[region]['dataframe']['predicted_mean'] for region in all_predictions.keys()})
+	# predicted_std = pd.DataFrame({region:all_predictions[region]['dataframe']['predicted_std'] for region in all_predictions.keys()})
+
+	# print(actual.isnull().sum())
+	# print(predicted_mean.isnull().sum())
+	# print(predicted_std.isnull().sum())
+
+	fig, ax = plt.subplots(ncols=1, nrows=2, sharex=True, figsize=(7,9))
+
+	for region in all_predictions.keys():
+		predictions = all_predictions[region]['dataframe'].dropna(inplace=False, subset=['actual', 'predicted_mean', 'predicted_std'])
+		actual = predictions['actual']
+		predicted_mean = predictions['predicted_mean']
+		predicted_std = predictions['predicted_std']
+
+		standard_error = (actual-predicted_mean)/(np.sqrt(2) * predicted_std.to_numpy()) #Standard error for each parameter
+		print(standard_error.isnull().sum())
+		cumulative_dist = np.zeros((len(x), 1)) #Cumulative distribution for each parameter
+		for i in standard_error.index:
+			cumulative_dist[:,0] += (1/len(standard_error)) * np.heaviside(x - 0.5*(erf(standard_error.loc[i])+1) , 1) #Calculate the cumulative distribution for each parameter
+
+		ax[0].plot(x, cumulative_dist[:,0], label=region)
+		ax[1].plot(x, x - cumulative_dist[:,0], label=region),
+
+	#Place legend to the right middle of the figure
+	ax[0].legend(bbox_to_anchor=(1.05, 0.5), loc='center left', borderaxespad=0.)
+	ax[0].plot(x, x, linestyle = '--', color = 'k')
+	ax[0].set_ylabel('Observed Frequency')
+	ax[0].set_xlim(0,1)
+	ax[0].set_ylim(0,1)
+	fig.suptitle('Reliability Diagram')
+
+	ax[1].plot(x, np.zeros(len(x)), linestyle = '--', color = 'k')
+	ax[1].set_ylim(-0.15,0.15)
+	ax[1].set_xlabel('Predicted Frequency')
+	ax[1].set_ylabel('Under/Over-\nEstimation')
+	ax[1].set_aspect('equal')
+	plt.subplots_adjust(hspace = -0.20)
+
+	plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/reliability_diagram2.png', bbox_inches='tight')
+
+
+	# fig = plt.figure(figsize=(20,10))
+	# ax = fig.add_subplot(111)
+	# for region in all_predictions.keys():
+	# 	# getting the reliability diagram
+	# 	predictions = all_predictions[region]['dataframe']
+	# 	fraction_of_positives, mean_predicted_value = calibration_curve(predictions['actual'], predictions['predicted'], n_bins=10)
+	# 	plt.plot(mean_predicted_value, fraction_of_positives, 's-', label=all_predictions[region]['average_mlat'])
+	# ax.plot([0, 1], [0, 1], '--', color='gray', label='Perfectly Calibrated')
+	# ax.set_xlabel('Mean Predicted Value')
+	# ax.set_ylabel('Fraction of Positives')
+	# ax.set_title('Reliability Diagram')
+	# ax.legend()
 
 
 def plotting_precision_recall_curve(all_predictions, version=VERSION):
@@ -362,6 +408,9 @@ def main():
 	 	all_predictions[region]['dataframe'] = predictions
 	 	all_predictions[region]['average_mlat'] = average_mlat
 
+	plotting_continuious_reliability_diagram(all_predictions)
+
+
 	# plotting a simple scatter plot of the predictions vs the actual values
 	# plotting_simple_scatter(all_predictions)
 
@@ -369,13 +418,12 @@ def main():
 	# prediction_error_vs_MLT(all_predictions)
 
 	# correlations_vs_mlat(all_predictions)
-	
+
 	checking_error_distributions(all_predictions)
 
 	#line_plot(multiple_models=True, version=[1,2])
 
 	# plotting the reliability diagram for the predictions
-	# plotting_reliability_diagram(all_predictions)
 
 	# plotting the predicted values vs the latitude for each prediction
 	# plotting_predicted_values_vs_latitude(all_predictions)
