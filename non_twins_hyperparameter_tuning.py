@@ -328,7 +328,7 @@ def calculate_crps(epsilon, sig):
 	return crps
 
 
-def create_CNN_model(input_shape, trial, early_stop_patience=10):
+def create_CNN_model(input_shape, trial, early_stop_patience=25):
 	'''
 	Initializing our model
 
@@ -373,7 +373,7 @@ def create_CNN_model(input_shape, trial, early_stop_patience=10):
 		else:
 			model.add(Dense(int(initial_dense_nodes/dense_node_decrease_step), activation=activation))
 			model.add(Dropout(dropout_rate))
-		
+
 	model.add(Dense(2, activation='linear'))
 	opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)		# learning rate that actually started producing good results
 	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
