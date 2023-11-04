@@ -94,7 +94,7 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 						62, 327, 293, 241, 107, 55, 111]
 
 TARGET = 'rsd'
-VERSION = 2
+VERSION = 'optimizer'
 
 
 def loading_data(target_var, region, percentile=0.99):
@@ -360,16 +360,20 @@ def create_CNN_model(input_shape, trial, early_stop_patience=10):
 	model = Sequential()						# initalizing the model
 
 	model.add(Conv2D(initial_filters, window_size, padding='same', activation=activation, input_shape=input_shape))			# adding the CNN layer
-	model.add(MaxPooling2D())
-	for i in cnn_layers-1:
-		model.add(Conv2D(initial_filters*2, 2, padding='same', activation=activation))			# adding the CNN layer
-		model.add(MaxPooling2D())
+	for i in range(cnn_layers):
+		model.add(Conv2D(initial_filters*2, window_size, padding='same', activation=activation))			# adding the CNN layer
+		if i % 2 == 0:
+			model.add(MaxPooling2D())
 	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
 	model.add(Dense(initial_dense_nodes, activation=activation))		# Adding dense layers with dropout in between
 	model.add(Dropout(dropout_rate))
-	for j in range(dense_layers-1):
-		model.add(Dense(int(initial_dense_nodes/dense_node_decrease_step), activation=activation))
-		model.add(Dropout(dropout_rate))
+	for j in range(dense_layers):
+		if j == dense_layers-1:
+			model.add(Dense(int(initial_dense_nodes/(dense_node_decrease_step*2)), activation=activation))
+		else:
+			model.add(Dense(int(initial_dense_nodes/dense_node_decrease_step), activation=activation))
+			model.add(Dropout(dropout_rate))
+		
 	model.add(Dense(2, activation='linear'))
 	opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)		# learning rate that actually started producing good results
 	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
@@ -409,12 +413,16 @@ def main(region):
 	print('Loading data...')
 	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(target_var=TARGET, region=region)
 
+	xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
+	xval = xval.reshape((xval.shape[0], xval.shape[1], xval.shape[2], 1))
+	xtest = xtest.reshape((xtest.shape[0], xtest.shape[1], xtest.shape[2], 1))
+
 	input_shape = (xtrain.shape[1], xtrain.shape[2], xtrain.shape[3])
 
 	xtrain = xtrain[:(int(len(xtrain)*0.2)),:,:]
-	ytrain = ytrain[:(int(len(ytrain)*0.2)),:,:]
+	ytrain = ytrain[:(int(len(ytrain)*0.2))]
 	xval = xval[:(int(len(xval)*0.2)),:,:]
-	yval = yval[:(int(len(yval)*0.2)),:,:]
+	yval = yval[:(int(len(yval)*0.2))]
 
 	print('xtrain shape: '+str(xtrain.shape))
 	print('xval shape: '+str(xval.shape))
@@ -441,9 +449,9 @@ def main(region):
 
 	best_model.evaluate(xtest, ytest)
 
-	best_model.save('models/best_CNN.h5')
+	best_model.save(f'models/best_CNN_{region}.h5')
 
-	optuna.visualization.plot_optimization_history(study).write_image('plots/optimization_history.png')
+	optuna.visualization.plot_optimization_history(study).write_image(f'plots/optimization_history_{region}.png')
 
 
 
