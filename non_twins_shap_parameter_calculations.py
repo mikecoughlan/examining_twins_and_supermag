@@ -32,12 +32,9 @@ from tqdm import tqdm
 import utils
 import non_twins_modeling_v2 as modeling
 
-# loading config and specific model config files. Using them as dictonaries
-with open('config.json', 'r') as con:
-	CONFIG = json.load(con)
-
 TARGET='rsd'
 REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
+VERSION = 2
 
 
 def main(region):
