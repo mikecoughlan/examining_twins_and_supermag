@@ -42,7 +42,7 @@ def main(region):
 	# re-processing the training and testing data using the same random seed to generate the same data used for creating the models
 	# This is done to ensure the same data is used for calculating the SHAP values as was used for training the models
 
-	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, features=True)
+	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)
 
 	# reshaping the data for a CNN with one channel
 	xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
