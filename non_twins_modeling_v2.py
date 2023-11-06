@@ -134,7 +134,7 @@ def loading_data(target_var, region, percentile=0.99):
 
 
 
-def getting_prepared_data(target_var, region):
+def getting_prepared_data(target_var, region, features=False):
 	'''
 	Calling the data prep class without the TWINS data for this version of the model.
 
@@ -188,6 +188,7 @@ def getting_prepared_data(target_var, region):
 			pickle.dump(storms_extracted_dict, f)
 
 	print('Columns in Dataframe: '+str(storms[0].columns))
+	features = storms[0].columns
 
 	# splitting the data on a month to month basis to reduce data leakage
 	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
@@ -284,7 +285,10 @@ def getting_prepared_data(target_var, region):
 	print(f'Nans in validation target: {np.isnan(y_val).sum()}')
 	print(f'Nans in testing target: {np.isnan(y_test).sum()}')
 
-	return x_train, x_val, x_test, y_train, y_val, y_test, date_dict
+	if not features:
+		return x_train, x_val, x_test, y_train, y_val, y_test, date_dict
+	else:
+		return x_train, x_val, x_test, y_train, y_val, y_test, date_dict, features
 
 
 def CRPS(y_true, y_pred):
