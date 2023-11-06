@@ -134,7 +134,7 @@ def loading_data(target_var, region, percentile=0.99):
 
 
 
-def getting_prepared_data(target_var, region, features=False):
+def getting_prepared_data(target_var, region, get_features=False):
 	'''
 	Calling the data prep class without the TWINS data for this version of the model.
 
@@ -285,7 +285,7 @@ def getting_prepared_data(target_var, region, features=False):
 	print(f'Nans in validation target: {np.isnan(y_val).sum()}')
 	print(f'Nans in testing target: {np.isnan(y_test).sum()}')
 
-	if not features:
+	if not get_features:
 		return x_train, x_val, x_test, y_train, y_val, y_test, date_dict
 	else:
 		return x_train, x_val, x_test, y_train, y_val, y_test, date_dict, features
