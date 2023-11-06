@@ -36,6 +36,11 @@ TARGET = 'rsd'
 REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
 VERSION = 2
 
+MODEL_CONFIG = {'filters':128,
+				'initial_learning_rate':1e-6,
+				'epochs':500,
+				'loss':'mse',
+				'early_stop_patience':25}
 
 def main(region):
 
@@ -50,7 +55,8 @@ def main(region):
 	xtest = xtest.reshape((xtest.shape[0], xtest.shape[1], xtest.shape[2], 1))
 
 	# Loading the models and the prediction results
-	model = load_model(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5', custom_objects={'loss': modeling.CRPS})
+	model = load_model(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5', compile=False)
+	model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate']), loss=modeling.CRPS)
 	predictions = pd.read_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather')
 
 	if not os.path.exists(f'outputs/shap_values/{TARGET}'):
