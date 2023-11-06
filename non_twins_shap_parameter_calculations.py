@@ -42,7 +42,7 @@ def main(region):
 	# re-processing the training and testing data using the same random seed to generate the same data used for creating the models
 	# This is done to ensure the same data is used for calculating the SHAP values as was used for training the models
 
-	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, features=True)
+	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)
 
 	# reshaping the data for a CNN with one channel
 	xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
@@ -50,7 +50,7 @@ def main(region):
 	xtest = xtest.reshape((xtest.shape[0], xtest.shape[1], xtest.shape[2], 1))
 
 	# Loading the models and the prediction results
-	model = load_model(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5')
+	model = load_model(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5', custom_objects={'loss': modeling.CRPS})
 	predictions = pd.read_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather')
 
 	if not os.path.exists(f'outputs/shap_values/{TARGET}'):
