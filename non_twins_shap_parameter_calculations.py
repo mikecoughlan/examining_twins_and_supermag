@@ -32,7 +32,7 @@ from tqdm import tqdm
 import utils
 import non_twins_modeling_v2 as modeling
 
-TARGET='rsd'
+TARGET = 'rsd'
 REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
 VERSION = 2
 
@@ -56,7 +56,7 @@ def main(region):
 	if not os.path.exists(f'outputs/shap_values/{TARGET}'):
 		os.mkdir(f'outputs/shap_values/{TARGET}')
 	# Checking to see if the SHAP values for the model have been calculated already
-	if os.path.exists(f'outputs/shap_values/{TARGET}/non_twins_shap_values_region_{region}.pkl')
+	if os.path.exists(f'outputs/shap_values/{TARGET}/non_twins_shap_values_region_{region}.pkl'):
 		with open(f'outputs/shap_values/{TARGET}/non_twins_shap_values_region_{region}.pkl', 'rb') as c:
 			shap_values = pickle.load(c)
 
