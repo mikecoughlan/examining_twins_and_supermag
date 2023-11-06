@@ -50,7 +50,7 @@ def main(region):
 	xtest = xtest.reshape((xtest.shape[0], xtest.shape[1], xtest.shape[2], 1))
 
 	# Loading the models and the prediction results
-	model = load_model(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5')
+	model = load_model(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5', custom_objects={'loss': modeling.CRPS})
 	predictions = pd.read_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather')
 
 	if not os.path.exists(f'outputs/shap_values/{TARGET}'):
