@@ -361,7 +361,7 @@ def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patienc
 	model.add(Dropout(0.2))
 	model.add(Dense(2, activation='linear'))
 	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
-	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
+	model.compile(optimizer=opt, loss=CRPS)					# compiling the model with custom loss function
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
 
