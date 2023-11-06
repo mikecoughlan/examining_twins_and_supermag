@@ -351,6 +351,7 @@ def create_CNN_model(input_shape, trial, early_stop_patience=25):
 	stride_length = trial.suggest_int('stride_length', 1, 5)
 	cnn_layers = trial.suggest_int('layers', 1, 4)
 	dense_layers = trial.suggest_int('dense_layers', 1, 4)
+	cnn_step_up = trial.suggest_categorical('cnn_step_up', [1, 2, 4])
 	initial_dense_nodes = trial.suggest_categorical('initial_dense_nodes', [128, 256, 512, 1024])
 	dense_node_decrease_step = trial.suggest_categorical('dense_node_decrease_step', [2, 4])
 	dropout_rate = trial.suggest_uniform('dropout_percentage', 0.2, 0.6)
@@ -361,18 +362,17 @@ def create_CNN_model(input_shape, trial, early_stop_patience=25):
 
 	model.add(Conv2D(initial_filters, window_size, padding='same', activation=activation, input_shape=input_shape))			# adding the CNN layer
 	for i in range(cnn_layers):
-		model.add(Conv2D(initial_filters*2, window_size, padding='same', activation=activation))			# adding the CNN layer
+		model.add(Conv2D(initial_filters*cnn_step_up, window_size, padding='same', activation=activation))			# adding the CNN layer
 		if i % 2 == 0:
 			model.add(MaxPooling2D())
+		cnn_step_up *= 2
 	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
 	model.add(Dense(initial_dense_nodes, activation=activation))		# Adding dense layers with dropout in between
 	model.add(Dropout(dropout_rate))
 	for j in range(dense_layers):
-		if j == dense_layers-1:
-			model.add(Dense(int(initial_dense_nodes/(dense_node_decrease_step*2)), activation=activation))
-		else:
-			model.add(Dense(int(initial_dense_nodes/dense_node_decrease_step), activation=activation))
-			model.add(Dropout(dropout_rate))
+		model.add(Dense(int(initial_dense_nodes/dense_node_decrease_step), activation=activation))
+		model.add(Dropout(dropout_rate))
+		dense_node_decrease_step *= 2
 
 	model.add(Dense(2, activation='linear'))
 	opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)		# learning rate that actually started producing good results
@@ -381,6 +381,53 @@ def create_CNN_model(input_shape, trial, early_stop_patience=25):
 
 
 	return model, early_stop
+
+
+def best_CNN_model(region, input_shape, best_model_params, xtrain, ytrain, xval, yval, early_stop_patience=25):
+	'''
+	Initializing our model
+
+	Args:
+		n_features (int): number of input features into the model
+		loss (str, optional): loss function to be uesd for training. Defaults to 'categorical_crossentropy'.
+		early_stop_patience (int, optional): number of epochs the model will continue training once there
+												is no longer val loss improvements. Defaults to 10.
+
+	Returns:
+		object: model configuration ready for training
+		object: early stopping conditions
+	'''
+
+	model = Sequential()						# initalizing the model
+
+	model.add(Conv2D(best_model_params['initial_filters'], best_model_params['window_size'], padding='same', activation=best_model_params['activation'], input_shape=input_shape))			# adding the CNN layer
+	for i in range(best_model_params['cnn_layers']):
+		model.add(Conv2D(best_model_params['initial_filters']*best_model_params['cnn_step_up'], best_model_params['window_size'], padding='same', activation=best_model_params['activation']))			# adding the CNN layer
+		if i % 2 == 0:
+			model.add(MaxPooling2D())
+		best_model_params['cnn_step_up'] *= 2
+
+	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
+	model.add(Dense(best_model_params['initial_dense_nodes'], activation=best_model_params['activation']))		# Adding dense layers with dropout in between
+	model.add(Dropout(best_model_params['dropout_rate']))
+	for j in range(best_model_params['dense_layers']):
+		model.add(Dense(int(best_model_params['initial_dense_nodes']/best_model_params['dense_node_decrease_step']), activation=best_model_params['activation']))
+		model.add(Dropout(best_model_params['dropout_rate']))
+		best_model_params['dense_node_decrease_step'] *= 2
+
+	model.add(Dense(2, activation='linear'))
+	opt = tf.keras.optimizers.Adam(learning_rate=best_model_params['learning_rate'])		# learning rate that actually started producing good results
+	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
+	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
+
+	model.fit(xtrain, ytrain, validation_data=(xval, yval), verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
+
+	if not os.path.exists(f'models/best_{TARGET}'):
+		os.makedirs(f'models/best_{TARGET}')
+
+	model.save(f'models/best_{TARGET}/best_CNN_{region}.h5')
+
+	return model
 
 
 def objective(trial, xtrain, ytrain, xval, yval, xtest, ytest, input_shape):
@@ -419,10 +466,10 @@ def main(region):
 
 	input_shape = (xtrain.shape[1], xtrain.shape[2], xtrain.shape[3])
 
-	xtrain = xtrain[:(int(len(xtrain)*0.2)),:,:]
-	ytrain = ytrain[:(int(len(ytrain)*0.2))]
-	xval = xval[:(int(len(xval)*0.2)),:,:]
-	yval = yval[:(int(len(yval)*0.2))]
+	limited_xtrain = xtrain[:(int(len(xtrain)*0.2)),:,:]
+	limited_ytrain = ytrain[:(int(len(ytrain)*0.2))]
+	limited_xval = xval[:(int(len(xval)*0.2)),:,:]
+	limited_yval = yval[:(int(len(yval)*0.2))]
 
 	print('xtrain shape: '+str(xtrain.shape))
 	print('xval shape: '+str(xval.shape))
@@ -438,20 +485,21 @@ def main(region):
 	storage = optuna.storages.InMemoryStorage()
 	# reshaping the model input vectors for a single channel
 	study = optuna.create_study(direction='minimize', study_name='non_twins_model_optimization_trial')
-	study.optimize(lambda trial: objective(trial, xtrain, ytrain, xval, yval, xtest, ytest, input_shape), n_trials=50, callbacks=[lambda study, trial: gc.collect()])
+	study.optimize(lambda trial: objective(trial, limited_xtrain, limited_ytrain, limited_xval, limited_yval, xtest, ytest, input_shape), n_trials=50, callbacks=[lambda study, trial: gc.collect()])
 	print(study.best_params)
 
 	print(f'Best Params: {study.best_params}')
 
-	run_server(storage)
+	with open(f'outputs/best_params_{region}_version_{VERSION}.pkl', 'wb') as f:
+		pickle.dump(study.best_params, f)
 
-	best_model, ___ = create_CNN_model(input_shape, study.best_params)
+	best_model = best_CNN_model(region, input_shape, study.best_params, xtrain, ytrain, xval, yval)
 
-	best_model.evaluate(xtest, ytest)
+	# best_model.evaluate(xtest, ytest)
 
-	best_model.save(f'models/best_CNN_{region}.h5')
+	# best_model.save(f'models/best_CNN_{region}.h5')
 
-	optuna.visualization.plot_optimization_history(study).write_image(f'plots/optimization_history_{region}.png')
+	# optuna.visualization.plot_optimization_history(study).write_image(f'plots/optimization_history_{region}.png')
 
 
 
