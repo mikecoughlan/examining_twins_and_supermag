@@ -69,6 +69,7 @@ def main(region):
 			shap_values = pickle.load(c)
 
 	else:
+		print('No saved SHAP values found. Calculating....')
 		# SHAP documentation list 1000 background samples as being sufficient for accurate SHAP values
 		background = xtrain[np.random.choice(xtrain.shape[0], 1000, replace=False)]
 
