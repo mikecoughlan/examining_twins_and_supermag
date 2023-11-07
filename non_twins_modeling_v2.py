@@ -385,7 +385,7 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, region):
 		model: fit model ready for making predictions.
 	'''
 
-	if not os.path.exists(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}__.h5'):
+	if not os.path.exists(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))

@@ -370,7 +370,7 @@ def full_model(input_shape, loss='mse', early_stop_patience=20, initial_filters=
 
 
 
-def fit_full_model(model, xtrain, xval, ytrain, yval, train_mlt, val_mlt, early_stop, CV, delay, first_time=True):
+def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, early_stop):
 	'''
 	Performs the actual fitting of the model.
 
@@ -390,7 +390,7 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, train_mlt, val_mlt, early_
 		model: fit model ready for making predictions.
 	'''
 
-	if first_time:
+	if not os.path.exists(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
@@ -400,26 +400,26 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, train_mlt, val_mlt, early_
 		print(f'XVal: {np.isnan(Xval).sum()}')
 		print(f'yTrain: {np.isnan(ytrain).sum()}')
 		print(f'yVal: {np.isnan(yval).sum()}')
-		print(f'train_mlt: {np.isnan(train_mlt).sum()}')
-		print(f'val_mlt: {np.isnan(val_mlt).sum()}')
+		print(f'twins_train: {np.isnan(twins_train).sum()}')
+		print(f'twin_val: {np.isnan(twins_val).sum()}')
 
-		model.fit(x=[Xtrain, train_mlt], y=ytrain,
-					validation_data=([Xval, val_mlt], yval),
+		model.fit(x=[Xtrain, twins_train], y=ytrain,
+					validation_data=([Xval, twins_val], yval),
 					verbose=1, shuffle=True, epochs=500,
 					callbacks=[early_stop], batch_size=64)			# doing the training! Yay!
 
 		# saving the model
-		model.save(f'models/delay_{delay}/CV_{CV}.h5')
+		model.save(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')
 
 	if not first_time:
 
 		# loading the model if it has already been trained.
-		model = load_model(f'models/delay_{delay}/CV_{CV}.h5')				# loading the models if already trained
+		model = load_model(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')				# loading the models if already trained
 
 	return model
 
 
-def making_predictions(model, Xtest, test_mlt, CV, boxcox_mean):
+def making_predictions(model, Xtest, twins_test, ytest, test_dates):
 	'''
 	Function using the trained models to make predictions with the testing data.
 
@@ -435,10 +435,24 @@ def making_predictions(model, Xtest, test_mlt, CV, boxcox_mean):
 
 	Xtest = Xtest.reshape((Xtest.shape[0], Xtest.shape[1], Xtest.shape[2], 1))			# reshpaing for one channel input
 
-	predicted = model.predict([Xtest, test_mlt], verbose=1)						# predicting on the testing input data
-	predicted = tf.gather(predicted, 0, axis=1)					# grabbing the positive node
-	predicted = predicted.numpy()									# turning to a numpy array
-	# predicted = predicted + boxcox_mean
-	# predicted = inv_boxcox(predicted, 0)
+	predicted = model.predict([Xtest, twins_test], verbose=1)						# predicting on the testing input data
 
-	return predicted
+	predicted_mean = tf.gather(predicted, [[0]], axis=1)					# grabbing the positive node
+	predicted_std = tf.gather(predicted, [[1]], axis=1)					# grabbing the positive node
+
+	predicted_mean = predicted_mean.numpy()									# turning to a numpy array
+	predicted_std = predicted_std.numpy()									# turning to a numpy array
+
+	predicted_mean = pd.Series(predicted_mean.reshape(len(predicted_mean),))		# and then into a pd.series
+	predicted_std = pd.Series(predicted_std.reshape(len(predicted_std),))		# and then into a pd.series
+
+	ytest = pd.Series(ytest.reshape(len(ytest),))			# turning the ytest into a pd.series
+
+	# results_df = pd.DataFrame()						# and storing the results
+	# results_df['predicted'] = predicted
+	# results_df['actual'] = ytest
+	# dates = pd.Series(test_dates.reshape(len(test_dates),))
+	dates = pd.Series(test_dates['Date_UTC'])
+	results_df = pd.DataFrame({'predicted_mean':predicted_mean, 'predicted_std':predicted_std, 'actual':ytest, 'dates':test_dates['Date_UTC']})
+
+	return results_df
