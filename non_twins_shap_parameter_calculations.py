@@ -78,7 +78,7 @@ def main(region):
 
 		# Calculating the SHAP values
 		print('Calculating the SHAP values....')
-		shap_values = explainer.shap_values(xtest, check_additivity=False)
+		shap_values = explainer.shap_values(xtest[:(int(len(xtest)*0.01)),:,:,:], check_additivity=False)
 
 		# Saving the SHAP values
 		with open(f'outputs/shap_values/{TARGET}/non_twins_shap_values_region_{region}.pkl', 'wb') as c:
