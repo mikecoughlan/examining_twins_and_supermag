@@ -35,7 +35,7 @@ from scipy.stats import boxcox
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from spacepy import pycdf
+# from spacepy import pycdf
 from tensorflow.keras.backend import clear_session
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
@@ -46,7 +46,7 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
 
 import utils
-from data_prep import DataPrep
+# from data_prep import DataPrep
 
 # from datetime import strftime
 
@@ -349,11 +349,9 @@ def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patienc
 
 	model = Sequential()						# initalizing the model
 
-	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same',
-								activation='relu', input_shape=input_shape))			# adding the CNN layer
+	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same', activation='relu', input_shape=input_shape))			# adding the CNN layer
 	model.add(MaxPooling2D())
 	model.add(Conv2D(MODEL_CONFIG['filters']*2, 2, padding='same', activation='relu'))			# adding the CNN layer
-	model.add(MaxPooling2D())
 	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
 	model.add(Dense(MODEL_CONFIG['filters']*2, activation='relu'))		# Adding dense layers with dropout in between
 	model.add(Dropout(0.2))
@@ -387,7 +385,7 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, region):
 		model: fit model ready for making predictions.
 	'''
 
-	if not os.path.exists(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5'):
+	if not os.path.exists(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}__.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))

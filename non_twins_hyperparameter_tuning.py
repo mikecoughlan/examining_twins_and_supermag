@@ -365,7 +365,8 @@ def create_CNN_model(input_shape, trial, early_stop_patience=25):
 		model.add(Conv2D(initial_filters*cnn_step_up, window_size, padding='same', activation=activation))			# adding the CNN layer
 		if i % 2 == 0:
 			model.add(MaxPooling2D())
-		cnn_step_up *= 2
+		if (initial_filters*cnn_step_up) < 2048:
+			cnn_step_up = cnn_step_up*2
 	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
 	model.add(Dense(initial_dense_nodes, activation=activation))		# Adding dense layers with dropout in between
 	model.add(Dropout(dropout_rate))

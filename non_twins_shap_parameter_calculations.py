@@ -29,11 +29,12 @@ import tensorflow as tf
 from matplotlib import colors
 from tensorflow.keras.models import Sequential, load_model
 from tqdm import tqdm
-import utils
+
 import non_twins_modeling_v2 as modeling
+import utils
 
 TARGET = 'rsd'
-REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
+REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223]
 VERSION = 2
 
 MODEL_CONFIG = {'filters':128,
@@ -57,6 +58,7 @@ def main(region):
 	# Loading the models and the prediction results
 	model = load_model(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5', compile=False)
 	model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate']), loss=modeling.CRPS)
+	print(model.summary())
 	predictions = pd.read_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather')
 
 	if not os.path.exists(f'outputs/shap_values/{TARGET}'):
@@ -71,11 +73,14 @@ def main(region):
 		background = xtrain[np.random.choice(xtrain.shape[0], 1000, replace=False)]
 
 		# initalizing the explainer for the combined model
+		print('Initializing the explainer....')
 		explainer = shap.DeepExplainer(model, background)
 
 		# Calculating the SHAP values
-		shap_values = explainer.shap_values(xtest, check_additivity=True)
+		print('Calculating the SHAP values....')
+		shap_values = explainer.shap_values(xtest, check_additivity=False)
 
+		# Saving the SHAP values
 		with open(f'outputs/shap_values/{TARGET}/non_twins_shap_values_region_{region}.pkl', 'wb') as c:
 			pickle.dump(shap_values, c)
 
@@ -84,7 +89,7 @@ def main(region):
 
 	# Adding the "crossing" arrays to a list
 	mean_shap_values = shap_values[0]
-	std_shap_vlues = shap_values[1]
+	std_shap_values = shap_values[1]
 
 	# Summing of the SHAP values across the time dimension
 	summed_mean_shap_values = np.sum(mean_shap_values, axis=1)
@@ -147,8 +152,8 @@ def main(region):
 	ax1.set_title('SHAP Values for Mean Predictions')
 
 	# Stacking the positive and negative percent contributions
-	plt.stackplot(prec_x, perc_mean_pos_dict.values(), labels=features, colors=colors, alpha=1)
-	plt.stackplot(prec_x, perc_mean_neg_dict.values(), colors=colors, alpha=1)
+	plt.stackplot(perc_x, perc_mean_pos_dict.values(), labels=features, colors=colors, alpha=1)
+	plt.stackplot(perc_x, perc_mean_neg_dict.values(), colors=colors, alpha=1)
 	ax1.margins(x=0, y=0)				# Tightning the plot margins
 	plt.ylabel('Percent Contribution')
 
@@ -166,8 +171,8 @@ def main(region):
 	ax1.set_title('SHAP Values for Std Predictions')
 
 	# Stacking the positive and negative percent contributions
-	plt.stackplot(prec_x, perc_std_pos_dict.values(), labels=features, colors=colors, alpha=1)
-	plt.stackplot(prec_x, perc_std_neg_dict.values(), colors=colors, alpha=1)
+	plt.stackplot(perc_x, perc_std_pos_dict.values(), labels=features, colors=colors, alpha=1)
+	plt.stackplot(perc_x, perc_std_neg_dict.values(), colors=colors, alpha=1)
 	ax1.margins(x=0, y=0)				# Tightning the plot margins
 	plt.ylabel('Percent Contribution')
 
@@ -185,8 +190,8 @@ def main(region):
 	ax1.set_title('SHAP Values for Mean Predictions')
 
 	# Stacking the positive and negative percent contributions
-	plt.stackplot(prec_x, perc_mean_pos_dict.values(), labels=features, colors=colors, alpha=1)
-	plt.stackplot(prec_x, perc_mean_neg_dict.values(), colors=colors, alpha=1)
+	plt.stackplot(perc_x, perc_mean_pos_dict.values(), labels=features, colors=colors, alpha=1)
+	plt.stackplot(perc_x, perc_mean_neg_dict.values(), colors=colors, alpha=1)
 	ax1.margins(x=0, y=0)				# Tightning the plot margins
 	plt.ylabel('Percent Contribution')
 
@@ -199,8 +204,8 @@ def main(region):
 	ax2.set_title('SHAP Values for Std Predictions')
 
 	# Stacking the positive and negative percent contributions
-	plt.stackplot(prec_x, perc_std_pos_dict.values(), labels=features, colors=colors, alpha=1)
-	plt.stackplot(prec_x, perc_std_neg_dict.values(), colors=colors, alpha=1)
+	plt.stackplot(perc_x, perc_std_pos_dict.values(), labels=features, colors=colors, alpha=1)
+	plt.stackplot(perc_x, perc_std_neg_dict.values(), colors=colors, alpha=1)
 	ax2.margins(x=0, y=0)				# Tightning the plot margins
 	plt.ylabel('Percent Contribution')
 
