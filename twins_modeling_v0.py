@@ -456,3 +456,68 @@ def making_predictions(model, Xtest, twins_test, ytest, test_dates):
 	results_df = pd.DataFrame({'predicted_mean':predicted_mean, 'predicted_std':predicted_std, 'actual':ytest, 'dates':test_dates['Date_UTC']})
 
 	return results_df
+
+
+def main(region):
+	'''
+	Pulls all the above functions together. Outputs a saved file with the results.
+
+	'''
+	if not os.path.exists(f'outputs/{TARGET}'):
+		os.makedirs(f'outputs/{TARGET}')
+	if not os.path.exists(f'models/{TARGET}'):
+		os.makedirs(f'models/{TARGET}')
+
+	# loading all data and indicies
+	print('Loading data...')
+	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(target_var=TARGET, region=region)
+
+	print('xtrain shape: '+str(xtrain.shape))
+	print('xval shape: '+str(xval.shape))
+	print('xtest shape: '+str(xtest.shape))
+	print('ytrain shape: '+str(ytrain.shape))
+	print('yval shape: '+str(yval.shape))
+	print('ytest shape: '+str(ytest.shape))
+
+	with open(f'outputs/dates_dict_version_{VERSION}.pkl', 'wb') as f:
+		pickle.dump(dates_dict, f)
+
+	# creating the model
+	print('Initalizing model...')
+	MODEL, early_stop = create_CNN_model(input_shape=(xtrain.shape[1], xtrain.shape[2], 1), loss=MODEL_CONFIG['loss'],
+											early_stop_patience=MODEL_CONFIG['early_stop_patience'])
+
+	# fitting the model
+	print('Fitting model...')
+	MODEL = fit_CNN(MODEL, xtrain, xval, ytrain, yval, early_stop, region=region)
+
+	# making predictions
+	print('Making predictions...')
+	results_df = making_predictions(MODEL, xtest, ytest, dates_dict['test'])
+	# results_df = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
+
+	# all_results_dict = {}
+	# all_results_dict[f'mid_and_high_regions_{MLT_BIN_TARGET}'] = results_dict
+
+	# # saving the results
+	# print('Saving results...')
+	# with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_.pkl', 'ab') as f:
+	# 	pickle.dump(all_results_dict, f)
+	# results_df.reset_index(inplace=True, drop=False).rename(columns={'index':'Date_UTC'})
+	results_df.to_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather')
+
+	# calculating some metrics
+	print('Calculating metrics...')
+	# metrics = calculate_some_metrics(results_df)
+
+	# # saving the metrics
+	# print('Saving metrics...')
+	# metrics.to_feather('outputs/non_twins_metrics.feather')
+
+
+
+if __name__ == '__main__':
+	for region in CONFIG['region_numbers']:
+		print(region)
+		main(region)
+	print('It ran. God job!')
