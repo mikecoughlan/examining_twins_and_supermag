@@ -182,7 +182,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 
 	else:
 		# getting the data corresponding to the twins maps
-		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var=f'rolling_{target_var}', concat=False)
+		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var=f'rolling_{target_var}', concat=False, map_keys=maps.keys())
 		storms_extracted_dict = {'storms':storms, 'target':target}
 		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'wb') as f:
 			pickle.dump(storms_extracted_dict, f)
@@ -224,7 +224,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 	print(f'Size of the twins maps: {len(maps)}')
 
 	# getting the data corresponding to the dates
-	for storm, y, twins_map in zip(storms, target, maps.values):
+	for storm, y, twins_map in zip(storms, target, maps):
 
 		copied_storm = storm.copy()
 		copied_storm = copied_storm.reset_index(inplace=False, drop=False).rename(columns={'index':'Date_UTC'})
@@ -232,17 +232,17 @@ def getting_prepared_data(target_var, region, get_features=False):
 		if storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in train_dates_df.index:
 			x_train.append(storm)
 			y_train.append(y)
-			twins_train.append(twins_map)
+			twins_train.append(twins_map['map'])
 			date_dict['train'] = pd.concat([date_dict['train'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in val_dates_df.index:
 			x_val.append(storm)
 			y_val.append(y)
-			twins_val.append(twins_map)
+			twins_val.append(twins_map['map'])
 			date_dict['val'] = pd.concat([date_dict['val'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in test_dates_df.index:
 			x_test.append(storm)
 			y_test.append(y)
-			twins_test.append(twins_map)
+			twins_test.append(twins_map['map'])
 			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
 
 	date_dict['train'].reset_index(drop=True, inplace=True)

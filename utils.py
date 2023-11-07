@@ -67,8 +67,6 @@ def loading_twins_maps():
 		maps (dict): dictionary containing the twins maps
 	'''
 
-
-	print('Loading twins maps....')
 	times = pd.read_feather('outputs/regular_twins_map_dates.feather')
 	twins_files = sorted(glob.glob(twins_dir+'*.cdf', recursive=True))
 
@@ -370,6 +368,8 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=F
 
 	# will loop through the storm dates, create a datetime object for the lead and recovery time stamps and append those to different lists
 	for date in storm_list:
+		if isinstance(date, str):
+			date = pd.to_datetime(date, format='%Y-%m-%d %H:%M:%S')
 		if twins:
 			stime.append(date.round('T')-pd.Timedelta(minutes=lead))
 			etime.append(date.round('T')+pd.Timedelta(minutes=recovery))
