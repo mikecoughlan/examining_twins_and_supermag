@@ -222,7 +222,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 	print(f'Size of the training storms: {len(storms)}')
 	print(f'Size of the training target: {len(target)}')
 	print(f'Size of the twins maps: {len(maps)}')
-	
+
 	# getting the data corresponding to the dates
 	for storm, y, twins_map in zip(storms, target, maps.values):
 
@@ -428,7 +428,7 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, ea
 		# saving the model
 		model.save(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')
 
-	if not first_time:
+	else
 
 		# loading the model if it has already been trained.
 		model = load_model(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')				# loading the models if already trained
@@ -466,10 +466,6 @@ def making_predictions(model, Xtest, twins_test, ytest, test_dates):
 
 	ytest = pd.Series(ytest.reshape(len(ytest),))			# turning the ytest into a pd.series
 
-	# results_df = pd.DataFrame()						# and storing the results
-	# results_df['predicted'] = predicted
-	# results_df['actual'] = ytest
-	# dates = pd.Series(test_dates.reshape(len(test_dates),))
 	dates = pd.Series(test_dates['Date_UTC'])
 	results_df = pd.DataFrame({'predicted_mean':predicted_mean, 'predicted_std':predicted_std, 'actual':ytest, 'dates':test_dates['Date_UTC']})
 
@@ -508,12 +504,13 @@ def main(region):
 
 	# creating the model
 	print('Initalizing model...')
-	MODEL, early_stop = create_CNN_model(input_shape=(xtrain.shape[1], xtrain.shape[2], 1), loss=MODEL_CONFIG['loss'],
-											early_stop_patience=MODEL_CONFIG['early_stop_patience'])
+	MODEL, early_stop = full_model(encoder, sw_and_mag_input_shape=(xtrain.shape[1], xtrain.shape[2], 1),
+									twins_input_shape=(twins_train.shape[1], twins_train.shape[2], 1),
+									early_stop_patience=MODEL_CONFIG['early_stop_patience'])
 
 	# fitting the model
 	print('Fitting model...')
-	MODEL = fit_CNN(MODEL, xtrain, xval, ytrain, yval, early_stop, region=region)
+	MODEL = fit_full_model(MODEL, xtrain, xval, ytrain, yval, early_stop, region=region)
 
 	# making predictions
 	print('Making predictions...')
