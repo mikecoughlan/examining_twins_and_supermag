@@ -19,7 +19,7 @@ from matplotlib.colors import Normalize
 from matplotlib.patches import Circle, Wedge
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-# from spacepy import pycdf
+from spacepy import pycdf
 from tqdm import tqdm
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
@@ -82,7 +82,8 @@ def loading_twins_maps():
 			check = pd.to_datetime(date.strftime(format='%Y-%m-%d %H:%M:%S'), format='%Y-%m-%d %H:%M:%S')
 			if check in times.values:
 				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = {}
-				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][35:125,40:140]
+				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][50:140,40:100]
+				# maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][35:125,40:140]
 
 	return maps
 

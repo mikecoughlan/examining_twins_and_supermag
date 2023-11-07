@@ -46,6 +46,7 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
 
 import utils
+
 # from data_prep import DataPrep
 
 # from datetime import strftime
@@ -221,6 +222,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 	print(f'Size of the training storms: {len(storms)}')
 	print(f'Size of the training target: {len(target)}')
 	print(f'Size of the twins maps: {len(maps)}')
+	
 	# getting the data corresponding to the dates
 	for storm, y, twins_map in zip(storms, target, maps.values):
 
@@ -360,7 +362,7 @@ def full_model(encoder, sw_and_mag_input_shape, twins_input_shape, early_stop_pa
 	encoder = Flatten()(encoder)
 
 	# combining the two
-	combined = concatenate([flat, mlt_dense])
+	combined = concatenate([flat, encoder])
 	dense1 = Dense(initial_filters*4, activation='relu')(combined)
 	dense1 = BatchNormalization()(dense1)
 	drop1 = Dropout(0.2)(dense1)
@@ -372,7 +374,7 @@ def full_model(encoder, sw_and_mag_input_shape, twins_input_shape, early_stop_pa
 	drop3 = Dropout(0.2)(dense3)
 	output = Dense(1, activation='linear')(drop3)
 
-	model = Model(inputs=[inputs, mlt_input], outputs=output)
+	model = Model(inputs=[inputs, twins_input], outputs=output)
 
 	opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)		# learning rate that actually started producing good results
 	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
@@ -485,6 +487,7 @@ def main(region):
 		os.makedirs(f'models/{TARGET}')
 
 	encoder = load_model(f'models/encoder_v4.h5')
+	print(encoder.summary())
 
 	# loading all data and indicies
 	print('Loading data...')
