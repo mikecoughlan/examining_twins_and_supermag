@@ -106,7 +106,8 @@ def loading_data(target_var, region, delay, percentile=0.99):
 
 	solarwind = solarwind.shift(-delay)
 
-	print(solarwind[:10])
+	print(solarwind{:10})
+	raise
 
 	# reduce the regions dict to be only the ones that have keys in the region_numbers list
 	regions = regions[f'region_{region}']
