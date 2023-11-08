@@ -359,7 +359,8 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=F
 		storm_list = pd.read_feather('outputs/regular_twins_map_dates.feather')
 		storm_list = storm_list['dates']
 	elif twins and map_keys is not None:
-		storm_list = [key for key in map_keys]
+		storm_list = pd.DataFrame({'dates':[pd.to_datetime(key, format='%Y-%m-%d %H:%M:%S') for key in map_keys]})
+		storm_list = storm_list['dates']
 	else:
 		storm_list = pd.read_csv('stormList.csv', header=None, names=['Date_UTC'])
 		storm_list = storm_list['Date_UTC']
@@ -452,25 +453,5 @@ def split_sequences(sequences, targets=None, n_steps=30, include_target=True, da
 				twins_maps.append(twins)
 			index_to_drop += 1
 
-	if include_target:
-		if dates is not None:
-			if maps is not None:
-				return np.array(X), np.array(y), to_drop, np.array(twins_maps)
-			else:
-				return np.array(X), np.array(y), to_drop
-		else:
-			if maps is not None:
-				return np.array(X), np.array(y), np.array(twins_maps)
-			else:
-				return np.array(X), np.array(y)
-	if not include_target:
-		if dates is not None:
-			if maps is not None:
-				return np.array(X), to_drop, np.array(twins_maps)
-			else:
-				return np.array(X), to_drop
-		else:
-			if maps is not None:
-				return np.array(X), np.array(twins_maps)
-			else:
-				return np.array(X)
+
+	return np.array(X), np.array(y), to_drop, np.array(twins_maps)

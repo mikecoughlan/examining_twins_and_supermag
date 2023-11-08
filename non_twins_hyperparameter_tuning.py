@@ -71,7 +71,7 @@ random_seed = 42
 # with open('model_config.json', 'r') as mcon:
 # 	MODEL_CONFIG = json.load(mcon)
 
-CONFIG = {'region_numbers': [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163],
+CONFIG = {'region_numbers': [270, 287, 207, 62, 241, 366, 387, 223, 19, 163, 194],
 			'load_twins':False,
 			'mag_features':[],
 			'solarwind_features':[],
@@ -166,6 +166,8 @@ def getting_prepared_data(target_var, region):
 		vars_to_drop.append('theta_max')
 	if 'classification' in merged_df.columns:
 		vars_to_drop.append('classification')
+	if 'dbht_std' in merged_df.columns:
+		vars_to_drop.append('dbht_std')
 
 	merged_df.drop(columns=vars_to_drop, inplace=True)
 	# merged_df.dropna(subset=[f'rolling_{target_var}'], inplace=True)
@@ -258,9 +260,9 @@ def getting_prepared_data(target_var, region):
 	print(f'shape of x_test: {len(x_test)}')
 
 	# splitting the sequences for input to the CNN
-	x_train, y_train, train_dates_to_drop = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression')
-	x_val, y_val, val_dates_to_drop = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression')
-	x_test, y_test, test_dates_to_drop  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'], model_type='regression')
+	x_train, y_train, train_dates_to_drop, __ = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression')
+	x_val, y_val, val_dates_to_drop, __ = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression')
+	x_test, y_test, test_dates_to_drop, __  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'], model_type='regression')
 
 	# dropping the dates that correspond to arrays that would have had nan values
 	date_dict['train'].drop(train_dates_to_drop, axis=0, inplace=True)
@@ -349,8 +351,8 @@ def create_CNN_model(input_shape, trial, early_stop_patience=25):
 	learning_rate = trial.suggest_loguniform('learning_rate', 1e-7, 1e-2)
 	window_size = trial.suggest_int('window_size', 1, 5)
 	stride_length = trial.suggest_int('stride_length', 1, 5)
-	cnn_layers = trial.suggest_int('layers', 1, 4)
-	dense_layers = trial.suggest_int('dense_layers', 1, 4)
+	cnn_layers = trial.suggest_int('cnn_layers', 1, 4)
+	dense_layers = trial.suggest_int('dense_layers', 2, 4)
 	cnn_step_up = trial.suggest_categorical('cnn_step_up', [1, 2, 4])
 	initial_dense_nodes = trial.suggest_categorical('initial_dense_nodes', [128, 256, 512, 1024])
 	dense_node_decrease_step = trial.suggest_categorical('dense_node_decrease_step', [2, 4])
@@ -467,10 +469,10 @@ def main(region):
 
 	input_shape = (xtrain.shape[1], xtrain.shape[2], xtrain.shape[3])
 
-	limited_xtrain = xtrain[:(int(len(xtrain)*0.2)),:,:]
-	limited_ytrain = ytrain[:(int(len(ytrain)*0.2))]
-	limited_xval = xval[:(int(len(xval)*0.2)),:,:]
-	limited_yval = yval[:(int(len(yval)*0.2))]
+	limited_xtrain = xtrain[:(int(len(xtrain)*0.1)),:,:]
+	limited_ytrain = ytrain[:(int(len(ytrain)*0.1))]
+	limited_xval = xval[:(int(len(xval)*0.1)),:,:]
+	limited_yval = yval[:(int(len(yval)*0.1))]
 
 	print('xtrain shape: '+str(xtrain.shape))
 	print('xval shape: '+str(xval.shape))
@@ -486,7 +488,7 @@ def main(region):
 	storage = optuna.storages.InMemoryStorage()
 	# reshaping the model input vectors for a single channel
 	study = optuna.create_study(direction='minimize', study_name='non_twins_model_optimization_trial')
-	study.optimize(lambda trial: objective(trial, limited_xtrain, limited_ytrain, limited_xval, limited_yval, xtest, ytest, input_shape), n_trials=50, callbacks=[lambda study, trial: gc.collect()])
+	study.optimize(lambda trial: objective(trial, limited_xtrain, limited_ytrain, limited_xval, limited_yval, xtest, ytest, input_shape), n_trials=25, callbacks=[lambda study, trial: gc.collect()])
 	print(study.best_params)
 
 	print(f'Best Params: {study.best_params}')

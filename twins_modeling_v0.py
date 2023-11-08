@@ -232,17 +232,17 @@ def getting_prepared_data(target_var, region, get_features=False):
 		if storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in train_dates_df.index:
 			x_train.append(storm)
 			y_train.append(y)
-			twins_train.append(twins_map['map'])
+			twins_train.append(maps[twins_map]['map'])
 			date_dict['train'] = pd.concat([date_dict['train'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in val_dates_df.index:
 			x_val.append(storm)
 			y_val.append(y)
-			twins_val.append(twins_map['map'])
+			twins_val.append(maps[twins_map]['map'])
 			date_dict['val'] = pd.concat([date_dict['val'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in test_dates_df.index:
 			x_test.append(storm)
 			y_test.append(y)
-			twins_test.append(twins_map['map'])
+			twins_test.append(maps[twins_map]['map'])
 			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
 
 	date_dict['train'].reset_index(drop=True, inplace=True)
@@ -326,7 +326,7 @@ def calculate_crps(epsilon, sig):
 	return crps
 
 
-def full_model(encoder, sw_and_mag_input_shape, twins_input_shape, early_stop_patience=20, initial_filters=32, learning_rate=1e-05):
+def full_model(sw_and_mag_input_shape, twins_input_shape, early_stop_patience=20, initial_filters=32, learning_rate=1e-06):
 	'''
 	Concatenating the CNN models together with the MLT input
 
@@ -341,28 +341,23 @@ def full_model(encoder, sw_and_mag_input_shape, twins_input_shape, early_stop_pa
 	'''
 
 	# CNN model
-	inputs = Input(shape=(sw_and_mag_input_shape[1], sw_and_mag_input_shape[2], 1))
+	inputs = Input(shape=sw_and_mag_input_shape)
 	conv1 = Conv2D(initial_filters, 5, padding='same', activation='relu')(inputs)
 	conv1 = BatchNormalization()(conv1)
 	pool1 = MaxPooling2D(2)(conv1)
 	conv2 = Conv2D(initial_filters*2, 3, padding='same', activation='relu')(pool1)
 	conv2 = BatchNormalization()(conv2)
 	pool2 = MaxPooling2D(2)(conv2)
-	conv3 = Conv2D(initial_filters*4, 2, padding='same', activation='relu')(pool2)
-	conv3 = BatchNormalization()(conv3)
-	pool3 = MaxPooling2D(2)(conv3)
-	conv4 = Conv2D(initial_filters*4, 2, padding='same', activation='relu')(pool3)
-	conv4 = BatchNormalization()(conv4)
-	pool4 = MaxPooling2D(2)(conv4)
-	flat = Flatten()(pool4)
+
+	flat = Flatten()(pool2)
 
 	# twins input
-	twins_input = Input(shape=(twins_input_shape[1], twins_input_shape[2], 1))
-	encoder = encoder(twins_input)
-	encoder = Flatten()(encoder)
+	twins_input = Input(shape=twins_input_shape)
+	# encoder = encoder(twins_input)
+	# encoder = Flatten()(encoder)
 
 	# combining the two
-	combined = concatenate([flat, encoder])
+	combined = concatenate([flat, twins_input])
 	dense1 = Dense(initial_filters*4, activation='relu')(combined)
 	dense1 = BatchNormalization()(dense1)
 	drop1 = Dropout(0.2)(dense1)
@@ -372,7 +367,7 @@ def full_model(encoder, sw_and_mag_input_shape, twins_input_shape, early_stop_pa
 	dense3 = Dense(initial_filters, activation='relu')(drop2)
 	dense3 = BatchNormalization()(dense3)
 	drop3 = Dropout(0.2)(dense3)
-	output = Dense(1, activation='linear')(drop3)
+	output = Dense(2, activation='linear')(drop3)
 
 	model = Model(inputs=[inputs, twins_input], outputs=output)
 
@@ -384,7 +379,7 @@ def full_model(encoder, sw_and_mag_input_shape, twins_input_shape, early_stop_pa
 
 
 
-def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, early_stop):
+def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, early_stop, region):
 	'''
 	Performs the actual fitting of the model.
 
@@ -408,10 +403,10 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, ea
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
-		twins_train = twins_train.reshape((twins_train.shape[0], twins_train.shape[1], twins_train.shape[2], 1))
+		# twins_train = twins_train.reshape((twins_train.shape[0], twins_train.shape[1], twins_train.shape[2], 1))
 
 		Xval = xval.reshape((xval.shape[0], xval.shape[1], xval.shape[2], 1))
-		twins_val = twins_val.reshape((twins_val.shape[0], twins_val.shape[1], twins_val.shape[2], 1))
+		# twins_val = twins_val.reshape((twins_val.shape[0], twins_val.shape[1], twins_val.shape[2], 1))
 
 		print(f'XTrain: {np.isnan(Xtrain).sum()}')
 		print(f'XVal: {np.isnan(Xval).sum()}')
@@ -420,15 +415,13 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, ea
 		print(f'twins_train: {np.isnan(twins_train).sum()}')
 		print(f'twin_val: {np.isnan(twins_val).sum()}')
 
-		model.fit(x=[Xtrain, twins_train], y=ytrain,
-					validation_data=([Xval, twins_val], yval),
-					verbose=1, shuffle=True, epochs=500,
-					callbacks=[early_stop], batch_size=64)			# doing the training! Yay!
+		model.fit(x=[Xtrain, twins_train], y=ytrain, validation_data=([Xval, twins_val], yval),
+					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=64)			# doing the training! Yay!
 
 		# saving the model
 		model.save(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')
 
-	else
+	else:
 
 		# loading the model if it has already been trained.
 		model = load_model(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')				# loading the models if already trained
@@ -451,7 +444,7 @@ def making_predictions(model, Xtest, twins_test, ytest, test_dates):
 
 
 	Xtest = Xtest.reshape((Xtest.shape[0], Xtest.shape[1], Xtest.shape[2], 1))			# reshpaing for one channel input
-	twins_test = twins_test.reshape((twins_test.shape[0], twins_test.shape[1], twins_test.shape[2], 1))
+	# twins_test = twins_test.reshape((twins_test.shape[0], twins_test.shape[1], twins_test.shape[2], 1))
 
 	predicted = model.predict([Xtest, twins_test], verbose=1)						# predicting on the testing input data
 
@@ -502,38 +495,35 @@ def main(region):
 	with open(f'outputs/dates_dict_version_{VERSION}.pkl', 'wb') as f:
 		pickle.dump(dates_dict, f)
 
+	twins_train = encoder.predict(twins_train, verbose=1)
+	clear_session()
+	gc.collect()
+	twins_val = encoder.predict(twins_val, verbose=1)
+	clear_session()
+	gc.collect()
+	twins_test = encoder.predict(twins_test, verbose=1)
+	clear_session()
+	gc.collect()
+
+	print('twins_train shape: '+str(twins_train.shape))
+	print('twins_val shape: '+str(twins_val.shape))
+	print('twins_test shape: '+str(twins_test.shape))
+
 	# creating the model
 	print('Initalizing model...')
-	MODEL, early_stop = full_model(encoder, sw_and_mag_input_shape=(xtrain.shape[1], xtrain.shape[2], 1),
-									twins_input_shape=(twins_train.shape[1], twins_train.shape[2], 1),
+	MODEL, early_stop = full_model(sw_and_mag_input_shape=(xtrain.shape[1], xtrain.shape[2], 1),
+									twins_input_shape=(twins_train.shape[1]),
 									early_stop_patience=MODEL_CONFIG['early_stop_patience'])
 
 	# fitting the model
 	print('Fitting model...')
-	MODEL = fit_full_model(MODEL, xtrain, xval, ytrain, yval, early_stop, region=region)
+	MODEL = fit_full_model(MODEL, xtrain, xval, ytrain, yval, twins_train, twins_val, early_stop, region)
 
 	# making predictions
 	print('Making predictions...')
-	results_df = making_predictions(MODEL, xtest, ytest, dates_dict['test'])
-	# results_df = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
+	results_df = making_predictions(model=MODEL, Xtest=xtest, twins_test=twins_test, ytest=ytest, test_dates=dates_dict['test'])
 
-	# all_results_dict = {}
-	# all_results_dict[f'mid_and_high_regions_{MLT_BIN_TARGET}'] = results_dict
-
-	# # saving the results
-	# print('Saving results...')
-	# with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_.pkl', 'ab') as f:
-	# 	pickle.dump(all_results_dict, f)
-	# results_df.reset_index(inplace=True, drop=False).rename(columns={'index':'Date_UTC'})
-	results_df.to_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather')
-
-	# calculating some metrics
-	print('Calculating metrics...')
-	# metrics = calculate_some_metrics(results_df)
-
-	# # saving the metrics
-	# print('Saving metrics...')
-	# metrics.to_feather('outputs/non_twins_metrics.feather')
+	results_df.to_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather')
 
 
 
