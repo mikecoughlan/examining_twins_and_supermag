@@ -523,9 +523,6 @@ def main(region):
 	print('Calculating metrics...')
 	# metrics = calculate_some_metrics(results_df)
 
-	# # saving the metrics
-	# print('Saving metrics...')
-	# metrics.to_feather('outputs/non_twins_metrics.feather')
 
 
 
