@@ -83,7 +83,7 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 						62, 327, 293, 241, 107, 55, 111]
 
 TARGET = 'rsd'
-VERSION =
+VERSION = 4
 
 
 def loading_data(target_var, region, delay, percentile=0.99):
@@ -105,6 +105,8 @@ def loading_data(target_var, region, delay, percentile=0.99):
 	print(solarwind{:10})
 
 	solarwind = solarwind.shift(-delay)
+
+	print(solarwind[:10])
 
 	# reduce the regions dict to be only the ones that have keys in the region_numbers list
 	regions = regions[f'region_{region}']
