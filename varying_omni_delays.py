@@ -58,7 +58,7 @@ working_dir = data_directory+'mike_working_dir/twins_data_modeling/'
 
 random_seed = 42
 
-DELAYS = [5, 10, 15, 20]
+DELAYS = [0, 5, 10, 15, 20]
 
 CONFIG = {'region_numbers': [223],
 			'load_twins':False,
@@ -83,7 +83,7 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 						62, 327, 293, 241, 107, 55, 111]
 
 TARGET = 'rsd'
-VERSION = 4
+VERSION = 'optimized'
 
 
 def loading_data(target_var, region, delay, percentile=0.99):
