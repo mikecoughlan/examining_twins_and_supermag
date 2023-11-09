@@ -71,7 +71,7 @@ random_seed = 42
 # with open('model_config.json', 'r') as mcon:
 # 	MODEL_CONFIG = json.load(mcon)
 
-CONFIG = {'region_numbers': [270, 287, 207, 62, 241, 366, 387, 223, 19, 163, 194],
+CONFIG = {'region_numbers': [287, 207, 62, 241, 366, 387, 223, 19, 163, 194, 270],
 			'load_twins':False,
 			'mag_features':[],
 			'solarwind_features':[],
@@ -194,9 +194,16 @@ def getting_prepared_data(target_var, region):
 
 	# splitting the data on a month to month basis to reduce data leakage
 	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
+	month_df.drop([pd.to_datetime('2012-03-01'), pd.to_datetime('2017-09-01')])
 
 	train_months, test_months = train_test_split(month_df, test_size=0.2, shuffle=True, random_state=CONFIG['random_seed'])
 	train_months, val_months = train_test_split(train_months, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
+
+	test_months = test_months.tolist()
+	# adding the two dateimte values of interest to the test months df
+	test_months.append(pd.to_datetime('2012-03-01'))
+	test_months.append(pd.to_datetime('2017-09-01'))
+	test_months = pd.to_datetime(test_months)
 
 	train_dates_df, val_dates_df, test_dates_df = pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]})
 	x_train, x_val, x_test, y_train, y_val, y_test = [], [], [], [], [], []
@@ -356,7 +363,7 @@ def create_CNN_model(input_shape, trial, early_stop_patience=25):
 	cnn_step_up = trial.suggest_categorical('cnn_step_up', [1, 2, 4])
 	initial_dense_nodes = trial.suggest_categorical('initial_dense_nodes', [128, 256, 512, 1024])
 	dense_node_decrease_step = trial.suggest_categorical('dense_node_decrease_step', [2, 4])
-	dropout_rate = trial.suggest_uniform('dropout_percentage', 0.2, 0.6)
+	dropout_rate = trial.suggest_uniform('dropout_rate', 0.2, 0.6)
 	activation = trial.suggest_categorical('activation', ['relu', 'tanh', 'sigmoid'])
 
 
