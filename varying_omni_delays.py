@@ -157,6 +157,8 @@ def getting_prepared_data(target_var, region, delay, get_features=False):
 		vars_to_drop.append('theta_max')
 	if 'classification' in merged_df.columns:
 		vars_to_drop.append('classification')
+	if 'dbht_std' in merged_df.columns:
+		vars_to_drop.append('dbht_std')
 
 	merged_df.drop(columns=vars_to_drop, inplace=True)
 	# merged_df.dropna(subset=[f'rolling_{target_var}'], inplace=True)
