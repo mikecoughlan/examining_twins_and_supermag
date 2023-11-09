@@ -13,21 +13,30 @@ from sklearn.metrics import (auc, brier_score_loss, confusion_matrix,
 
 import utils
 
-REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
+# REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
+REGIONs = [223]
+DELAYS = [5, 10, 15, 20]
 
 data_dir = '../../../../data/'
 supermag_dir = data_dir+'supermag/feather_files/'
 regions_dict = data_dir+'mike_working_dir/identifying_regions_data/adjusted_regions.pkl'
 
-VERSION = 2
+VERSION = 'optimized'
 TARGET = 'rsd'
 
-def load_predictions(region, version=VERSION):
+def load_predictions(region=None, delay=None, version=VERSION):
 
-	if os.path.exists(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{version}.feather'):
-		predictions = pd.read_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{version}.feather')
-		predictions.set_index('dates', inplace=True)
-		predictions.index = pd.to_datetime(predictions.index, format = '%Y-%m-%d %H:%M:%S')
+	if region is not None:
+		if os.path.exists(f'outputs/{TARGET}/omni_delay_results/non_twins_modeling_region_{region}_version_{VERSION}.feather'):
+			predictions = pd.read_feather(f'outputs/{TARGET}/omni_delay_results/non_twins_modeling_region_{region}_version_{VERSION}.feather')
+			predictions.set_index('dates', inplace=True)
+			predictions.index = pd.to_datetime(predictions.index, format = '%Y-%m-%d %H:%M:%S')
+
+	if delay is not None:
+		if os.path.exists(f'outputs/{TARGET}/omni_delay_results/non_twins_modeling_delay_{delay}_version_{VERSION}.feather'):
+			predictions = pd.read_feather(f'outputs/{TARGET}/omni_delay_results/non_twins_modeling_delay_{delay}_version_{VERSION}.feather')
+			predictions.set_index('dates', inplace=True)
+			predictions.index = pd.to_datetime(predictions.index, format = '%Y-%m-%d %H:%M:%S')
 
 	else:
 		raise(f'Fool of a Took! You need to run the script modeling_v{version}.py first. Throw yourself down next time and rid us of your stupidity!')
@@ -121,7 +130,7 @@ def correlations_vs_mlat(all_predictions, version=VERSION):
 	plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/r2_vs_latitude.png')
 
 
-def plotting_continuious_reliability_diagram(all_predictions, version=VERSION):
+def plotting_continuious_reliability_diagram(all_predictions, delay=None, version=VERSION):
 
 	''' Function that plots the reliability diagram for the predictions.'''
 
@@ -169,7 +178,7 @@ def plotting_continuious_reliability_diagram(all_predictions, version=VERSION):
 	ax[1].set_aspect('equal')
 	plt.subplots_adjust(hspace = -0.20)
 
-	plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/reliability_diagram2.png', bbox_inches='tight')
+	plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/delay_{delay}_reliability_diagram2.png', bbox_inches='tight')
 
 
 	# fig = plt.figure(figsize=(20,10))
@@ -309,7 +318,7 @@ def handling_gaps(df, threshold):
 	return df
 
 
-def line_plot(all_predictions=None, std=False, version=VERSION, multiple_models=False):
+def line_plot(all_predictions=None, delay=None, std=False, version=VERSION, multiple_models=False):
 	'''
 	Function that plots the output predictions in a time series. If the model used the CRPS as a loss function
 	the plot will include the standard deviation of the predictions as a shaded region around the mean.
@@ -358,7 +367,7 @@ def line_plot(all_predictions=None, std=False, version=VERSION, multiple_models=
 			ax.set_title(f'Predicted Values vs Actual Values {region}')
 			ax.legend()
 
-			plt.savefig(f'plots/{TARGET}/multiple_versions/{region}_line_plot_versions_{version}.png')
+			plt.savefig(f'plots/{TARGET}/multiple_versions/delay_{delay}_{region}_line_plot_versions_{version}.png')
 
 	else:
 		for region in all_predictions.keys():
@@ -376,9 +385,9 @@ def line_plot(all_predictions=None, std=False, version=VERSION, multiple_models=
 			ax.set_title(f'Predicted Values vs Actual Values {region}')
 			ax.legend()
 
-			plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/{region}_line_plot.png')
+			plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/delay_{delay}_{region}_line_plot.png')
 
-def checking_error_distributions(all_predictions, version=VERSION):
+def checking_error_distributions(all_predictions, delay, version=VERSION):
 
 	errors_df = pd.Series()
 	for region in all_predictions.keys():
@@ -389,10 +398,10 @@ def checking_error_distributions(all_predictions, version=VERSION):
 	plt.hist(errors_df, bins=100, log=True)
 	plt.xlabel('errors')
 	plt.ylabel('count')
-	plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/error_distributions.png')
+	plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/{delay}_error_distributions.png')
 
 
-def main():
+def main(delay=None):
 
 	if not os.path.exists(f'plots/{TARGET}/analysis_plots_modeling_v{VERSION}/'):
 		os.makedirs(f'plots/{TARGET}/analysis_plots_modeling_v{VERSION}/')
@@ -403,12 +412,12 @@ def main():
 	all_predictions = {region:{} for region in REGIONS}
 
 	for region in REGIONS:
-	 	predictions = load_predictions(region)
+	 	predictions = load_predictions(region, delay=delay)
 	 	predictions, average_mlat = attaching_mlt(predictions, region)
 	 	all_predictions[region]['dataframe'] = predictions
 	 	all_predictions[region]['average_mlat'] = average_mlat
 
-	plotting_continuious_reliability_diagram(all_predictions)
+	plotting_continuious_reliability_diagram(all_predictions, delay=delay)
 
 
 	# plotting a simple scatter plot of the predictions vs the actual values
@@ -419,9 +428,9 @@ def main():
 
 	# correlations_vs_mlat(all_predictions)
 
-	checking_error_distributions(all_predictions)
+	checking_error_distributions(all_predictions, delay)
 
-	#line_plot(multiple_models=True, version=[1,2])
+	line_plot(all_predictions=all_predictions, multiple_models=False, version=VERSION, delay=delay)
 
 	# plotting the reliability diagram for the predictions
 
@@ -429,12 +438,14 @@ def main():
 	# plotting_predicted_values_vs_latitude(all_predictions)
 
 	# calculating the scores for the predictions
-	# scores = calculating_scores(all_predictions)
-	# scores.to_csv(f'outputs/{TARGET}/analysis_plots_modeling_v{version}/scores.csv')
+	scores = calculating_scores(all_predictions)
+	scores.to_csv(f'outputs/{TARGET}/analysis_plots_modeling_v{version}/scores.csv')
 
 	print('Done!')
 
 
 
 if __name__ == '__main__':
+	for delay in DELAYS:
+		main(delay)
 	main()
