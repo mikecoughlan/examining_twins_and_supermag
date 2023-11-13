@@ -447,7 +447,7 @@ def objective(trial, xtrain, ytrain, xval, yval, xtest, ytest, input_shape):
 	clear_session()
 	try:
 		model.fit(xtrain, ytrain, validation_data=(xval, yval),
-				verbose=1, shuffle=True, epochs=500,
+				verbose=1, shuffle=True, epochs=100,
 				callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
 	except:
 		print('Resource Exhausted Error')

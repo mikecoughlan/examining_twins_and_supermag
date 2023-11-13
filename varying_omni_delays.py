@@ -42,6 +42,7 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
 
 import utils
+
 # from data_prep import DataPrep
 
 # from datetime import strftime
@@ -71,11 +72,8 @@ CONFIG = {'region_numbers': [223],
 			'time_history':30,
 			'random_seed':42}
 
-MODEL_CONFIG = {'filters':128,
-				'initial_learning_rate':1e-6,
-				'epochs':500,
-				'loss':'mse',
-				'early_stop_patience':25}
+with open('outputs/best_params_207_version_optimizer.pkl', 'rb') as f:
+	MODEL_CONFIG = pickle.load(f)
 
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
@@ -109,15 +107,15 @@ def loading_data(target_var, region, delay, percentile=0.99):
 	stats = stats[f'region_{region}']
 
 	# getting dbdt and rsd data for the region
-	supermag_df = utils.combining_stations_into_regions(regions['station'], stats, features=['dbht', 'MAGNITUDE', 'theta', 'N', 'E'], mean=True, std=True, maximum=True, median=True)
+	supermag_df = utils.combining_stations_into_regions(regions['station'], stats, features=['dbht', 'MAGNITUDE', 'theta', 'sin_theta', 'cos_theta', 'N', 'E'], mean=True, std=True, maximum=True, median=True)
 
 	# getting the mean latitude for the region and attaching it to the regions dictionary
 	mean_lat = utils.getting_mean_lat(regions['station'])
 
 	threshold = supermag_df[target_var].quantile(percentile)
 
-	supermag_df.drop(columns=supermag_corr_dict[f'region_{region}']['twins_corr'], inplace=True)
-	solarwind.drop(columns=solarwind_corr_dict[f'region_{region}']['twins_corr_features'], inplace=True)
+	# supermag_df.drop(columns=supermag_corr_dict[f'region_{region}']['twins_corr'], inplace=True)
+	# solarwind.drop(columns=solarwind_corr_dict[f'region_{region}']['twins_corr_features'], inplace=True)
 
 	merged_df = pd.merge(supermag_df, solarwind, left_index=True, right_index=True, how='inner')
 
@@ -159,8 +157,44 @@ def getting_prepared_data(target_var, region, delay, get_features=False):
 		vars_to_drop.append('classification')
 	if 'dbht_std' in merged_df.columns:
 		vars_to_drop.append('dbht_std')
+	if 'dbht_max' in merged_df.columns:
+		vars_to_drop.append('dbht_max')
+	if 'dbht_median' in vars_to_drop:
+		vars_to_drop.pop('dbht_median')
+	if 'cos_theta_median' in merged_df.columns:
+		vars_to_drop.append('cos_theta_median')
+	if 'cos_theta_max' in merged_df.columns:
+		vars_to_drop.append('cos_theta_max')
+	if 'cos_theta_mean' in merged_df.columns:
+		vars_to_drop.append('cos_theta_mean')
+	if 'sin_theta_median' in merged_df.columns:
+		vars_to_drop.append('sin_theta_median')
+	if 'sin_theta_max' in merged_df.columns:
+		vars_to_drop.append('sin_theta_max')
+	if 'sin_theta_mean' in merged_df.columns:
+		vars_to_drop.append('sin_theta_mean')
+	if 'theta_mean' in merged_df.columns:
+		vars_to_drop.append('theta_mean')
+	if 'theta_median' in merged_df.columns:
+		vars_to_drop.append('theta_median')
+	if 'theta_max' in merged_df.columns:
+		vars_to_drop.append('theta_max')
+	if 'theta_std' in merged_df.columns:
+		vars_to_drop.append('theta_std')
+	if 'dbht_mean' in merged_df.columns:
+		vars_to_drop.append('dbht_mean')
+	if 'MAGNITUDE_mean' in merged_df.columns:
+		vars_to_drop.append('MAGNITUDE_mean')
+	if 'MAGNITUDE_median' in merged_df.columns:
+		vars_to_drop.append('MAGNITUDE_median')
+	if 'MAGNITUDE_max' in merged_df.columns:
+		vars_to_drop.append('MAGNITUDE_max')
 
-	merged_df.drop(columns=vars_to_drop, inplace=True)
+	vars_to_keep = [target_var, 'dbht_median', 'MAGNITUDE_median', 'MAGNITUDE_std', 'sin_theta_std', 'cos_theta_std', 'N_std', 'N_max', 'E_std', 'E_median', 'cosMLT', 'sinMLT',
+					'B_Total', 'BY_GSM', 'BZ_GSM', 'Vx', 'Vy', 'Vz', 'logT']
+
+	merged_df = merged_df[vars_to_keep]
+	# merged_df.drop(columns=vars_to_drop, inplace=True)
 	# merged_df.dropna(subset=[f'rolling_{target_var}'], inplace=True)
 
 	print('Columns in Merged Dataframe: '+str(merged_df.columns))
@@ -252,9 +286,9 @@ def getting_prepared_data(target_var, region, delay, get_features=False):
 	print(f'shape of x_test: {len(x_test)}')
 
 	# splitting the sequences for input to the CNN
-	x_train, y_train, train_dates_to_drop = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression')
-	x_val, y_val, val_dates_to_drop = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression')
-	x_test, y_test, test_dates_to_drop  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'], model_type='regression')
+	x_train, y_train, train_dates_to_drop, ___ = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression')
+	x_val, y_val, val_dates_to_drop, ___ = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression')
+	x_test, y_test, test_dates_to_drop, ___  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'], model_type='regression')
 
 	# dropping the dates that correspond to arrays that would have had nan values
 	date_dict['train'].drop(train_dates_to_drop, axis=0, inplace=True)
@@ -325,7 +359,7 @@ def calculate_crps(epsilon, sig):
 	return crps
 
 
-def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patience=10):
+def create_CNN_model(input_shape, model_dict, early_stop_patience=10):
 	'''
 	Initializing our model
 
@@ -343,17 +377,24 @@ def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patienc
 
 	model = Sequential()						# initalizing the model
 
-	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same', activation='relu', input_shape=input_shape))			# adding the CNN layer
-	model.add(MaxPooling2D())
-	model.add(Conv2D(MODEL_CONFIG['filters']*2, 2, padding='same', activation='relu'))			# adding the CNN layer
+	model.add(Conv2D(model_dict['initial_filters'], model_dict['window_size'], padding='same', activation=model_dict['activation'], input_shape=input_shape))			# adding the CNN layer
+	for i in range(model_dict['cnn_layers']):
+		model.add(Conv2D(model_dict['initial_filters']*model_dict['cnn_step_up'], model_dict['window_size'], padding='same', activation=model_dict['activation']))			# adding the CNN layer
+		if i % 2 == 0:
+			model.add(MaxPooling2D())
+		model_dict['cnn_step_up'] *= 2
+
 	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
-	model.add(Dense(MODEL_CONFIG['filters']*2, activation='relu'))		# Adding dense layers with dropout in between
-	model.add(Dropout(0.2))
-	model.add(Dense(MODEL_CONFIG['filters'], activation='relu'))
-	model.add(Dropout(0.2))
+	model.add(Dense(model_dict['initial_dense_nodes'], activation=model_dict['activation']))		# Adding dense layers with dropout in between
+	model.add(Dropout(model_dict['dropout_rate']))
+	for j in range(model_dict['dense_layers']):
+		model.add(Dense(int(model_dict['initial_dense_nodes']/model_dict['dense_node_decrease_step']), activation=model_dict['activation']))
+		model.add(Dropout(model_dict['dropout_rate']))
+		model_dict['dense_node_decrease_step'] *= 2
+
 	model.add(Dense(2, activation='linear'))
-	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
-	model.compile(optimizer=opt, loss=CRPS)					# compiling the model with custom loss function
+	opt = tf.keras.optimizers.Adam(learning_rate=model_dict['learning_rate'])		# learning rate that actually started producing good results
+	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
 
@@ -386,7 +427,7 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, delay):
 		Xval = xval.reshape((xval.shape[0], xval.shape[1], xval.shape[2], 1))
 
 		model.fit(Xtrain, ytrain, validation_data=(Xval, yval),
-					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
+					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop])			# doing the training! Yay!
 
 		# saving the model
 		model.save(f'models/{TARGET}/non_twins_delay_{delay}_v{VERSION}.h5')
@@ -475,6 +516,8 @@ def main(region, delay):
 	if not os.path.exists(f'models/{TARGET}'):
 		os.makedirs(f'models/{TARGET}')
 
+
+
 	# loading all data and indicies
 	print('Loading data...')
 	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(target_var=TARGET, region=region, delay=delay)
@@ -491,8 +534,8 @@ def main(region, delay):
 
 	# creating the model
 	print('Initalizing model...')
-	MODEL, early_stop = create_CNN_model(input_shape=(xtrain.shape[1], xtrain.shape[2], 1), loss=MODEL_CONFIG['loss'],
-											early_stop_patience=MODEL_CONFIG['early_stop_patience'])
+	MODEL, early_stop = create_CNN_model(input_shape=(xtrain.shape[1], xtrain.shape[2], 1), model_dict=MODEL_CONFIG,
+											early_stop_patience=25)
 
 	# fitting the model
 	print('Fitting model...')

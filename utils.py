@@ -145,6 +145,8 @@ def loading_supermag(station):
 	df.set_index('Date_UTC', inplace=True, drop=True)
 	df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
 	df['theta'] = (np.arctan2(df['N'], df['E']) * 180 / np.pi)	# calculates the angle of B_H
+	df['cos_theta'] = np.cos(df['theta'] * np.pi / 180)			# calculates the cosine of the angle of B_H
+	df['sin_theta'] = np.sin(df['theta'] * np.pi / 180)			# calculates the sine of the angle of B_H
 
 	return df
 
