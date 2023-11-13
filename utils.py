@@ -377,8 +377,8 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=F
 			stime.append(date.round('T')-pd.Timedelta(minutes=lead))
 			etime.append(date.round('T')+pd.Timedelta(minutes=recovery))
 		else:
-			stime.append((datetime.strptime(date, '%Y-%m-%d %H:%M:%S'))-pd.Timedelta(hours=lead))
-			etime.append((datetime.strptime(date, '%Y-%m-%d %H:%M:%S'))+pd.Timedelta(hours=recovery))
+			stime.append(date-pd.Timedelta(hours=lead))
+			etime.append(date+pd.Timedelta(hours=recovery))
 
 	# adds the time stamp lists to the storm_list dataframes
 	storm_list['stime'] = stime
