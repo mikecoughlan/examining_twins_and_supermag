@@ -4,6 +4,7 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 from matplotlib import colors
 from scipy.special import erf
 from sklearn.calibration import calibration_curve
@@ -14,8 +15,8 @@ from sklearn.metrics import (auc, brier_score_loss, confusion_matrix,
 import utils
 
 # REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
-REGIONs = [223]
-DELAYS = [5, 10, 15, 20]
+REGIONS = [223]
+DELAYS = [0, 5]
 
 data_dir = '../../../../data/'
 supermag_dir = data_dir+'supermag/feather_files/'
@@ -243,13 +244,13 @@ def calculating_scores(all_predictions):
 		predictions = all_predictions[region]['dataframe']
 
 		# manually calculating the elements of the confusion matrix using 0.5 as the probabalistic prediction threshold
-		Tp = len(predictions[(predictions['actual'] == 1) & (predictions['predicted'] >= 0.5)])
-		Tn = len(predictions[(predictions['actual'] == 0) & (predictions['predicted'] < 0.5)])
-		Fp = len(predictions[(predictions['actual'] == 0) & (predictions['predicted'] >= 0.5)])
-		Fn = len(predictions[(predictions['actual'] == 1) & (predictions['predicted'] < 0.5)])
+		Tp = len(predictions[(predictions['actual'] == 1) & (predictions['predicted_mean'] >= 0.5)])
+		Tn = len(predictions[(predictions['actual'] == 0) & (predictions['predicted_mean'] < 0.5)])
+		Fp = len(predictions[(predictions['actual'] == 0) & (predictions['predicted_mean'] >= 0.5)])
+		Fn = len(predictions[(predictions['actual'] == 1) & (predictions['predicted_mean'] < 0.5)])
 
 		# calculating brier score
-		Bs = (brier_score_loss(predictions['actual'], predictions['predicted']))
+		# Bs = (brier_score_loss(predictions['actual'], predictions['predicted_mean']))
 
 		# calculating the heidke skill score
 		Hss = 2*((Tp*Tn)-(Fp*Fn))/(((Tp+Fn)*(Tn+Fn))+((Tp+Fp)*(Tn+Fp)))
@@ -272,7 +273,7 @@ def calculating_scores(all_predictions):
 			f1 = 0
 
 		# calculating the rmse
-		rmse = np.sqrt(mean_squared_error(predictions['actual'], predictions['predicted']))
+		rmse = np.sqrt(mean_squared_error(predictions['actual'], predictions['predicted_mean']))
 
 		# putting it all into a dataframe
 		scores = pd.DataFrame({'True_pos':Tp, 'False_pos':Fp, 'False_neg': Fn, 'True_neg':Tn,
@@ -373,13 +374,13 @@ def line_plot(all_predictions=None, delay=None, std=False, version=VERSION, mult
 		for region in all_predictions.keys():
 			predictions = all_predictions[region]['dataframe']
 			predictions = handling_gaps(predictions, 100)
-			predictions = predictions.iloc[i:i+1000]
+			predictions = predictions.iloc[segmenting_int:segmenting_int+1000]
 			fig = plt.figure(figsize=(20,10))
 			ax = fig.add_subplot(111)
 			ax.plot(predictions['actual'], label='Actual')
-			ax.plot(predictions['predicted'], label='Predicted Mean')
-			if std:
-				ax.fill_between(predictions.index, predictions['predicted']-predictions['predicted_std'], predictions['predicted']+predictions['predicted_std'], color='gray', alpha=0.5, label='Predicted Std')
+			ax.plot(predictions['predicted_mean'], label='Predicted Mean')
+			if 'predicted_std' in predictions.columns:
+				ax.fill_between(predictions.index, predictions['predicted_mean']-predictions['predicted_std'], predictions['predicted_mean']+predictions['predicted_std'], color='gray', alpha=0.5, label='Predicted Std')
 			ax.set_xlabel('Date')
 			ax.set_ylabel('Predicted Values')
 			ax.set_title(f'Predicted Values vs Actual Values {region}')
@@ -402,6 +403,8 @@ def checking_error_distributions(all_predictions, delay, version=VERSION):
 
 
 def main(delay=None):
+
+	print(f'Delay {delay}')
 
 	if not os.path.exists(f'plots/{TARGET}/analysis_plots_modeling_v{VERSION}/'):
 		os.makedirs(f'plots/{TARGET}/analysis_plots_modeling_v{VERSION}/')
@@ -438,14 +441,14 @@ def main(delay=None):
 	# plotting_predicted_values_vs_latitude(all_predictions)
 
 	# calculating the scores for the predictions
-	scores = calculating_scores(all_predictions)
-	scores.to_csv(f'outputs/{TARGET}/analysis_plots_modeling_v{version}/scores.csv')
+	# scores = calculating_scores(all_predictions)
+	# scores.to_csv(f'outputs/{TARGET}/analysis_plots_modeling_v{version}/scores.csv')
 
 	print('Done!')
 
 
 
 if __name__ == '__main__':
-	for delay in DELAYS:
-		main(delay)
+	for delay in tqdm(DELAYS):
+		main(delay=delay)
 	main()

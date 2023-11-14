@@ -59,7 +59,7 @@ working_dir = data_directory+'mike_working_dir/twins_data_modeling/'
 
 random_seed = 42
 
-DELAYS = [0, 5, 10, 15, 20]
+DELAYS = [10, 15, 20]
 
 CONFIG = {'region_numbers': [223],
 			'load_twins':False,
@@ -190,7 +190,7 @@ def getting_prepared_data(target_var, region, delay, get_features=False):
 	if 'MAGNITUDE_max' in merged_df.columns:
 		vars_to_drop.append('MAGNITUDE_max')
 
-	vars_to_keep = [target_var, 'dbht_median', 'MAGNITUDE_median', 'MAGNITUDE_std', 'sin_theta_std', 'cos_theta_std', 'N_std', 'N_max', 'E_std', 'E_median', 'cosMLT', 'sinMLT',
+	vars_to_keep = [f'rolling_{target_var}', 'dbht_median', 'MAGNITUDE_median', 'MAGNITUDE_std', 'sin_theta_std', 'cos_theta_std', 'N_std', 'N_max', 'E_std', 'E_median', 'cosMLT', 'sinMLT',
 					'B_Total', 'BY_GSM', 'BZ_GSM', 'Vx', 'Vy', 'Vz', 'logT']
 
 	merged_df = merged_df[vars_to_keep]
@@ -198,6 +198,9 @@ def getting_prepared_data(target_var, region, delay, get_features=False):
 	# merged_df.dropna(subset=[f'rolling_{target_var}'], inplace=True)
 
 	print('Columns in Merged Dataframe: '+str(merged_df.columns))
+
+	print(merged_df.corr())
+	merged_df.corr().to_csv(f'outputs/{TARGET}/corr.csv')
 
 	print(f'Target value positive percentage: {target.sum()/len(target)}')
 	# merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
@@ -434,7 +437,9 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, delay):
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model(f'models/{TARGET}/non_twins_delay_{delay}_v{VERSION}.h5')				# loading the models if already trained
+		model = load_model(f'models/{TARGET}/non_twins_delay_{delay}_v{VERSION}.h5', compile=False)				# loading the models if already trained
+		model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['learning_rate']), loss=CRPS)
+
 
 	return model
 
@@ -516,8 +521,6 @@ def main(region, delay):
 	if not os.path.exists(f'models/{TARGET}'):
 		os.makedirs(f'models/{TARGET}')
 
-
-
 	# loading all data and indicies
 	print('Loading data...')
 	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(target_var=TARGET, region=region, delay=delay)
@@ -528,6 +531,13 @@ def main(region, delay):
 	print('ytrain shape: '+str(ytrain.shape))
 	print('yval shape: '+str(yval.shape))
 	print('ytest shape: '+str(ytest.shape))
+
+	print('Nans in training data: '+str(np.isnan(xtrain).sum()))
+	print('Nans in validation data: '+str(np.isnan(xval).sum()))
+	print('Nans in testing data: '+str(np.isnan(xtest).sum()))
+	print('Nans in training target: '+str(np.isnan(ytrain).sum()))
+	print('Nans in validation target: '+str(np.isnan(yval).sum()))
+	print('Nans in testing target: '+str(np.isnan(ytest).sum()))
 
 	# with open(f'outputs/dates_dict_version_{VERSION}.pkl', 'wb') as f:
 	# 	pickle.dump(dates_dict, f)
