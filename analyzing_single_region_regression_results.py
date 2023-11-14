@@ -16,7 +16,7 @@ import utils
 
 # REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
 REGIONS = [223]
-DELAYS = [0, 5]
+DELAYS = [0, 5, 10]
 
 data_dir = '../../../../data/'
 supermag_dir = data_dir+'supermag/feather_files/'
@@ -387,6 +387,7 @@ def line_plot(all_predictions=None, delay=None, std=False, version=VERSION, mult
 			ax.legend()
 
 			plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/delay_{delay}_{region}_line_plot.png')
+
 
 def checking_error_distributions(all_predictions, delay, version=VERSION):
 
