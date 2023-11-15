@@ -33,12 +33,13 @@ MODEL_CONFIG = {'initial_filters': 128,
 
 TARGET = 'rsd'
 VERSION = 'final'
-REGIONS = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
-			387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
-			62, 327, 293, 241, 107, 55, 111]
+# REGIONS = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
+# 			387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
+# 			62, 327, 293, 241, 107, 55, 111]
+REGIONS = [83]
 
 
-def load_model(model_path):
+def loading_model(model_path):
 
 	# Load model
 	model = load_model(model_path, compile=False)
@@ -206,8 +207,8 @@ def main(region):
 
 	xtrain, ___, xtest, ytrain, ____, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)
 	evaluation_dict = segmenting_testing_data(xtest, ytest, dates_dict['test'], storm_months=['2012-03-01', '2017-09-01'])
-	model = load_model(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')
-	shap_values = get_shap_values(model, f'non_twins_region_{region}_version_{VERSION}', xtrain, evaluation_data)
+	model = loading_model(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')
+	shap_values = get_shap_values(model, f'non_twins_region_{region}_version_{VERSION}', xtrain, evaluation_dict)
 	plotting_shap_values(evaluation_dict, features, region)
 
 if __name__ == '__main__':

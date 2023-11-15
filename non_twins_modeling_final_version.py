@@ -71,8 +71,8 @@ random_seed = 42
 # with open('model_config.json', 'r') as mcon:
 # 	MODEL_CONFIG = json.load(mcon)
 
-CONFIG = {'region_numbers': [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
-								387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
+CONFIG = {'region_numbers': [387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
+								83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 								62, 327, 293, 241, 107, 55, 111],
 			'time_history':30,
 			'random_seed':42}
@@ -80,14 +80,14 @@ CONFIG = {'region_numbers': [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14,
 
 MODEL_CONFIG = {'initial_filters': 128,
 				'learning_rate': 4.1521558834373335e-07,
-				'window_size': 3,
+				'window_size': 2,
 				'stride_length': 1,
-				'cnn_layers': 4,
+				'cnn_layers': 1,
 				'dense_layers': 3,
 				'cnn_step_up': 2,
-				'initial_dense_nodes': 1024,
+				'initial_dense_nodes': 512,
 				'dense_node_decrease_step': 2,
-				'dropout_rate': 0.22035812839389704,
+				'dropout_rate': 0.25,
 				'activation': 'relu',
 				'early_stop_patience':25,
 				'epochs':500}
@@ -340,10 +340,13 @@ def create_CNN_model(input_shape, model_dict):
 	model = Sequential()						# initalizing the model
 
 	model.add(Conv2D(model_dict['initial_filters'], model_dict['window_size'], padding='same', activation=model_dict['activation'], input_shape=input_shape))			# adding the CNN layer
+	model.add(MaxPooling2D())
+	model.add(Dropout(model_dict['dropout_rate']))
 	for i in range(model_dict['cnn_layers']):
 		model.add(Conv2D(model_dict['initial_filters']*model_dict['cnn_step_up'], model_dict['window_size'], padding='same', activation=model_dict['activation']))			# adding the CNN layer
-		if i % 2 == 0:
-			model.add(MaxPooling2D())
+		# if (i+2) % 2 == 0:
+		# 	model.add(MaxPooling2D())
+		if i % 1 == 0:
 			model.add(Dropout(model_dict['dropout_rate']))
 		model_dict['cnn_step_up'] *= 2
 
@@ -388,7 +391,9 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, region):
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
 		Xval = xval.reshape((xval.shape[0], xval.shape[1], xval.shape[2], 1))
 
-		model.fit(Xtrain, ytrain, validation_data=(Xval, yval),
+		print(model.summary())
+
+		model.fit(Xtrain, ytrain, validation_data=(Xval, yval), batch_size=128,
 					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
 
 		# saving the model
