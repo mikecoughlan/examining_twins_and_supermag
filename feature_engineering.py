@@ -130,7 +130,9 @@ def finding_correlations(df, target, region):
 		target (string): string of the column name of the target variable
 		region (string): string of the region name
 	'''
-
+	features_to_keep = ['dbht_median', 'MAGNITUDE_median', 'MAGNITUDE_std', 'sin_theta_std', 'cos_theta_std', 'N_std', 'N_max', 'E_std', 'E_median', 'cosMLT', 'sinMLT',
+					'B_Total', 'BY_GSM', 'BZ_GSM', 'Vx', 'Vy', 'Vz', 'logT']
+	df = df[features_to_keep]
 	# normalizing the variables between 0 and 1 before calculating correlation
 	print(f'Normalizing the variables in {region}')
 	for col in df.columns:
@@ -294,15 +296,15 @@ def main():
 
 	# gc.collect()
 
-	selected_regions = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
+	# selected_regions = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]
 
-	for region in selected_regions:
-		print(f'Initial length of the dataframe: {len(data_dict["regions"][f"region_{region}"]["merged_df"])}')
-		df = utils.storm_extract(data_dict['regions'][f'region_{region}']['merged_df'])
-		print(f'Length after storm extraction: {len(df)}')
-		df = feature_elimination(df, target='rolling_rsd', region=region)
-		df.reset_index(inplace=True, drop=False)
-		df.to_feather(f'outputs/feature_engineering/eliminated_region_{region}_v{VERSION}.feather')
+	# for region in selected_regions:
+	# 	print(f'Initial length of the dataframe: {len(data_dict["regions"][f"region_{region}"]["merged_df"])}')
+	# 	df = utils.storm_extract(data_dict['regions'][f'region_{region}']['merged_df'])
+	# 	print(f'Length after storm extraction: {len(df)}')
+	# 	df = feature_elimination(df, target='rolling_rsd', region=region)
+	# 	df.reset_index(inplace=True, drop=False)
+	# 	df.to_feather(f'outputs/feature_engineering/eliminated_region_{region}_v{VERSION}.feather')
 
 		gc.collect()
 
