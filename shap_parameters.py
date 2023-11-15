@@ -203,17 +203,83 @@ def plotting_shap_values(evaluation_dict, features, region):
 		plt.savefig(f'plots/shap/{TARGET}/{key}_non_twins_std_region_{region}.png')
 
 
-def main(region):
+def getting_feature_importance(shap_values, features):
 
-	xtrain, ___, xtest, ytrain, ____, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)
-	evaluation_dict = segmenting_testing_data(xtest, ytest, dates_dict['test'], storm_months=['2012-03-01', '2017-09-01'])
-	model = loading_model(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')
-	shap_values = get_shap_values(model, f'non_twins_region_{region}_version_{VERSION}', xtrain, evaluation_dict)
-	plotting_shap_values(evaluation_dict, features, region)
+	shap_percentages = converting_shap_to_percentages(shap_values, features)
+
+	# seperating mean and std vlaues
+	mean_shap_values = shap_percentages[0]
+	std_shap_values = shap_percentages[1]
+
+	# getting the mean and std of the mean and std shap values
+	mean_mean_shap = mean_shap_values.abs().mean(axis=0)
+	mean_std_shap = std_shap_values.abs().mean(axis=0)
+
+	std_mean_shap = mean_shap_values.abs().std(axis=0)
+	std_std_shap = std_shap_values.abs().std(axis=0)
+
+	feature_importance_df = pd.DataFrame({'mean_mean_shap':mean_mean_shap, 'mean_std_shap':mean_std_shap,
+											'std_mean_shap':std_mean_shap, 'std_std_shap':std_std_shap}, index=features)
+
+	return feature_importance_df
+
+
+def main():
+
+	feature_importance_dict = {region:{} for region in REGIONS}
+
+	regs, __ = utils.loading_dicts()
+	regs = {key:regs[f'region_{key}'] for key in REGIONS}
+	for region in REGIONS:
+		feature_importance_dict[region]['mean_lat'] = utils.get_mean_lat(regs[region]['station'])
+
+	del regs
+	gc.collect()
+
+	for region in REGIONS:
+		xtrain, ___, xtest, ytrain, ____, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)
+		evaluation_dict = segmenting_testing_data(xtest, ytest, dates_dict['test'], storm_months=['2012-03-01', '2017-09-01'])
+		model = load_model(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')
+		shap_values = get_shap_values(model, f'non_twins_region_{region}_version_{VERSION}', xtrain, evaluation_data)
+		plotting_shap_values(evaluation_dict, features, region)
+		feature_importance_dict[region]['feature_importance'] = getting_feature_importance(shap_values, features)
+
+	with open(f'outputs/shap_values/non_twins_feature_importance_dict.pkl', 'wb') as f:
+		pickle.dump(feature_importance_dict, f)
+
+	# plotting feature importance for each feature as a function of mean latitude
+	for feature in features:
+		mean_mean, mean_std, std_mean, std_std, lat = [], [], [], [], []
+		for region in REGIONS:
+			lat.append(feature_importance_dict[region]['mean_lat'])
+			mean_mean.append(feature_importance_dict[region]['feature_importance']['mean_mean_shap'][feature])
+			mean_std.append(feature_importance_dict[region]['feature_importance']['mean_std_shap'][feature])
+			std_mean.append(feature_importance_dict[region]['feature_importance']['std_mean_shap'][feature])
+			std_std.append(feature_importance_dict[region]['feature_importance']['std_std_shap'][feature])
+
+		fig = plt.figure(figsize=(20,17))
+		ax1 = plt.subplot(211)
+		ax1.set_title(f'Mean SHAP Percentage Importance for {feature}')
+		plt.scatter(lat, mean_mean, label='$\mu$')
+		plt.scatter(lat, mean_std, label='$\sigma$')
+		plt.ylabel('Mean SHAP Percentage Importance')
+		plt.xlabel('Region Latitude')
+		plt.legend()
+
+		ax2 = plt.subplot(212)
+		ax2.set_title(f'Std SHAP Percentage Importance for {feature}')
+		plt.scatter(lat, std_mean, label='$\mu$')
+		plt.scatter(lat, std_std, label='$\sigma$')
+		plt.ylabel('Std SHAP Percentage Importance')
+		plt.xlabel('Region Latitude')
+		plt.legend()
+
+		plt.savefig(f'plots/shap/{TARGET}/non_twins_feature_importance_{feature}.png')
+
+
 
 if __name__ == '__main__':
-	for region in REGIONS:
-		main(region)
+	main()
 
 
 
