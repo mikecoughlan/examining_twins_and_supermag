@@ -16,6 +16,7 @@ import datetime
 import gc
 import glob
 import json
+import math
 import os
 import pickle
 import subprocess
@@ -26,16 +27,18 @@ import matplotlib.animation as animation
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
+import optuna
 import pandas as pd
 import tensorflow as tf
 import tqdm
+from optuna_dashboard import run_server
 from scipy.special import expit, inv_boxcox
 from scipy.stats import boxcox
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from spacepy import pycdf
-from tensorflow.keras.backend import clear_session
+from tensorflow.keras.backend import clear_session, int_shape
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
                                      Dense, Dropout, Flatten, Input,
@@ -48,7 +51,6 @@ import utils
 from data_prep import DataPrep
 
 # from datetime import strftime
-
 
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
@@ -69,7 +71,7 @@ random_seed = 42
 # with open('model_config.json', 'r') as mcon:
 # 	MODEL_CONFIG = json.load(mcon)
 
-CONFIG = {'region_numbers': [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163],
+CONFIG = {'region_numbers': [287, 207, 62, 241, 366, 387, 223, 19, 163, 194, 270],
 			'load_twins':False,
 			'mag_features':[],
 			'solarwind_features':[],
@@ -83,7 +85,7 @@ CONFIG = {'region_numbers': [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163
 MODEL_CONFIG = {'filters':128,
 				'initial_learning_rate':1e-6,
 				'epochs':500,
-				'loss':'binary_crossentropy',
+				'loss':'mse',
 				'early_stop_patience':25}
 
 
@@ -92,7 +94,7 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 						62, 327, 293, 241, 107, 55, 111]
 
 TARGET = 'rsd'
-VERSION = 0
+VERSION = 'optimizer'
 
 
 def loading_data(target_var, region, percentile=0.99):
@@ -156,14 +158,19 @@ def getting_prepared_data(target_var, region):
 
 	# removing the target var from the dataframe
 
-	vars_to_drop = [f'rolling_{target_var}', target_var]
+	vars_to_drop = [target_var]
 
 	if 'MLT' in merged_df.columns:
 		vars_to_drop.append('MLT')
 	if 'theta_max' in merged_df.columns:
 		vars_to_drop.append('theta_max')
+	if 'classification' in merged_df.columns:
+		vars_to_drop.append('classification')
+	if 'dbht_std' in merged_df.columns:
+		vars_to_drop.append('dbht_std')
 
 	merged_df.drop(columns=vars_to_drop, inplace=True)
+	# merged_df.dropna(subset=[f'rolling_{target_var}'], inplace=True)
 
 	print('Columns in Merged Dataframe: '+str(merged_df.columns))
 
@@ -178,7 +185,7 @@ def getting_prepared_data(target_var, region):
 
 	else:
 	# getting the data corresponding to the twins maps
-		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var='classification', concat=False)
+		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var=f'rolling_{target_var}', concat=False)
 		storms_extracted_dict = {'storms':storms, 'target':target}
 		with open(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'wb') as f:
 			pickle.dump(storms_extracted_dict, f)
@@ -187,9 +194,16 @@ def getting_prepared_data(target_var, region):
 
 	# splitting the data on a month to month basis to reduce data leakage
 	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
+	month_df.drop([pd.to_datetime('2012-03-01'), pd.to_datetime('2017-09-01')])
 
 	train_months, test_months = train_test_split(month_df, test_size=0.2, shuffle=True, random_state=CONFIG['random_seed'])
 	train_months, val_months = train_test_split(train_months, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
+
+	test_months = test_months.tolist()
+	# adding the two dateimte values of interest to the test months df
+	test_months.append(pd.to_datetime('2012-03-01'))
+	test_months.append(pd.to_datetime('2017-09-01'))
+	test_months = pd.to_datetime(test_months)
 
 	train_dates_df, val_dates_df, test_dates_df = pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]})
 	x_train, x_val, x_test, y_train, y_val, y_test = [], [], [], [], [], []
@@ -222,15 +236,15 @@ def getting_prepared_data(target_var, region):
 
 		if storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in train_dates_df.index:
 			x_train.append(storm)
-			y_train.append(to_categorical(y, num_classes=2))
+			y_train.append(y)
 			date_dict['train'] = pd.concat([date_dict['train'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in val_dates_df.index:
 			x_val.append(storm)
-			y_val.append(to_categorical(y, num_classes=2))
+			y_val.append(y)
 			date_dict['val'] = pd.concat([date_dict['val'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in test_dates_df.index:
 			x_test.append(storm)
-			y_test.append(to_categorical(y, num_classes=2))
+			y_test.append(y)
 			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
 
 	date_dict['train'].reset_index(drop=True, inplace=True)
@@ -253,9 +267,9 @@ def getting_prepared_data(target_var, region):
 	print(f'shape of x_test: {len(x_test)}')
 
 	# splitting the sequences for input to the CNN
-	x_train, y_train, train_dates_to_drop = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'])
-	x_val, y_val, val_dates_to_drop = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'])
-	x_test, y_test, test_dates_to_drop  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'])
+	x_train, y_train, train_dates_to_drop, __ = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression')
+	x_val, y_val, val_dates_to_drop, __ = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression')
+	x_test, y_test, test_dates_to_drop, __  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'], model_type='regression')
 
 	# dropping the dates that correspond to arrays that would have had nan values
 	date_dict['train'].drop(train_dates_to_drop, axis=0, inplace=True)
@@ -272,10 +286,58 @@ def getting_prepared_data(target_var, region):
 	print(f'shape of x_val: {x_val.shape}')
 	print(f'shape of x_test: {x_test.shape}')
 
+	print(f'Nans in training data: {np.isnan(x_train).sum()}')
+	print(f'Nans in validation data: {np.isnan(x_val).sum()}')
+	print(f'Nans in testing data: {np.isnan(x_test).sum()}')
+
+	print(f'Nans in training target: {np.isnan(y_train).sum()}')
+	print(f'Nans in validation target: {np.isnan(y_val).sum()}')
+	print(f'Nans in testing target: {np.isnan(y_test).sum()}')
+
 	return x_train, x_val, x_test, y_train, y_val, y_test, date_dict
 
 
-def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patience=10):
+def CRPS(y_true, y_pred):
+	'''
+	Defining the CRPS loss function for model training.
+
+	Args:
+		y_true (np.array): true values
+		y_pred (np.array): predicted values
+
+	Returns:
+		float: CRPS value
+	'''
+	mean, std = tf.unstack(y_pred, axis=-1)
+	y_true = tf.unstack(y_true, axis=-1)
+
+	# making the arrays the right dimensions
+	mean = tf.expand_dims(mean, -1)
+	std = tf.expand_dims(std, -1)
+	y_true = tf.expand_dims(y_true, -1)
+
+	# calculating the error
+
+	crps = tf.math.reduce_mean(calculate_crps(epsilon_error(y_true, mean), std))
+
+	return crps
+
+
+def epsilon_error(y, u):
+
+	epsilon = tf.math.abs(y-u)
+
+	return epsilon
+
+
+def calculate_crps(epsilon, sig):
+
+	crps = sig * ((epsilon/sig) * tf.math.erf((epsilon/(np.sqrt(2)*sig))) + tf.math.sqrt(2/np.pi) * tf.math.exp(-epsilon**2/(2*sig**2)) - 1/tf.math.sqrt(np.pi))
+
+	return crps
+
+
+def create_CNN_model(input_shape, trial, early_stop_patience=25):
 	'''
 	Initializing our model
 
@@ -290,124 +352,108 @@ def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patienc
 		object: early stopping conditions
 	'''
 
+	# defining the hyperparameters to be tuned
+
+	initial_filters = trial.suggest_categorical('initial_filters', [32, 64, 128])
+	learning_rate = trial.suggest_loguniform('learning_rate', 1e-7, 1e-2)
+	window_size = trial.suggest_int('window_size', 1, 5)
+	stride_length = trial.suggest_int('stride_length', 1, 5)
+	cnn_layers = trial.suggest_int('cnn_layers', 1, 4)
+	dense_layers = trial.suggest_int('dense_layers', 2, 4)
+	cnn_step_up = trial.suggest_categorical('cnn_step_up', [1, 2, 4])
+	initial_dense_nodes = trial.suggest_categorical('initial_dense_nodes', [128, 256, 512, 1024])
+	dense_node_decrease_step = trial.suggest_categorical('dense_node_decrease_step', [2, 4])
+	dropout_rate = trial.suggest_uniform('dropout_rate', 0.2, 0.6)
+	activation = trial.suggest_categorical('activation', ['relu', 'tanh', 'sigmoid'])
+
 
 	model = Sequential()						# initalizing the model
 
-	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same',
-								activation='relu', input_shape=input_shape))			# adding the CNN layer
-	model.add(MaxPooling2D())
-	model.add(Conv2D(MODEL_CONFIG['filters']*2, 2, padding='same', activation='relu'))			# adding the CNN layer
-	model.add(MaxPooling2D())
+	model.add(Conv2D(initial_filters, window_size, padding='same', activation=activation, input_shape=input_shape))			# adding the CNN layer
+	for i in range(cnn_layers):
+		model.add(Conv2D(initial_filters*cnn_step_up, window_size, padding='same', activation=activation))			# adding the CNN layer
+		if i % 2 == 0:
+			model.add(MaxPooling2D())
+		if (initial_filters*cnn_step_up) < 2048:
+			cnn_step_up = cnn_step_up*2
 	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
-	model.add(Dense(MODEL_CONFIG['filters']*2, activation='relu'))		# Adding dense layers with dropout in between
-	model.add(Dropout(0.2))
-	model.add(Dense(MODEL_CONFIG['filters'], activation='relu'))
-	model.add(Dropout(0.2))
-	model.add(Dense(2, activation='softmax'))
-	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
-	model.compile(optimizer=opt, loss=loss)					# Ive read that cross entropy is good for this type of model
+	model.add(Dense(initial_dense_nodes, activation=activation))		# Adding dense layers with dropout in between
+	model.add(Dropout(dropout_rate))
+	for j in range(dense_layers):
+		model.add(Dense(int(initial_dense_nodes/dense_node_decrease_step), activation=activation))
+		model.add(Dropout(dropout_rate))
+		dense_node_decrease_step *= 2
+
+	model.add(Dense(2, activation='linear'))
+	opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)		# learning rate that actually started producing good results
+	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
 
 	return model, early_stop
 
 
-def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, region):
+def best_CNN_model(region, input_shape, best_model_params, xtrain, ytrain, xval, yval, early_stop_patience=25):
 	'''
-	Performs the actual fitting of the model.
+	Initializing our model
 
 	Args:
-		model (keras model): model as defined in the create_model function.
-		xtrain (3D np.array): training data inputs
-		xval (3D np.array): validation inputs
-		ytrain (2D np.array): training target vectors
-		yval (2D np.array): validation target vectors
-		early_stop (keras early stopping dict): predefined early stopping function
-		split (int): split being trained. Used for saving model.
-		station (str): station being trained.
-		first_time (bool, optional): if True model will be trainined, False model will be loaded. Defaults to True.
+		n_features (int): number of input features into the model
+		loss (str, optional): loss function to be uesd for training. Defaults to 'categorical_crossentropy'.
+		early_stop_patience (int, optional): number of epochs the model will continue training once there
+												is no longer val loss improvements. Defaults to 10.
 
 	Returns:
-		model: fit model ready for making predictions.
+		object: model configuration ready for training
+		object: early stopping conditions
 	'''
 
-	if not os.path.exists(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5'):
+	model = Sequential()						# initalizing the model
 
-		# reshaping the model input vectors for a single channel
-		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
-		Xval = xval.reshape((xval.shape[0], xval.shape[1], xval.shape[2], 1))
+	model.add(Conv2D(best_model_params['initial_filters'], best_model_params['window_size'], padding='same', activation=best_model_params['activation'], input_shape=input_shape))			# adding the CNN layer
+	for i in range(best_model_params['cnn_layers']):
+		model.add(Conv2D(best_model_params['initial_filters']*best_model_params['cnn_step_up'], best_model_params['window_size'], padding='same', activation=best_model_params['activation']))			# adding the CNN layer
+		if i % 2 == 0:
+			model.add(MaxPooling2D())
+		best_model_params['cnn_step_up'] *= 2
 
-		model.fit(Xtrain, ytrain, validation_data=(Xval, yval),
-					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
+	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
+	model.add(Dense(best_model_params['initial_dense_nodes'], activation=best_model_params['activation']))		# Adding dense layers with dropout in between
+	model.add(Dropout(best_model_params['dropout_rate']))
+	for j in range(best_model_params['dense_layers']):
+		model.add(Dense(int(best_model_params['initial_dense_nodes']/best_model_params['dense_node_decrease_step']), activation=best_model_params['activation']))
+		model.add(Dropout(best_model_params['dropout_rate']))
+		best_model_params['dense_node_decrease_step'] *= 2
 
-		# saving the model
-		model.save(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5')
+	model.add(Dense(2, activation='linear'))
+	opt = tf.keras.optimizers.Adam(learning_rate=best_model_params['learning_rate'])		# learning rate that actually started producing good results
+	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
+	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
-	else:
-		# loading the model if it has already been trained.
-		model = load_model(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5')				# loading the models if already trained
+	model.fit(xtrain, ytrain, validation_data=(xval, yval), verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
+
+	if not os.path.exists(f'models/best_{TARGET}'):
+		os.makedirs(f'models/best_{TARGET}')
+
+	model.save(f'models/best_{TARGET}/best_CNN_{region}.h5')
 
 	return model
 
 
-def making_predictions(model, Xtest, ytest, test_dates):
-	'''
-	Function using the trained models to make predictions with the testing data.
+def objective(trial, xtrain, ytrain, xval, yval, xtest, ytest, input_shape):
 
-	Args:
-		model (object): pre-trained model
-		test_dict (dict): dictonary with the testing model inputs and the real data for comparison
-		split (int): which split is being tested
+	model, early_stop = create_CNN_model(input_shape, trial)
+	print(model.summary())
+	clear_session()
+	try:
+		model.fit(xtrain, ytrain, validation_data=(xval, yval),
+				verbose=1, shuffle=True, epochs=100,
+				callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
+	except:
+		print('Resource Exhausted Error')
+		return None
 
-	Returns:
-		dict: test dict now containing columns in the dataframe with the model predictions for this split
-	'''
-
-	Xtest = Xtest.reshape((Xtest.shape[0], Xtest.shape[1], Xtest.shape[2], 1))			# reshpaing for one channel input
-	print('Test input Nans: '+str(np.isnan(Xtest).sum()))
-
-	nans = pd.Series(np.isnan(Xtest.sum(axis=1).sum(axis=1)).reshape(len(np.isnan(Xtest.sum(axis=1).sum(axis=1))),))
-
-	predicted = model.predict(Xtest, verbose=1)						# predicting on the testing input data
-	predicted = tf.gather(predicted, [[1]], axis=1)					# grabbing the positive node
-	predicted = predicted.numpy()									# turning to a numpy array
-	predicted = pd.Series(predicted.reshape(len(predicted),))		# and then into a pd.series
-	ytest = pd.Series(ytest[:,1].reshape(len(ytest),))			# turning the ytest into a pd.series
-
-	# results_df = pd.DataFrame()						# and storing the results
-	# results_df['predicted'] = predicted
-	# results_df['actual'] = ytest
-	# dates = pd.Series(test_dates.reshape(len(test_dates),))
-	dates = pd.Series(test_dates['Date_UTC'])
-	results_df = pd.DataFrame({'predicted':predicted, 'actual':ytest, 'dates':test_dates['Date_UTC']})
-
-	return results_df
-
-
-def calculate_some_metrics(results_df):
-
-	# calculating the RMSE
-	rmse = np.sqrt(mean_squared_error(results_df['actual'], results_df['predicted']))
-	print('RMSE: '+str(rmse))
-
-	# calculating the MAE
-	mae = mean_absolute_error(results_df['actual'], results_df['predicted'])
-	print('MAE: '+str(mae))
-
-	# calculating the MAPE
-	mape = np.mean(np.abs((results_df['actual'] - results_df['predicted']) / results_df['actual'])) * 100
-	print('MAPE: '+str(mape))
-
-	# calculating the R^2
-	r2 = r2_score(results_df['actual'], results_df['predicted'])
-	print('R^2: '+str(r2))
-
-	metrics = {'rmse':rmse,
-							'mae':mae,
-							'mape':mape,
-							'r2':r2}
-
-	return metrics
+	return model.evaluate(xtest, ytest, verbose=1)
 
 
 def main(region):
@@ -424,6 +470,17 @@ def main(region):
 	print('Loading data...')
 	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(target_var=TARGET, region=region)
 
+	xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
+	xval = xval.reshape((xval.shape[0], xval.shape[1], xval.shape[2], 1))
+	xtest = xtest.reshape((xtest.shape[0], xtest.shape[1], xtest.shape[2], 1))
+
+	input_shape = (xtrain.shape[1], xtrain.shape[2], xtrain.shape[3])
+
+	limited_xtrain = xtrain[:(int(len(xtrain)*0.1)),:,:]
+	limited_ytrain = ytrain[:(int(len(ytrain)*0.1))]
+	limited_xval = xval[:(int(len(xval)*0.1)),:,:]
+	limited_yval = yval[:(int(len(yval)*0.1))]
+
 	print('xtrain shape: '+str(xtrain.shape))
 	print('xval shape: '+str(xval.shape))
 	print('xtest shape: '+str(xtest.shape))
@@ -434,37 +491,26 @@ def main(region):
 	with open(f'outputs/dates_dict_version_{VERSION}.pkl', 'wb') as f:
 		pickle.dump(dates_dict, f)
 
-	# creating the model
-	print('Initalizing model...')
-	MODEL, early_stop = create_CNN_model(input_shape=(xtrain.shape[1], xtrain.shape[2], 1), loss=MODEL_CONFIG['loss'],
-											early_stop_patience=MODEL_CONFIG['early_stop_patience'])
 
-	# fitting the model
-	print('Fitting model...')
-	MODEL = fit_CNN(MODEL, xtrain, xval, ytrain, yval, early_stop, region=region)
+	storage = optuna.storages.InMemoryStorage()
+	# reshaping the model input vectors for a single channel
+	study = optuna.create_study(direction='minimize', study_name='non_twins_model_optimization_trial')
+	study.optimize(lambda trial: objective(trial, limited_xtrain, limited_ytrain, limited_xval, limited_yval, xtest, ytest, input_shape), n_trials=25, callbacks=[lambda study, trial: gc.collect()])
+	print(study.best_params)
 
-	# making predictions
-	print('Making predictions...')
-	results_df = making_predictions(MODEL, xtest, ytest, dates_dict['test'])
-	# results_df = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
+	print(f'Best Params: {study.best_params}')
 
-	# all_results_dict = {}
-	# all_results_dict[f'mid_and_high_regions_{MLT_BIN_TARGET}'] = results_dict
+	with open(f'outputs/best_params_{region}_version_{VERSION}.pkl', 'wb') as f:
+		pickle.dump(study.best_params, f)
 
-	# # saving the results
-	# print('Saving results...')
-	# with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_.pkl', 'ab') as f:
-	# 	pickle.dump(all_results_dict, f)
-	# results_df.reset_index(inplace=True, drop=False).rename(columns={'index':'Date_UTC'})
-	results_df.to_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather')
+	best_model = best_CNN_model(region, input_shape, study.best_params, xtrain, ytrain, xval, yval)
 
-	# calculating some metrics
-	print('Calculating metrics...')
-	metrics = calculate_some_metrics(results_df)
+	# best_model.evaluate(xtest, ytest)
 
-	# # saving the metrics
-	# print('Saving metrics...')
-	# metrics.to_feather('outputs/non_twins_metrics.feather')
+	# best_model.save(f'models/best_CNN_{region}.h5')
+
+	# optuna.visualization.plot_optimization_history(study).write_image(f'plots/optimization_history_{region}.png')
+
 
 
 

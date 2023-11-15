@@ -16,6 +16,7 @@ import datetime
 import gc
 import glob
 import json
+import math
 import os
 import pickle
 import subprocess
@@ -34,7 +35,7 @@ from scipy.stats import boxcox
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from spacepy import pycdf
+# from spacepy import pycdf
 from tensorflow.keras.backend import clear_session
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
@@ -45,7 +46,7 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
 
 import utils
-from data_prep import DataPrep
+# from data_prep import DataPrep
 
 # from datetime import strftime
 
@@ -83,16 +84,16 @@ CONFIG = {'region_numbers': [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163
 MODEL_CONFIG = {'filters':128,
 				'initial_learning_rate':1e-6,
 				'epochs':500,
-				'loss':'binary_crossentropy',
+				'loss':'mse',
 				'early_stop_patience':25}
 
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
-						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
-						62, 327, 293, 241, 107, 55, 111]
+					387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
+					62, 327, 293, 241, 107, 55, 111]
 
 TARGET = 'rsd'
-VERSION = 0
+VERSION = 2
 
 
 def loading_data(target_var, region, percentile=0.99):
@@ -133,7 +134,7 @@ def loading_data(target_var, region, percentile=0.99):
 
 
 
-def getting_prepared_data(target_var, region):
+def getting_prepared_data(target_var, region, get_features=False):
 	'''
 	Calling the data prep class without the TWINS data for this version of the model.
 
@@ -156,14 +157,17 @@ def getting_prepared_data(target_var, region):
 
 	# removing the target var from the dataframe
 
-	vars_to_drop = [f'rolling_{target_var}', target_var]
+	vars_to_drop = [target_var]
 
 	if 'MLT' in merged_df.columns:
 		vars_to_drop.append('MLT')
 	if 'theta_max' in merged_df.columns:
 		vars_to_drop.append('theta_max')
+	if 'classification' in merged_df.columns:
+		vars_to_drop.append('classification')
 
 	merged_df.drop(columns=vars_to_drop, inplace=True)
+	# merged_df.dropna(subset=[f'rolling_{target_var}'], inplace=True)
 
 	print('Columns in Merged Dataframe: '+str(merged_df.columns))
 
@@ -178,12 +182,13 @@ def getting_prepared_data(target_var, region):
 
 	else:
 	# getting the data corresponding to the twins maps
-		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var='classification', concat=False)
+		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var=f'rolling_{target_var}', concat=False)
 		storms_extracted_dict = {'storms':storms, 'target':target}
 		with open(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'wb') as f:
 			pickle.dump(storms_extracted_dict, f)
 
 	print('Columns in Dataframe: '+str(storms[0].columns))
+	features = storms[0].columns
 
 	# splitting the data on a month to month basis to reduce data leakage
 	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
@@ -222,15 +227,15 @@ def getting_prepared_data(target_var, region):
 
 		if storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in train_dates_df.index:
 			x_train.append(storm)
-			y_train.append(to_categorical(y, num_classes=2))
+			y_train.append(y)
 			date_dict['train'] = pd.concat([date_dict['train'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in val_dates_df.index:
 			x_val.append(storm)
-			y_val.append(to_categorical(y, num_classes=2))
+			y_val.append(y)
 			date_dict['val'] = pd.concat([date_dict['val'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in test_dates_df.index:
 			x_test.append(storm)
-			y_test.append(to_categorical(y, num_classes=2))
+			y_test.append(y)
 			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
 
 	date_dict['train'].reset_index(drop=True, inplace=True)
@@ -253,9 +258,9 @@ def getting_prepared_data(target_var, region):
 	print(f'shape of x_test: {len(x_test)}')
 
 	# splitting the sequences for input to the CNN
-	x_train, y_train, train_dates_to_drop = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'])
-	x_val, y_val, val_dates_to_drop = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'])
-	x_test, y_test, test_dates_to_drop  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'])
+	x_train, y_train, train_dates_to_drop = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression')
+	x_val, y_val, val_dates_to_drop = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression')
+	x_test, y_test, test_dates_to_drop  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'], model_type='regression')
 
 	# dropping the dates that correspond to arrays that would have had nan values
 	date_dict['train'].drop(train_dates_to_drop, axis=0, inplace=True)
@@ -272,7 +277,58 @@ def getting_prepared_data(target_var, region):
 	print(f'shape of x_val: {x_val.shape}')
 	print(f'shape of x_test: {x_test.shape}')
 
-	return x_train, x_val, x_test, y_train, y_val, y_test, date_dict
+	print(f'Nans in training data: {np.isnan(x_train).sum()}')
+	print(f'Nans in validation data: {np.isnan(x_val).sum()}')
+	print(f'Nans in testing data: {np.isnan(x_test).sum()}')
+
+	print(f'Nans in training target: {np.isnan(y_train).sum()}')
+	print(f'Nans in validation target: {np.isnan(y_val).sum()}')
+	print(f'Nans in testing target: {np.isnan(y_test).sum()}')
+
+	if not get_features:
+		return x_train, x_val, x_test, y_train, y_val, y_test, date_dict
+	else:
+		return x_train, x_val, x_test, y_train, y_val, y_test, date_dict, features
+
+
+def CRPS(y_true, y_pred):
+	'''
+	Defining the CRPS loss function for model training.
+
+	Args:
+		y_true (np.array): true values
+		y_pred (np.array): predicted values
+
+	Returns:
+		float: CRPS value
+	'''
+	mean, std = tf.unstack(y_pred, axis=-1)
+	y_true = tf.unstack(y_true, axis=-1)
+
+	# making the arrays the right dimensions
+	mean = tf.expand_dims(mean, -1)
+	std = tf.expand_dims(std, -1)
+	y_true = tf.expand_dims(y_true, -1)
+
+	# calculating the error
+
+	crps = tf.math.reduce_mean(calculate_crps(epsilon_error(y_true, mean), std))
+
+	return crps
+
+
+def epsilon_error(y, u):
+
+	epsilon = tf.math.abs(y-u)
+
+	return epsilon
+
+
+def calculate_crps(epsilon, sig):
+
+	crps = sig * ((epsilon/sig) * tf.math.erf((epsilon/(np.sqrt(2)*sig))) + tf.math.sqrt(2/np.pi) * tf.math.exp(-epsilon**2/(2*sig**2)) - 1/tf.math.sqrt(np.pi))
+
+	return crps
 
 
 def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patience=10):
@@ -293,19 +349,17 @@ def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patienc
 
 	model = Sequential()						# initalizing the model
 
-	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same',
-								activation='relu', input_shape=input_shape))			# adding the CNN layer
+	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same', activation='relu', input_shape=input_shape))			# adding the CNN layer
 	model.add(MaxPooling2D())
 	model.add(Conv2D(MODEL_CONFIG['filters']*2, 2, padding='same', activation='relu'))			# adding the CNN layer
-	model.add(MaxPooling2D())
 	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
 	model.add(Dense(MODEL_CONFIG['filters']*2, activation='relu'))		# Adding dense layers with dropout in between
 	model.add(Dropout(0.2))
 	model.add(Dense(MODEL_CONFIG['filters'], activation='relu'))
 	model.add(Dropout(0.2))
-	model.add(Dense(2, activation='softmax'))
+	model.add(Dense(2, activation='linear'))
 	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
-	model.compile(optimizer=opt, loss=loss)					# Ive read that cross entropy is good for this type of model
+	model.compile(optimizer=opt, loss=CRPS)					# compiling the model with custom loss function
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
 
@@ -369,17 +423,24 @@ def making_predictions(model, Xtest, ytest, test_dates):
 	nans = pd.Series(np.isnan(Xtest.sum(axis=1).sum(axis=1)).reshape(len(np.isnan(Xtest.sum(axis=1).sum(axis=1))),))
 
 	predicted = model.predict(Xtest, verbose=1)						# predicting on the testing input data
-	predicted = tf.gather(predicted, [[1]], axis=1)					# grabbing the positive node
-	predicted = predicted.numpy()									# turning to a numpy array
-	predicted = pd.Series(predicted.reshape(len(predicted),))		# and then into a pd.series
-	ytest = pd.Series(ytest[:,1].reshape(len(ytest),))			# turning the ytest into a pd.series
+
+	predicted_mean = tf.gather(predicted, [[0]], axis=1)					# grabbing the positive node
+	predicted_std = tf.gather(predicted, [[1]], axis=1)					# grabbing the positive node
+
+	predicted_mean = predicted_mean.numpy()									# turning to a numpy array
+	predicted_std = predicted_std.numpy()									# turning to a numpy array
+
+	predicted_mean = pd.Series(predicted_mean.reshape(len(predicted_mean),))		# and then into a pd.series
+	predicted_std = pd.Series(predicted_std.reshape(len(predicted_std),))		# and then into a pd.series
+
+	ytest = pd.Series(ytest.reshape(len(ytest),))			# turning the ytest into a pd.series
 
 	# results_df = pd.DataFrame()						# and storing the results
 	# results_df['predicted'] = predicted
 	# results_df['actual'] = ytest
 	# dates = pd.Series(test_dates.reshape(len(test_dates),))
 	dates = pd.Series(test_dates['Date_UTC'])
-	results_df = pd.DataFrame({'predicted':predicted, 'actual':ytest, 'dates':test_dates['Date_UTC']})
+	results_df = pd.DataFrame({'predicted_mean':predicted_mean, 'predicted_std':predicted_std, 'actual':ytest, 'dates':test_dates['Date_UTC']})
 
 	return results_df
 
@@ -460,11 +521,8 @@ def main(region):
 
 	# calculating some metrics
 	print('Calculating metrics...')
-	metrics = calculate_some_metrics(results_df)
+	# metrics = calculate_some_metrics(results_df)
 
-	# # saving the metrics
-	# print('Saving metrics...')
-	# metrics.to_feather('outputs/non_twins_metrics.feather')
 
 
 

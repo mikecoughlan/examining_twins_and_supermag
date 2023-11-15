@@ -16,6 +16,7 @@ import datetime
 import gc
 import glob
 import json
+import math
 import os
 import pickle
 import subprocess
@@ -34,7 +35,7 @@ from scipy.stats import boxcox
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from spacepy import pycdf
+# from spacepy import pycdf
 from tensorflow.keras.backend import clear_session
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
@@ -45,7 +46,8 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
 
 import utils
-from data_prep import DataPrep
+
+# from data_prep import DataPrep
 
 # from datetime import strftime
 
@@ -83,7 +85,7 @@ CONFIG = {'region_numbers': [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163
 MODEL_CONFIG = {'filters':128,
 				'initial_learning_rate':1e-6,
 				'epochs':500,
-				'loss':'binary_crossentropy',
+				'loss':'mse',
 				'early_stop_patience':25}
 
 
@@ -95,7 +97,7 @@ TARGET = 'rsd'
 VERSION = 0
 
 
-def loading_data(target_var, region, percentile=0.99):
+def loading_data(target_var, region):
 
 	# loading all the datasets and dictonaries
 
@@ -121,19 +123,19 @@ def loading_data(target_var, region, percentile=0.99):
 	# getting the mean latitude for the region and attaching it to the regions dictionary
 	mean_lat = utils.getting_mean_lat(regions['station'])
 
-	threshold = supermag_df[target_var].quantile(percentile)
-
 	supermag_df.drop(columns=supermag_corr_dict[f'region_{region}']['twins_corr'], inplace=True)
 	solarwind.drop(columns=solarwind_corr_dict[f'region_{region}']['twins_corr_features'], inplace=True)
 
 	merged_df = pd.merge(supermag_df, solarwind, left_index=True, right_index=True, how='inner')
 
+	print('Loading TWINS maps....')
+	maps = utils.loading_twins_maps()
 
-	return merged_df, mean_lat, threshold
+	return merged_df, mean_lat, maps
 
 
 
-def getting_prepared_data(target_var, region):
+def getting_prepared_data(target_var, region, get_features=False):
 	'''
 	Calling the data prep class without the TWINS data for this version of the model.
 
@@ -147,43 +149,46 @@ def getting_prepared_data(target_var, region):
 
 	'''
 
-	merged_df, mean_lat, threshold = loading_data(target_var=target_var, region=region, percentile=0.99)
-
-	merged_df = utils.classification_column(merged_df, param=f'rolling_{target_var}', thresh=threshold, forecast=0, window=0)
+	merged_df, mean_lat, maps = loading_data(target_var=target_var, region=region)
 
 	# target = merged_df['classification']
 	target = merged_df[f'rolling_{target_var}']
 
 	# removing the target var from the dataframe
-
-	vars_to_drop = [f'rolling_{target_var}', target_var]
+	vars_to_drop = [target_var]
 
 	if 'MLT' in merged_df.columns:
 		vars_to_drop.append('MLT')
 	if 'theta_max' in merged_df.columns:
 		vars_to_drop.append('theta_max')
+	if 'classification' in merged_df.columns:
+		vars_to_drop.append('classification')
+	if 'dbht_std' in merged_df.columns:
+		vars_to_drop.append('dbht_std')
 
 	merged_df.drop(columns=vars_to_drop, inplace=True)
+	# merged_df.dropna(subset=[f'rolling_{target_var}'], inplace=True)
 
 	print('Columns in Merged Dataframe: '+str(merged_df.columns))
 
 	print(f'Target value positive percentage: {target.sum()/len(target)}')
 	# merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
 
-	if os.path.exists(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl'):
-		with open(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'rb') as f:
+	if os.path.exists(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl'):
+		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'rb') as f:
 			storms_extracted_dict = pickle.load(f)
 		storms = storms_extracted_dict['storms']
 		target = storms_extracted_dict['target']
 
 	else:
-	# getting the data corresponding to the twins maps
-		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var='classification', concat=False)
+		# getting the data corresponding to the twins maps
+		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var=f'rolling_{target_var}', concat=False, map_keys=maps.keys())
 		storms_extracted_dict = {'storms':storms, 'target':target}
-		with open(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'wb') as f:
+		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'wb') as f:
 			pickle.dump(storms_extracted_dict, f)
 
 	print('Columns in Dataframe: '+str(storms[0].columns))
+	features = storms[0].columns
 
 	# splitting the data on a month to month basis to reduce data leakage
 	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
@@ -192,7 +197,7 @@ def getting_prepared_data(target_var, region):
 	train_months, val_months = train_test_split(train_months, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
 
 	train_dates_df, val_dates_df, test_dates_df = pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]})
-	x_train, x_val, x_test, y_train, y_val, y_test = [], [], [], [], [], []
+	x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test = [], [], [], [], [], [], [], [], []
 
 	# using the months to split the data
 	for month in train_months:
@@ -214,23 +219,30 @@ def getting_prepared_data(target_var, region):
 
 	date_dict = {'train':pd.DataFrame(), 'val':pd.DataFrame(), 'test':pd.DataFrame()}
 
+	print(f'Size of the training storms: {len(storms)}')
+	print(f'Size of the training target: {len(target)}')
+	print(f'Size of the twins maps: {len(maps)}')
+
 	# getting the data corresponding to the dates
-	for storm, y in zip(storms, target):
+	for storm, y, twins_map in zip(storms, target, maps):
 
 		copied_storm = storm.copy()
 		copied_storm = copied_storm.reset_index(inplace=False, drop=False).rename(columns={'index':'Date_UTC'})
 
 		if storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in train_dates_df.index:
 			x_train.append(storm)
-			y_train.append(to_categorical(y, num_classes=2))
+			y_train.append(y)
+			twins_train.append(maps[twins_map]['map'])
 			date_dict['train'] = pd.concat([date_dict['train'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in val_dates_df.index:
 			x_val.append(storm)
-			y_val.append(to_categorical(y, num_classes=2))
+			y_val.append(y)
+			twins_val.append(maps[twins_map]['map'])
 			date_dict['val'] = pd.concat([date_dict['val'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in test_dates_df.index:
 			x_test.append(storm)
-			y_test.append(to_categorical(y, num_classes=2))
+			y_test.append(y)
+			twins_test.append(maps[twins_map]['map'])
 			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
 
 	date_dict['train'].reset_index(drop=True, inplace=True)
@@ -241,6 +253,7 @@ def getting_prepared_data(target_var, region):
 	date_dict['val'].rename(columns={date_dict['val'].columns[0]:'Date_UTC'}, inplace=True)
 	date_dict['test'].rename(columns={date_dict['test'].columns[0]:'Date_UTC'}, inplace=True)
 
+	# scaling the solar wind and mag data
 	to_scale_with = pd.concat(x_train, axis=0)
 	scaler = StandardScaler()
 	scaler.fit(to_scale_with)
@@ -248,14 +261,15 @@ def getting_prepared_data(target_var, region):
 	x_val = [scaler.transform(x) for x in x_val]
 	x_test = [scaler.transform(x) for x in x_test]
 
-	print(f'shape of x_train: {len(x_train)}')
-	print(f'shape of x_val: {len(x_val)}')
-	print(f'shape of x_test: {len(x_test)}')
+	# scaling the twins maps
+	twins_train = [x/np.max(x) for x in twins_train]
+	twins_val = [x/np.max(x) for x in twins_val]
+	twins_test = [x/np.max(x) for x in twins_test]
 
 	# splitting the sequences for input to the CNN
-	x_train, y_train, train_dates_to_drop = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'])
-	x_val, y_val, val_dates_to_drop = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'])
-	x_test, y_test, test_dates_to_drop  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'])
+	x_train, y_train, train_dates_to_drop, twins_train = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression', maps=twins_train)
+	x_val, y_val, val_dates_to_drop, twins_val = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression', maps=twins_val)
+	x_test, y_test, test_dates_to_drop, twins_test = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'], model_type='regression', maps=twins_test)
 
 	# dropping the dates that correspond to arrays that would have had nan values
 	date_dict['train'].drop(train_dates_to_drop, axis=0, inplace=True)
@@ -266,58 +280,112 @@ def getting_prepared_data(target_var, region):
 	date_dict['val'].reset_index(drop=True, inplace=True)
 	date_dict['test'].reset_index(drop=True, inplace=True)
 
-	print(f'Total training dates: {len(date_dict["train"])}')
-
-	print(f'shape of x_train: {x_train.shape}')
-	print(f'shape of x_val: {x_val.shape}')
-	print(f'shape of x_test: {x_test.shape}')
-
-	return x_train, x_val, x_test, y_train, y_val, y_test, date_dict
+	if not get_features:
+		return x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test, date_dict
+	else:
+		return x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test, date_dict, features
 
 
-def create_CNN_model(input_shape, loss='binary_crossentropy', early_stop_patience=10):
+def CRPS(y_true, y_pred):
 	'''
-	Initializing our model
+	Defining the CRPS loss function for model training.
 
 	Args:
-		n_features (int): number of input features into the model
+		y_true (np.array): true values
+		y_pred (np.array): predicted values
+
+	Returns:
+		float: CRPS value
+	'''
+	mean, std = tf.unstack(y_pred, axis=-1)
+	y_true = tf.unstack(y_true, axis=-1)
+
+	# making the arrays the right dimensions
+	mean = tf.expand_dims(mean, -1)
+	std = tf.expand_dims(std, -1)
+	y_true = tf.expand_dims(y_true, -1)
+
+	# calculating the error
+
+	crps = tf.math.reduce_mean(calculate_crps(epsilon_error(y_true, mean), std))
+
+	return crps
+
+
+def epsilon_error(y, u):
+
+	epsilon = tf.math.abs(y-u)
+
+	return epsilon
+
+
+def calculate_crps(epsilon, sig):
+
+	crps = sig * ((epsilon/sig) * tf.math.erf((epsilon/(np.sqrt(2)*sig))) + tf.math.sqrt(2/np.pi) * tf.math.exp(-epsilon**2/(2*sig**2)) - 1/tf.math.sqrt(np.pi))
+
+	return crps
+
+
+def full_model(sw_and_mag_input_shape, twins_input_shape, early_stop_patience=20, initial_filters=32, learning_rate=1e-06):
+	'''
+	Concatenating the CNN models together with the MLT input
+
+	Args:
 		loss (str, optional): loss function to be uesd for training. Defaults to 'categorical_crossentropy'.
 		early_stop_patience (int, optional): number of epochs the model will continue training once there
-												is no longer val loss improvements. Defaults to 10.
+												is no longer val loss improvements. Defaults to 3.
 
 	Returns:
 		object: model configuration ready for training
 		object: early stopping conditions
 	'''
 
+	# CNN model
+	inputs = Input(shape=sw_and_mag_input_shape)
+	conv1 = Conv2D(initial_filters, 5, padding='same', activation='relu')(inputs)
+	conv1 = BatchNormalization()(conv1)
+	pool1 = MaxPooling2D(2)(conv1)
+	conv2 = Conv2D(initial_filters*2, 3, padding='same', activation='relu')(pool1)
+	conv2 = BatchNormalization()(conv2)
+	pool2 = MaxPooling2D(2)(conv2)
 
-	model = Sequential()						# initalizing the model
+	flat = Flatten()(pool2)
 
-	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same',
-								activation='relu', input_shape=input_shape))			# adding the CNN layer
-	model.add(MaxPooling2D())
-	model.add(Conv2D(MODEL_CONFIG['filters']*2, 2, padding='same', activation='relu'))			# adding the CNN layer
-	model.add(MaxPooling2D())
-	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
-	model.add(Dense(MODEL_CONFIG['filters']*2, activation='relu'))		# Adding dense layers with dropout in between
-	model.add(Dropout(0.2))
-	model.add(Dense(MODEL_CONFIG['filters'], activation='relu'))
-	model.add(Dropout(0.2))
-	model.add(Dense(2, activation='softmax'))
-	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['initial_learning_rate'])		# learning rate that actually started producing good results
-	model.compile(optimizer=opt, loss=loss)					# Ive read that cross entropy is good for this type of model
+	# twins input
+	twins_input = Input(shape=twins_input_shape)
+	# encoder = encoder(twins_input)
+	# encoder = Flatten()(encoder)
+
+	# combining the two
+	combined = concatenate([flat, twins_input])
+	dense1 = Dense(initial_filters*4, activation='relu')(combined)
+	dense1 = BatchNormalization()(dense1)
+	drop1 = Dropout(0.2)(dense1)
+	dense2 = Dense(initial_filters*2, activation='relu')(drop1)
+	dense2 = BatchNormalization()(dense2)
+	drop2 = Dropout(0.2)(dense2)
+	dense3 = Dense(initial_filters, activation='relu')(drop2)
+	dense3 = BatchNormalization()(dense3)
+	drop3 = Dropout(0.2)(dense3)
+	output = Dense(2, activation='linear')(drop3)
+
+	model = Model(inputs=[inputs, twins_input], outputs=output)
+
+	opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)		# learning rate that actually started producing good results
+	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
-
 
 	return model, early_stop
 
 
-def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, region):
+
+def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, early_stop, region):
 	'''
 	Performs the actual fitting of the model.
 
 	Args:
 		model (keras model): model as defined in the create_model function.
+
 		xtrain (3D np.array): training data inputs
 		xval (3D np.array): validation inputs
 		ytrain (2D np.array): training target vectors
@@ -331,26 +399,37 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, region):
 		model: fit model ready for making predictions.
 	'''
 
-	if not os.path.exists(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5'):
+	if not os.path.exists(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
-		Xval = xval.reshape((xval.shape[0], xval.shape[1], xval.shape[2], 1))
+		# twins_train = twins_train.reshape((twins_train.shape[0], twins_train.shape[1], twins_train.shape[2], 1))
 
-		model.fit(Xtrain, ytrain, validation_data=(Xval, yval),
-					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
+		Xval = xval.reshape((xval.shape[0], xval.shape[1], xval.shape[2], 1))
+		# twins_val = twins_val.reshape((twins_val.shape[0], twins_val.shape[1], twins_val.shape[2], 1))
+
+		print(f'XTrain: {np.isnan(Xtrain).sum()}')
+		print(f'XVal: {np.isnan(Xval).sum()}')
+		print(f'yTrain: {np.isnan(ytrain).sum()}')
+		print(f'yVal: {np.isnan(yval).sum()}')
+		print(f'twins_train: {np.isnan(twins_train).sum()}')
+		print(f'twin_val: {np.isnan(twins_val).sum()}')
+
+		model.fit(x=[Xtrain, twins_train], y=ytrain, validation_data=([Xval, twins_val], yval),
+					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=64)			# doing the training! Yay!
 
 		# saving the model
-		model.save(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5')
+		model.save(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')
 
 	else:
+
 		# loading the model if it has already been trained.
-		model = load_model(f'models/{TARGET}/non_twins_region_{region}_v{VERSION}.h5')				# loading the models if already trained
+		model = load_model(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')				# loading the models if already trained
 
 	return model
 
 
-def making_predictions(model, Xtest, ytest, test_dates):
+def making_predictions(model, Xtest, twins_test, ytest, test_dates):
 	'''
 	Function using the trained models to make predictions with the testing data.
 
@@ -363,51 +442,27 @@ def making_predictions(model, Xtest, ytest, test_dates):
 		dict: test dict now containing columns in the dataframe with the model predictions for this split
 	'''
 
+
 	Xtest = Xtest.reshape((Xtest.shape[0], Xtest.shape[1], Xtest.shape[2], 1))			# reshpaing for one channel input
-	print('Test input Nans: '+str(np.isnan(Xtest).sum()))
+	# twins_test = twins_test.reshape((twins_test.shape[0], twins_test.shape[1], twins_test.shape[2], 1))
 
-	nans = pd.Series(np.isnan(Xtest.sum(axis=1).sum(axis=1)).reshape(len(np.isnan(Xtest.sum(axis=1).sum(axis=1))),))
+	predicted = model.predict([Xtest, twins_test], verbose=1)						# predicting on the testing input data
 
-	predicted = model.predict(Xtest, verbose=1)						# predicting on the testing input data
-	predicted = tf.gather(predicted, [[1]], axis=1)					# grabbing the positive node
-	predicted = predicted.numpy()									# turning to a numpy array
-	predicted = pd.Series(predicted.reshape(len(predicted),))		# and then into a pd.series
-	ytest = pd.Series(ytest[:,1].reshape(len(ytest),))			# turning the ytest into a pd.series
+	predicted_mean = tf.gather(predicted, [[0]], axis=1)					# grabbing the positive node
+	predicted_std = tf.gather(predicted, [[1]], axis=1)					# grabbing the positive node
 
-	# results_df = pd.DataFrame()						# and storing the results
-	# results_df['predicted'] = predicted
-	# results_df['actual'] = ytest
-	# dates = pd.Series(test_dates.reshape(len(test_dates),))
+	predicted_mean = predicted_mean.numpy()									# turning to a numpy array
+	predicted_std = predicted_std.numpy()									# turning to a numpy array
+
+	predicted_mean = pd.Series(predicted_mean.reshape(len(predicted_mean),))		# and then into a pd.series
+	predicted_std = pd.Series(predicted_std.reshape(len(predicted_std),))		# and then into a pd.series
+
+	ytest = pd.Series(ytest.reshape(len(ytest),))			# turning the ytest into a pd.series
+
 	dates = pd.Series(test_dates['Date_UTC'])
-	results_df = pd.DataFrame({'predicted':predicted, 'actual':ytest, 'dates':test_dates['Date_UTC']})
+	results_df = pd.DataFrame({'predicted_mean':predicted_mean, 'predicted_std':predicted_std, 'actual':ytest, 'dates':test_dates['Date_UTC']})
 
 	return results_df
-
-
-def calculate_some_metrics(results_df):
-
-	# calculating the RMSE
-	rmse = np.sqrt(mean_squared_error(results_df['actual'], results_df['predicted']))
-	print('RMSE: '+str(rmse))
-
-	# calculating the MAE
-	mae = mean_absolute_error(results_df['actual'], results_df['predicted'])
-	print('MAE: '+str(mae))
-
-	# calculating the MAPE
-	mape = np.mean(np.abs((results_df['actual'] - results_df['predicted']) / results_df['actual'])) * 100
-	print('MAPE: '+str(mape))
-
-	# calculating the R^2
-	r2 = r2_score(results_df['actual'], results_df['predicted'])
-	print('R^2: '+str(r2))
-
-	metrics = {'rmse':rmse,
-							'mae':mae,
-							'mape':mape,
-							'r2':r2}
-
-	return metrics
 
 
 def main(region):
@@ -420,9 +475,12 @@ def main(region):
 	if not os.path.exists(f'models/{TARGET}'):
 		os.makedirs(f'models/{TARGET}')
 
+	encoder = load_model(f'models/encoder_v4.h5')
+	print(encoder.summary())
+
 	# loading all data and indicies
 	print('Loading data...')
-	xtrain, xval, xtest, ytrain, yval, ytest, dates_dict = getting_prepared_data(target_var=TARGET, region=region)
+	xtrain, xval, xtest, ytrain, yval, ytest, twins_train, twins_val, twins_test, dates_dict = getting_prepared_data(target_var=TARGET, region=region)
 
 	print('xtrain shape: '+str(xtrain.shape))
 	print('xval shape: '+str(xval.shape))
@@ -430,41 +488,42 @@ def main(region):
 	print('ytrain shape: '+str(ytrain.shape))
 	print('yval shape: '+str(yval.shape))
 	print('ytest shape: '+str(ytest.shape))
+	print('twins_train shape: '+str(twins_train.shape))
+	print('twins_val shape: '+str(twins_val.shape))
+	print('twins_test shape: '+str(twins_test.shape))
 
 	with open(f'outputs/dates_dict_version_{VERSION}.pkl', 'wb') as f:
 		pickle.dump(dates_dict, f)
 
+	twins_train = encoder.predict(twins_train, verbose=1)
+	clear_session()
+	gc.collect()
+	twins_val = encoder.predict(twins_val, verbose=1)
+	clear_session()
+	gc.collect()
+	twins_test = encoder.predict(twins_test, verbose=1)
+	clear_session()
+	gc.collect()
+
+	print('twins_train shape: '+str(twins_train.shape))
+	print('twins_val shape: '+str(twins_val.shape))
+	print('twins_test shape: '+str(twins_test.shape))
+
 	# creating the model
 	print('Initalizing model...')
-	MODEL, early_stop = create_CNN_model(input_shape=(xtrain.shape[1], xtrain.shape[2], 1), loss=MODEL_CONFIG['loss'],
-											early_stop_patience=MODEL_CONFIG['early_stop_patience'])
+	MODEL, early_stop = full_model(sw_and_mag_input_shape=(xtrain.shape[1], xtrain.shape[2], 1),
+									twins_input_shape=(twins_train.shape[1]),
+									early_stop_patience=MODEL_CONFIG['early_stop_patience'])
 
 	# fitting the model
 	print('Fitting model...')
-	MODEL = fit_CNN(MODEL, xtrain, xval, ytrain, yval, early_stop, region=region)
+	MODEL = fit_full_model(MODEL, xtrain, xval, ytrain, yval, twins_train, twins_val, early_stop, region)
 
 	# making predictions
 	print('Making predictions...')
-	results_df = making_predictions(MODEL, xtest, ytest, dates_dict['test'])
-	# results_df = results_df.reset_index(drop=False).rename(columns={'index':'Date_UTC'})
+	results_df = making_predictions(model=MODEL, Xtest=xtest, twins_test=twins_test, ytest=ytest, test_dates=dates_dict['test'])
 
-	# all_results_dict = {}
-	# all_results_dict[f'mid_and_high_regions_{MLT_BIN_TARGET}'] = results_dict
-
-	# # saving the results
-	# print('Saving results...')
-	# with open(f'outputs/mlt_bin_{MLT_BIN_TARGET}_span_{MLT_SPAN}_version_.pkl', 'ab') as f:
-	# 	pickle.dump(all_results_dict, f)
-	# results_df.reset_index(inplace=True, drop=False).rename(columns={'index':'Date_UTC'})
-	results_df.to_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather')
-
-	# calculating some metrics
-	print('Calculating metrics...')
-	metrics = calculate_some_metrics(results_df)
-
-	# # saving the metrics
-	# print('Saving metrics...')
-	# metrics.to_feather('outputs/non_twins_metrics.feather')
+	results_df.to_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather')
 
 
 

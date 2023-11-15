@@ -22,6 +22,8 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from spacepy import pycdf
 from tqdm import tqdm
 
+pd.options.mode.chained_assignment = None
+
 os.environ["CDF_LIB"] = "~/CDF/lib"
 
 data_dir = '../../../../data/'
@@ -67,8 +69,6 @@ def loading_twins_maps():
 		maps (dict): dictionary containing the twins maps
 	'''
 
-
-	print('Loading twins maps....')
 	times = pd.read_feather('outputs/regular_twins_map_dates.feather')
 	twins_files = sorted(glob.glob(twins_dir+'*.cdf', recursive=True))
 
@@ -82,7 +82,8 @@ def loading_twins_maps():
 			check = pd.to_datetime(date.strftime(format='%Y-%m-%d %H:%M:%S'), format='%Y-%m-%d %H:%M:%S')
 			if check in times.values:
 				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = {}
-				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][35:125,40:140]
+				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][50:140,40:100]
+				# maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][35:125,40:140]
 
 	return maps
 
@@ -146,6 +147,8 @@ def loading_supermag(station):
 	df.set_index('Date_UTC', inplace=True, drop=True)
 	df.index = pd.to_datetime(df.index, format='%Y-%m-%d %H:%M:$S')
 	df['theta'] = (np.arctan2(df['N'], df['E']) * 180 / np.pi)	# calculates the angle of B_H
+	df['cos_theta'] = np.cos(df['theta'] * np.pi / 180)			# calculates the cosine of the angle of B_H
+	df['sin_theta'] = np.sin(df['theta'] * np.pi / 180)			# calculates the sine of the angle of B_H
 
 	return df
 
@@ -326,7 +329,7 @@ def classification_column(df, param, thresh, forecast, window):
 
 
 
-def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=False, target_var=None, concat=False):
+def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=False, target_var=None, concat=False, map_keys=None):
 
 	'''
 	Pulling out storms using a defined list of datetime strings, adding a lead and recovery time to it and
@@ -356,8 +359,11 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=F
 	df.index = pd.to_datetime(df.index)
 
 	# loading the storm list
-	if twins:
+	if twins and map_keys is None:
 		storm_list = pd.read_feather('outputs/regular_twins_map_dates.feather')
+		storm_list = storm_list['dates']
+	elif twins and map_keys is not None:
+		storm_list = pd.DataFrame({'dates':[pd.to_datetime(key, format='%Y-%m-%d %H:%M:%S') for key in map_keys]})
 		storm_list = storm_list['dates']
 	else:
 		storm_list = pd.read_csv('stormList.csv', header=None, names=['Date_UTC'])
@@ -367,12 +373,14 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=F
 
 	# will loop through the storm dates, create a datetime object for the lead and recovery time stamps and append those to different lists
 	for date in storm_list:
+		if isinstance(date, str):
+			date = pd.to_datetime(date, format='%Y-%m-%d %H:%M:%S')
 		if twins:
 			stime.append(date.round('T')-pd.Timedelta(minutes=lead))
 			etime.append(date.round('T')+pd.Timedelta(minutes=recovery))
 		else:
-			stime.append((datetime.strptime(date, '%Y-%m-%d %H:%M:%S'))-pd.Timedelta(hours=lead))
-			etime.append((datetime.strptime(date, '%Y-%m-%d %H:%M:%S'))+pd.Timedelta(hours=recovery))
+			stime.append(date-pd.Timedelta(hours=lead))
+			etime.append(date+pd.Timedelta(hours=recovery))
 
 	# adds the time stamp lists to the storm_list dataframes
 	storm_list['stime'] = stime
@@ -403,7 +411,7 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=F
 		return storms, y
 
 
-def split_sequences(sequences, targets=None, n_steps=30, include_target=True, dates=None):
+def split_sequences(sequences, targets=None, n_steps=30, include_target=True, dates=None, model_type='classification', maps=None):
 	'''
 		Takes input from the input array and creates the input and target arrays that can go into the models.
 
@@ -417,10 +425,11 @@ def split_sequences(sequences, targets=None, n_steps=30, include_target=True, da
 			np.array (n, time history, n_features): array for model input
 			np.array (n, 1): target array
 		'''
-
-	X, y, to_drop = list(), list(), list()							# creating lists for storing results
+	if maps is None:
+		maps = [None] * len(sequences)
+	X, y, twins_maps, to_drop = list(), list(), list(), list()							# creating lists for storing results
 	index_to_drop = 0
-	for sequence, target in zip(sequences, targets):	# looping through the sequences and targets
+	for sequence, target, twins in zip(sequences, targets, maps):	# looping through the sequences and targets
 		for i in range(len(sequence)-n_steps):			# going to the end of the dataframes
 			end_ix = i + n_steps						# find the end of this pattern
 			if end_ix > len(sequence):					# check if we are beyond the dataset
@@ -432,18 +441,21 @@ def split_sequences(sequences, targets=None, n_steps=30, include_target=True, da
 						to_drop.append(index_to_drop)
 						index_to_drop += 1
 					continue
-				seq_y1 = target[end_ix, :]				# gets the appropriate target
+				if model_type == 'classification':
+					if np.isnan(target[end_ix, :]):
+						continue
+					seq_y1 = target[end_ix, :]				# gets the appropriate target
+				elif model_type == 'regression':
+					if np.isnan(target[end_ix]):
+						continue
+					seq_y1 = target[end_ix]					# gets the appropriate target
+				else:
+					raise ValueError('Must specify a valid model type. Options are "classification" and "regression".')
 				y.append(seq_y1)
 			X.append(seq_x)
+			if maps is not None:
+				twins_maps.append(twins)
 			index_to_drop += 1
 
-	if include_target:
-		if dates is not None:
-			return np.array(X), np.array(y), to_drop
-		else:
-			return np.array(X), np.array(y)
-	if not include_target:
-		if dates is not None:
-			return np.array(X), to_drop
-		else:
-			return np.array(X)
+
+	return np.array(X), np.array(y), to_drop, np.array(twins_maps)
