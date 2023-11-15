@@ -16,6 +16,7 @@ from tensorflow.keras.models import Sequential, load_model
 from tqdm import tqdm
 
 import non_twins_modeling_final_version as modeling
+import utils
 
 MODEL_CONFIG = {'initial_filters': 128,
 				'learning_rate': 4.1521558834373335e-07,
@@ -231,7 +232,7 @@ def main():
 	regs, __ = utils.loading_dicts()
 	regs = {key:regs[f'region_{key}'] for key in REGIONS}
 	for region in REGIONS:
-		feature_importance_dict[region]['mean_lat'] = utils.get_mean_lat(regs[region]['station'])
+		feature_importance_dict[region]['mean_lat'] = utils.getting_mean_lat(regs[region]['station'])
 
 	del regs
 	gc.collect()
@@ -240,7 +241,7 @@ def main():
 		xtrain, ___, xtest, ytrain, ____, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)
 		evaluation_dict = segmenting_testing_data(xtest, ytest, dates_dict['test'], storm_months=['2012-03-01', '2017-09-01'])
 		model = load_model(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')
-		shap_values = get_shap_values(model, f'non_twins_region_{region}_version_{VERSION}', xtrain, evaluation_data)
+		shap_values = get_shap_values(model, f'non_twins_region_{region}_version_{VERSION}', xtrain, evaluation_dict)
 		plotting_shap_values(evaluation_dict, features, region)
 		feature_importance_dict[region]['feature_importance'] = getting_feature_importance(shap_values, features)
 
