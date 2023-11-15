@@ -46,6 +46,7 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
 
 import utils
+
 # from data_prep import DataPrep
 
 # from datetime import strftime
@@ -77,16 +78,16 @@ CONFIG = {'region_numbers': [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14,
 			'random_seed':42}
 
 
-MODEL_CONFIG = {'initial_filters': 128, 
-				'learning_rate': 4.1521558834373335e-07, 
-				'window_size': 3, 
-				'stride_length': 1, 
-				'cnn_layers': 4, 
-				'dense_layers': 3, 
-				'cnn_step_up': 2, 
-				'initial_dense_nodes': 1024, 
-				'dense_node_decrease_step': 2, 
-				'dropout_rate': 0.22035812839389704, 
+MODEL_CONFIG = {'initial_filters': 128,
+				'learning_rate': 4.1521558834373335e-07,
+				'window_size': 3,
+				'stride_length': 1,
+				'cnn_layers': 4,
+				'dense_layers': 3,
+				'cnn_step_up': 2,
+				'initial_dense_nodes': 1024,
+				'dense_node_decrease_step': 2,
+				'dropout_rate': 0.22035812839389704,
 				'activation': 'relu',
 				'early_stop_patience':25,
 				'epochs':500}
