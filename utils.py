@@ -19,7 +19,7 @@ from matplotlib.colors import Normalize
 from matplotlib.patches import Circle, Wedge
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from spacepy import pycdf
+# from spacepy import pycdf
 from tqdm import tqdm
 
 pd.options.mode.chained_assignment = None

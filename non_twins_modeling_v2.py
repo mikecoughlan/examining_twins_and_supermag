@@ -46,6 +46,7 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
 
 import utils
+
 # from data_prep import DataPrep
 
 # from datetime import strftime
@@ -258,9 +259,9 @@ def getting_prepared_data(target_var, region, get_features=False):
 	print(f'shape of x_test: {len(x_test)}')
 
 	# splitting the sequences for input to the CNN
-	x_train, y_train, train_dates_to_drop = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression')
-	x_val, y_val, val_dates_to_drop = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression')
-	x_test, y_test, test_dates_to_drop  = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'], model_type='regression')
+	x_train, y_train, train_dates_to_drop, ___ = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression')
+	x_val, y_val, val_dates_to_drop, ___ = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression')
+	x_test, y_test, test_dates_to_drop, ___ = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'], model_type='regression')
 
 	# dropping the dates that correspond to arrays that would have had nan values
 	date_dict['train'].drop(train_dates_to_drop, axis=0, inplace=True)

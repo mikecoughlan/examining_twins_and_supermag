@@ -64,29 +64,29 @@ def main(region):
 	if not os.path.exists(f'outputs/shap_values/{TARGET}'):
 		os.mkdir(f'outputs/shap_values/{TARGET}')
 	# Checking to see if the SHAP values for the model have been calculated already
-	if os.path.exists(f'outputs/shap_values/{TARGET}/non_twins_shap_values_region_{region}.pkl'):
-		with open(f'outputs/shap_values/{TARGET}/non_twins_shap_values_region_{region}.pkl', 'rb') as c:
-			shap_values = pickle.load(c)
+	# if os.path.exists(f'outputs/shap_values/{TARGET}/non_twins_shap_values_region_{region}.pkl'):
+	# 	with open(f'outputs/shap_values/{TARGET}/non_twins_shap_values_region_{region}.pkl', 'rb') as c:
+	# 		shap_values = pickle.load(c)
 
-	else:
-		print('No saved SHAP values found. Calculating....')
-		# SHAP documentation list 1000 background samples as being sufficient for accurate SHAP values
-		background = xtrain[np.random.choice(xtrain.shape[0], 1000, replace=False)]
+	# else:
+	print('No saved SHAP values found. Calculating....')
+	# SHAP documentation list 1000 background samples as being sufficient for accurate SHAP values
+	background = xtrain[np.random.choice(xtrain.shape[0], 1000, replace=False)]
 
-		# initalizing the explainer for the combined model
-		print('Initializing the explainer....')
-		explainer = shap.DeepExplainer(model, background)
+	# initalizing the explainer for the combined model
+	print('Initializing the explainer....')
+	explainer = shap.DeepExplainer(model, background)
 
-		# Calculating the SHAP values
-		print('Calculating the SHAP values....')
-		shap_values = explainer.shap_values(xtest[:(int(len(xtest)*0.01)),:,:,:], check_additivity=False)
+	# Calculating the SHAP values
+	print('Calculating the SHAP values....')
+	shap_values = explainer.shap_values(xtest[:(int(len(xtest)*0.01)),:,:,:], check_additivity=False)
 
-		# Saving the SHAP values
-		with open(f'outputs/shap_values/{TARGET}/non_twins_shap_values_region_{region}.pkl', 'wb') as c:
-			pickle.dump(shap_values, c)
+	# Saving the SHAP values
+	with open(f'outputs/shap_values/{TARGET}/non_twins_shap_values_region_{region}.pkl', 'wb') as c:
+		pickle.dump(shap_values, c)
 
-		# Freeing up memory
-		gc.collect()
+	# Freeing up memory
+	gc.collect()
 
 	# Adding the "crossing" arrays to a list
 	mean_shap_values = shap_values[0]
