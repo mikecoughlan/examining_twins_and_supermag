@@ -244,6 +244,7 @@ def main():
 		print(f'Preparing data....')
 		xtrain, ___, xtest, ytrain, ____, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)
 
+		# reshaping the data to match the CNN input
 		xtrain = xtrain.reshape(xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1)
 		xtest = xtest.reshape(xtest.shape[0], xtest.shape[1], xtest.shape[2], 1)
 
