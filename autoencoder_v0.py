@@ -50,21 +50,47 @@ from data_prep import DataPrep
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
 
-region_path = '../identifying_regions/outputs/adjusted_regions.pkl'
+working_dir = '../../../../data/mike_working_dir/'
+region_path = working_dir+'identifying_regions_data/adjusted_regions.pkl'
 region_number = '163'
 solarwind_path = '../data/SW/omniData.feather'
 supermag_dir_path = '../data/supermag/'
 twins_times_path = 'outputs/regular_twins_map_dates.feather'
-rsd_path = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
+rsd_path = working_dir+'identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
 random_seed = 42
 
 
-# loading config and specific model config files. Using them as dictonaries
-with open('twins_config.json', 'r') as con:
-	CONFIG = json.load(con)
+def loading_data(target_var, region):
+
+	# loading all the datasets and dictonaries
+
+	regions, stats = utils.loading_dicts()
+	solarwind = utils.loading_solarwind(omni=True, limit_to_twins=True)
+
+	# converting the solarwind data to log10
+	solarwind['logT'] = np.log10(solarwind['T'])
+	solarwind.drop(columns=['T'], inplace=True)
+
+	# reduce the regions dict to be only the ones that have keys in the region_numbers list
+	regions = regions[f'region_{region}']
+	stats = stats[f'region_{region}']
+
+	# getting dbdt and rsd data for the region
+	supermag_df = utils.combining_stations_into_regions(regions['station'], stats, features=['dbht', 'MAGNITUDE', \
+		'theta', 'N', 'E', 'sin_theta', 'cos_theta'], mean=True, std=True, maximum=True, median=True)
+
+	# getting the mean latitude for the region and attaching it to the regions dictionary
+	mean_lat = utils.getting_mean_lat(regions['station'])
+
+	merged_df = pd.merge(supermag_df, solarwind, left_index=True, right_index=True, how='inner')
+
+	print('Loading TWINS maps....')
+	maps = utils.loading_twins_maps()
+
+	return merged_df, mean_lat, maps
 
 
-def getting_prepared_data():
+def getting_prepared_data(target_var, region, get_features=False):
 	'''
 	Calling the data prep class without the TWINS data for this version of the model.
 
@@ -78,31 +104,145 @@ def getting_prepared_data():
 
 	'''
 
-	prep = DataPrep(region_path, region_number, solarwind_path, supermag_dir_path, twins_times_path,
-					rsd_path, random_seed)
+	merged_df, mean_lat, maps = loading_data(target_var=target_var, region=region)
 
-	train, val, test  = prep.twins_only_data_prep(CONFIG)
+	# target = merged_df['classification']
+	target = merged_df[f'rolling_{target_var}']
 
-	# train = train[:(int(len(train)*0.001)),:,:]
-	# val = val[:(int(len(val)*0.001)),:,:]
+	# reducing the dataframe to only the features that will be used in the model plus the target variable
+	vars_to_keep = [f'rolling_{target_var}', 'dbht_median', 'MAGNITUDE_median', 'MAGNITUDE_std', 'sin_theta_std', 'cos_theta_std', 'cosMLT', 'sinMLT',
+					'B_Total', 'BY_GSM', 'BZ_GSM', 'Vx', 'Vy', 'proton_density', 'logT']
+	merged_df = merged_df[vars_to_keep]
 
-	print(train.shape)
-	print(val.shape)
+	print('Columns in Merged Dataframe: '+str(merged_df.columns))
 
-	# reshaping the model input vectors for a single channel
-	train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
-	val = val.reshape((val.shape[0], val.shape[1], val.shape[2], 1))
-	test = test.reshape((test.shape[0], test.shape[1], test.shape[2], 1))
+	print(f'Target value positive percentage: {target.sum()/len(target)}')
+	# merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
 
-	input_shape = (train.shape[1], train.shape[2], 1)
+	if os.path.exists(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl'):
+		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'rb') as f:
+			storms_extracted_dict = pickle.load(f)
+		storms = storms_extracted_dict['storms']
+		target = storms_extracted_dict['target']
 
-	# train = Generator(train, train, batch_size=16, shuffle=True)
-	# val = Generator(val, val, batch_size=16, shuffle=True)
+	else:
+		# getting the data corresponding to the twins maps
+		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var=f'rolling_{target_var}', concat=False, map_keys=maps.keys())
+		storms_extracted_dict = {'storms':storms, 'target':target}
+		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'wb') as f:
+			pickle.dump(storms_extracted_dict, f)
 
-	return train, val, test, input_shape
+	print('Columns in Dataframe: '+str(storms[0].columns))
+	features = storms[0].columns
+
+	# splitting the data on a month to month basis to reduce data leakage
+	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
+	month_df = month_df.drop([pd.to_datetime('2012-03-01'), pd.to_datetime('2017-09-01')])
+
+	train_months, test_months = train_test_split(month_df, test_size=0.2, shuffle=True, random_state=CONFIG['random_seed'])
+	train_months, val_months = train_test_split(train_months, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
+
+	test_months = test_months.tolist()
+	# adding the two dateimte values of interest to the test months df
+	test_months.append(pd.to_datetime('2012-03-01'))
+	test_months.append(pd.to_datetime('2017-09-01'))
+	test_months = pd.to_datetime(test_months)
+
+	train_dates_df, val_dates_df, test_dates_df = pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]})
+	x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test = [], [], [], [], [], [], [], [], []
+
+	# using the months to split the data
+	for month in train_months:
+		train_dates_df = pd.concat([train_dates_df, pd.DataFrame({'dates':pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min')})], axis=0)
+
+	for month in val_months:
+		val_dates_df = pd.concat([val_dates_df, pd.DataFrame({'dates':pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min')})], axis=0)
+
+	for month in test_months:
+		test_dates_df = pd.concat([test_dates_df, pd.DataFrame({'dates':pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min')})], axis=0)
+
+	train_dates_df.set_index('dates', inplace=True)
+	val_dates_df.set_index('dates', inplace=True)
+	test_dates_df.set_index('dates', inplace=True)
+
+	train_dates_df.index = pd.to_datetime(train_dates_df.index)
+	val_dates_df.index = pd.to_datetime(val_dates_df.index)
+	test_dates_df.index = pd.to_datetime(test_dates_df.index)
+
+	date_dict = {'train':pd.DataFrame(), 'val':pd.DataFrame(), 'test':pd.DataFrame()}
+
+	print(f'Size of the training storms: {len(storms)}')
+	print(f'Size of the training target: {len(target)}')
+	print(f'Size of the twins maps: {len(maps)}')
+
+	# getting the data corresponding to the dates
+	for storm, y, twins_map in zip(storms, target, maps):
+
+		copied_storm = storm.copy()
+		copied_storm = copied_storm.reset_index(inplace=False, drop=False).rename(columns={'index':'Date_UTC'})
+
+		if storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in train_dates_df.index:
+			x_train.append(storm)
+			y_train.append(y)
+			twins_train.append(maps[twins_map]['map'])
+			date_dict['train'] = pd.concat([date_dict['train'], copied_storm['Date_UTC'][-10:]], axis=0)
+		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in val_dates_df.index:
+			x_val.append(storm)
+			y_val.append(y)
+			twins_val.append(maps[twins_map]['map'])
+			date_dict['val'] = pd.concat([date_dict['val'], copied_storm['Date_UTC'][-10:]], axis=0)
+		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in test_dates_df.index:
+			x_test.append(storm)
+			y_test.append(y)
+			twins_test.append(maps[twins_map]['map'])
+			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
+
+	date_dict['train'].reset_index(drop=True, inplace=True)
+	date_dict['val'].reset_index(drop=True, inplace=True)
+	date_dict['test'].reset_index(drop=True, inplace=True)
+
+	date_dict['train'].rename(columns={date_dict['train'].columns[0]:'Date_UTC'}, inplace=True)
+	date_dict['val'].rename(columns={date_dict['val'].columns[0]:'Date_UTC'}, inplace=True)
+	date_dict['test'].rename(columns={date_dict['test'].columns[0]:'Date_UTC'}, inplace=True)
+
+	# scaling the solar wind and mag data
+	to_scale_with = pd.concat(x_train, axis=0)
+	scaler = StandardScaler()
+	scaler.fit(to_scale_with)
+	x_train = [scaler.transform(x) for x in x_train]
+	x_val = [scaler.transform(x) for x in x_val]
+	x_test = [scaler.transform(x) for x in x_test]
+
+	# scaling the twins maps
+	twins_scaling_array = np.vstack(twins_train)
+	twins_scaler = StandardScaler()
+	twins_scaler.fit(twins_scaling_array)
+	twins_train = [twins_scaler.transform(x) for twins_train]
+	twins_val = [twins_scaler.transform(x) for twins_val]
+	twins_test = [twins_scaler.transform(x) for twins_test]
+
+	# splitting the sequences for input to the CNN
+	x_train, y_train, train_dates_to_drop, twins_train = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression', maps=twins_train)
+	x_val, y_val, val_dates_to_drop, twins_val = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression', maps=twins_val)
+	x_test, y_test, test_dates_to_drop, twins_test = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'], model_type='regression', maps=twins_test)
+
+	# dropping the dates that correspond to arrays that would have had nan values
+	date_dict['train'].drop(train_dates_to_drop, axis=0, inplace=True)
+	date_dict['val'].drop(val_dates_to_drop, axis=0, inplace=True)
+	date_dict['test'].drop(test_dates_to_drop, axis=0, inplace=True)
+
+	date_dict['train'].reset_index(drop=True, inplace=True)
+	date_dict['val'].reset_index(drop=True, inplace=True)
+	date_dict['test'].reset_index(drop=True, inplace=True)
+
+	if not get_features:
+		return x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test, date_dict
+	else:
+		return x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test, date_dict, features
 
 
-def Autoencoder(input_shape, train, val, early_stopping_patience=10):
+
+def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 
 	model_input = Input(shape=input_shape, name='encoder_input')
@@ -141,11 +281,8 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=10):
 
 
 def fit_autoencoder(model, train, val, early_stop):
-	'''
 
-	'''
-
-	if not os.path.exists('models/autoencoder_v0.h5'):
+	if not os.path.exists('models/autoencoder_final_version.h5'):
 
 		# # reshaping the model input vectors for a single channel
 		# train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
@@ -157,11 +294,11 @@ def fit_autoencoder(model, train, val, early_stop):
 					verbose=1, shuffle=True, epochs=200, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
 
 		# saving the model
-		model.save('models/autoencoder_v0.h5')
+		model.save('models/autoencoder_final_version.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/autoencoder_v0.h5')				# loading the models if already trained
+		model = load_model('models/autoencoder_final_version.h5')				# loading the models if already trained
 		print(model.summary())
 
 	return model
@@ -229,7 +366,7 @@ def main():
 
 
 	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.bottleneck)
-	encoder.save('models/encoder_v0.h5')
+	encoder.save('models/encoder_final_version.h5')
 
 	# # saving the results
 	# print('Saving results...')
