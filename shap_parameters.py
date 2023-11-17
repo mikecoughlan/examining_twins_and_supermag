@@ -48,22 +48,29 @@ def loading_model(model_path):
 
 	return model
 
-def segmenting_testing_data(xtest, ytest, dates, storm_months=['2017-09-01', '2012-03-01']):
+def segmenting_testing_data(xtest, ytest, dates, storm_months=['2017-09-01', '2012-03-07'], storm_duration=[pd.DateOffset(months=1), pd.DateOffset(days=14)]):
 
 	evaluation_dict = {month:{} for month in storm_months}
+
+	if len(storm_months) != len(storm_duration):
+		raise ValueError('The storm months and storm duration must be the same length.')
+
 
 	# turning storm months into datetime objects
 	storm_months = [pd.to_datetime(month) for month in storm_months]
 
 	# Creating daterange for storm months at 1 min frequency
-	storm_date_ranges = [pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min') for month in storm_months]
+	storm_date_ranges = [pd.date_range(start=month, end=month+duration, freq='min') for month, duration in zip(storm_months, storm_duration)]
 
 	# getting the indicies in the dates df that correspond to the storm months and using those indicies to extract
 	# the corresponding arrays from xtest and ytest
 	storm_indicies = []
+	dates['Date_UTC'] = pd.to_datetime(dates['Date_UTC'])
 	for key, date_range in zip(evaluation_dict.keys(), storm_date_ranges):
-		dates['Date_UTC'] = pd.to_datetime(dates['Date_UTC'])
+
 		temp_df = dates['Date_UTC'].isin(date_range)
+		if temp_df.sum() == 0:
+			raise ValueError(f'There are no dates in the dates df that match the storm month {key}.')
 		indicies = temp_df[temp_df == True].index.tolist()
 		evaluation_dict[key]['Date_UTC'] = dates['Date_UTC'][indicies].reset_index(drop=True, inplace=False)
 		evaluation_dict[key]['xtest'] = xtest[indicies]
@@ -249,7 +256,7 @@ def main():
 		xtest = xtest.reshape(xtest.shape[0], xtest.shape[1], xtest.shape[2], 1)
 
 		print('Segmenting the evaluation data....')
-		evaluation_dict = segmenting_testing_data(xtest, ytest, dates_dict['test'], storm_months=['2017-09-01', '2012-03-01'])
+		evaluation_dict = segmenting_testing_data(xtest, ytest, dates_dict['test'], storm_months=['2017-09-01', '2012-03-07'])
 
 		print('Loading model....')
 		model = loading_model(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')

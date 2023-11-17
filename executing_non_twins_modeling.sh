@@ -1,6 +1,8 @@
 
 #!/bin/bash
 
+# defining a list of the region numbers to loop through
+
 # Loop through regions and run non_twins_modeling_final_version for each one
 python3 non_twins_modeling_final_version.py --region 387
 python3 non_twins_modeling_final_version.py --region 61

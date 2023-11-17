@@ -11,6 +11,7 @@
 ####################################################################################
 
 
+import argparse
 # Importing the libraries
 import datetime
 import gc
@@ -44,7 +45,6 @@ from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
-import argparse
 
 import utils
 
@@ -83,7 +83,7 @@ MODEL_CONFIG = {'filters':128,
 
 
 TARGET = 'rsd'
-VERSION = 'final'
+VERSION = 'final_1'
 
 
 def loading_data(target_var, region, percentiles=[0.5, 0.75, 0.9, 0.99]):
@@ -310,7 +310,7 @@ def calculate_crps(epsilon, sig):
 	return crps
 
 
-def create_CNN_model(input_shape, early_stop_patience=10):
+def create_CNN_model(input_shape, early_stop_patience=25):
 	'''
 	Initializing our model
 
