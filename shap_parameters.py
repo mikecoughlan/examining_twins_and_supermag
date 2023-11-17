@@ -48,7 +48,7 @@ def loading_model(model_path):
 
 	return model
 
-def segmenting_testing_data(xtest, ytest, dates, storm_months=['2017-09-01', '2012-03-07'], storm_duration=[pd.DateOffset(months=1), pd.DateOffset(days=14)]):
+def segmenting_testing_data(xtest, ytest, dates, storm_months=['2017-09-01', '2012-03-07'], storm_duration=[pd.DateOffset(months=1), pd.DateOffset(days=7)]):
 
 	evaluation_dict = {month:{} for month in storm_months}
 
