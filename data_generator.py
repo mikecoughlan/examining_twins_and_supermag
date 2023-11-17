@@ -29,7 +29,7 @@ class Generator(Sequence):
 		"""Denotes the number of batches per epoch
 		:return: number of batches per epoch
 		"""
-		return int(np.floor(len(self.features) / self.batch_size))
+		return int(np.floor(len(self.features[0]) / self.batch_size))
 
 
 	def __getitem__(self, index):
@@ -38,12 +38,14 @@ class Generator(Sequence):
 		:return: X and y when fitting. X only when predicting
 		"""
 
-		# Generate data
-		X = np.empty((self.batch_size, self.features.shape[1], self.features.shape[2]))
-		X = self.features[index * self.batch_size:(index + 1) * self.batch_size]
+		# Generating data from batch indices. Putting the multipe features into a list
+		X = []
+		for i in range(len(features)):
+			x = np.empty((self.batch_size, self.features[i].shape[1], self.features[i].shape[2]))
+			x = self.features[i][index * self.batch_size:(index + 1) * self.batch_size]
+			X.append(x)
 
-		# Generate data
-
+		# Returning X and y when fitting
 		if self.to_fit:
 			y = np.empty((self.batch_size, 1))
 			y = self.results[index * self.batch_size:(index + 1) * self.batch_size]
