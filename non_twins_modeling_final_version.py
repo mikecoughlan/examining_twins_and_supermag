@@ -11,7 +11,6 @@
 ####################################################################################
 
 
-import argparse
 # Importing the libraries
 import datetime
 import gc
@@ -79,19 +78,11 @@ CONFIG = {'region_numbers': [387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 1
 			'random_seed':42}
 
 
-MODEL_CONFIG = {'initial_filters': 128,
-				'learning_rate': 4.1521558834373335e-07,
-				'window_size': 3,
-				'stride_length': 1,
-				'cnn_layers': 3,
-				'dense_layers': 3,
-				'cnn_step_up': 2,
-				'initial_dense_nodes': 512,
-				'dense_node_decrease_step': 2,
-				'dropout_rate': 0.25,
-				'activation': 'relu',
-				'early_stop_patience':25,
-				'epochs':500}
+MODEL_CONFIG = {'filters':128,
+				'learning_rate':1e-6,
+				'epochs':500,
+				'loss':'mse',
+				'early_stop_patience':25}
 
 
 TARGET = 'rsd'
@@ -176,14 +167,10 @@ def getting_prepared_data(target_var, region, get_features=False):
 
 	# splitting the data on a month to month basis to reduce data leakage
 	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
-	month_df = month_df.drop([pd.to_datetime('2012-03-01'), pd.to_datetime('2017-09-01')])
-
-	print(month_df[30:35])
+	month_df.drop([pd.to_datetime('2012-03-01'), pd.to_datetime('2017-09-01')])
 
 	train_months, test_months = train_test_split(month_df, test_size=0.2, shuffle=True, random_state=CONFIG['random_seed'])
 	train_months, val_months = train_test_split(train_months, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
-
-	print(train_months)
 
 	test_months = test_months.tolist()
 	# adding the two dateimte values of interest to the test months df
@@ -212,12 +199,6 @@ def getting_prepared_data(target_var, region, get_features=False):
 	val_dates_df.index = pd.to_datetime(val_dates_df.index)
 	test_dates_df.index = pd.to_datetime(test_dates_df.index)
 
-	try:
-		print(test_dates_df.loc['2012-03-07 19:00:00'])
-	except KeyError:
-		print('KeyError')
-		print(test_dates_df[41150:41160])
-
 	date_dict = {'train':pd.DataFrame(), 'val':pd.DataFrame(), 'test':pd.DataFrame()}
 
 	# getting the data corresponding to the dates
@@ -225,12 +206,6 @@ def getting_prepared_data(target_var, region, get_features=False):
 
 		copied_storm = storm.copy()
 		copied_storm = copied_storm.reset_index(inplace=False, drop=False).rename(columns={'index':'Date_UTC'})
-
-		if storm.index[0].strftime('%Y-%m-%d %H:%M:%S') == '2012-03-07 19:00:00':
-			print('check this out')
-			print(test_dates_df.loc['2012-03-07 19:00:00'])
-			print(storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in test_dates_df.index)
-
 
 		if storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in train_dates_df.index:
 			x_train.append(storm)
@@ -252,13 +227,6 @@ def getting_prepared_data(target_var, region, get_features=False):
 	date_dict['train'].rename(columns={date_dict['train'].columns[0]:'Date_UTC'}, inplace=True)
 	date_dict['val'].rename(columns={date_dict['val'].columns[0]:'Date_UTC'}, inplace=True)
 	date_dict['test'].rename(columns={date_dict['test'].columns[0]:'Date_UTC'}, inplace=True)
-
-	try:
-		print(date_dict['test']['Date_UTC'].loc['2012-03-07 19:30:00'])
-	except KeyError:
-		print('KeyError')
-		print(date_dict['test'][41150:41160])
-
 
 	to_scale_with = pd.concat(x_train, axis=0)
 	scaler = StandardScaler()
@@ -345,7 +313,7 @@ def calculate_crps(epsilon, sig):
 	return crps
 
 
-def create_CNN_model(input_shape, model_dict):
+def create_CNN_model(input_shape, early_stop_patience=10):
 	'''
 	Initializing our model
 
@@ -363,29 +331,19 @@ def create_CNN_model(input_shape, model_dict):
 
 	model = Sequential()						# initalizing the model
 
-	model.add(Conv2D(model_dict['initial_filters'], model_dict['window_size'], padding='same', activation=model_dict['activation'], input_shape=input_shape))			# adding the CNN layer
+	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same', activation='relu', input_shape=input_shape))			# adding the CNN layer
 	model.add(MaxPooling2D())
-	model.add(Dropout(model_dict['dropout_rate']))
-	for i in range(model_dict['cnn_layers']):
-		model.add(Conv2D(model_dict['initial_filters']*model_dict['cnn_step_up'], model_dict['window_size'], padding='same', activation=model_dict['activation']))			# adding the CNN layer
-		# if (i+2) % 2 == 0:
-		# 	model.add(MaxPooling2D())
-		if i % 1 == 0:
-			model.add(Dropout(model_dict['dropout_rate']))
-		model_dict['cnn_step_up'] *= 2
-
+	model.add(Conv2D(MODEL_CONFIG['filters']*2, 2, padding='same', activation='relu'))			# adding the CNN layer
 	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
-	model.add(Dense(model_dict['initial_dense_nodes'], activation=model_dict['activation']))		# Adding dense layers with dropout in between
-	model.add(Dropout(model_dict['dropout_rate']))
-	for j in range(model_dict['dense_layers']):
-		model.add(Dense(int(model_dict['initial_dense_nodes']/model_dict['dense_node_decrease_step']), activation=model_dict['activation']))
-		model.add(Dropout(model_dict['dropout_rate']))
-		model_dict['dense_node_decrease_step'] *= 2
-
+	model.add(Dense(MODEL_CONFIG['filters']*2, activation='relu'))		# Adding dense layers with dropout in between
+	model.add(Dropout(0.2))
+	model.add(Dense(MODEL_CONFIG['filters'], activation='relu'))
+	model.add(Dropout(0.2))
 	model.add(Dense(2, activation='linear'))
-	opt = tf.keras.optimizers.Adam(learning_rate=model_dict['learning_rate'])		# learning rate that actually started producing good results
-	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
-	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=model_dict['early_stop_patience'])		# early stop process prevents overfitting
+	opt = tf.keras.optimizers.Adam(learning_rate=MODEL_CONFIG['learning_rate'])		# learning rate that actually started producing good results
+	model.compile(optimizer=opt, loss=CRPS)					# compiling the model with custom loss function
+	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
+
 
 	return model, early_stop
 
@@ -419,10 +377,6 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, region):
 
 		model.fit(Xtrain, ytrain, validation_data=(Xval, yval), batch_size=128,
 					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
-
-		# saving model training history
-		with open(f'outputs/{TARGET}/non_twins_region_{region}_version_{VERSION}_history.pkl', 'wb') as f:
-			pickle.dump(model.history.history, f)
 
 		# saving the model
 		model.save(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')
@@ -497,7 +451,7 @@ def main(region):
 
 	# creating the model
 	print('Initalizing model...')
-	MODEL, early_stop = create_CNN_model(input_shape=(xtrain.shape[1], xtrain.shape[2], 1), model_dict=MODEL_CONFIG)
+	MODEL, early_stop = create_CNN_model(input_shape=(xtrain.shape[1], xtrain.shape[2], 1))
 
 	# fitting the model
 	print('Fitting model...')
@@ -514,18 +468,7 @@ def main(region):
 
 
 if __name__ == '__main__':
-
-	parser = argparse.ArgumentParser()
-	parser.add_argument('--region',
-						action='store',
-						choices=CONFIG['region_numbers'],
-						type=int,
-						help='Region number to be trained.')
-
-	args=parser.parse_args()
-
-	if not os.path.exists(f'outputs/{TARGET}/non_twins_modeling_region_{args.region}_version_{VERSION}.feather'):
-		main(args.region)
-		print('It ran. God job!')
-	else:
-		print('Already ran this region. Skipping...')
+	for region in CONFIG['region_numbers']:
+		print(f'Starting region {region}....')
+		main(region)
+	print('It ran. God job!')
