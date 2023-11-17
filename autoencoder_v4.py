@@ -50,12 +50,13 @@ from data_prep import DataPrep
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
 
-region_path = '../identifying_regions/outputs/adjusted_regions.pkl'
+working_dir = '../../../../data/mike_working_dir/'
+region_path = working_dir+'identifying_regions_data/adjusted_regions.pkl'
 region_number = '163'
 solarwind_path = '../data/SW/omniData.feather'
 supermag_dir_path = '../data/supermag/'
 twins_times_path = 'outputs/regular_twins_map_dates.feather'
-rsd_path = '../identifying_regions/outputs/twins_era_stats_dict_radius_regions_min_2.pkl'
+rsd_path = working_dir+'identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
 random_seed = 42
 
 
