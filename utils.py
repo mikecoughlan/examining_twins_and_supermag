@@ -443,10 +443,14 @@ def split_sequences(sequences, targets=None, n_steps=30, include_target=True, da
 					continue
 				if model_type == 'classification':
 					if np.isnan(target[end_ix, :]):
+						to_drop.append(index_to_drop)
+						index_to_drop += 1
 						continue
 					seq_y1 = target[end_ix, :]				# gets the appropriate target
 				elif model_type == 'regression':
 					if np.isnan(target[end_ix]):
+						to_drop.append(index_to_drop)
+						index_to_drop += 1
 						continue
 					seq_y1 = target[end_ix]					# gets the appropriate target
 				else:

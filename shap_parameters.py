@@ -48,7 +48,7 @@ def loading_model(model_path):
 
 	return model
 
-def segmenting_testing_data(xtest, ytest, dates, storm_months=['2012-03-01', '2017-09-01']):
+def segmenting_testing_data(xtest, ytest, dates, storm_months=['2017-09-01', '2012-03-01']):
 
 	evaluation_dict = {month:{} for month in storm_months}
 
@@ -65,7 +65,7 @@ def segmenting_testing_data(xtest, ytest, dates, storm_months=['2012-03-01', '20
 		dates['Date_UTC'] = pd.to_datetime(dates['Date_UTC'])
 		temp_df = dates['Date_UTC'].isin(date_range)
 		indicies = temp_df[temp_df == True].index.tolist()
-		evaluation_dict[key]['Date_UTC'] = temp_df[indicies]
+		evaluation_dict[key]['Date_UTC'] = dates['Date_UTC'][indicies].reset_index(drop=True, inplace=False)
 		evaluation_dict[key]['xtest'] = xtest[indicies]
 		evaluation_dict[key]['ytest'] = ytest[indicies]
 
@@ -244,8 +244,11 @@ def main():
 		print(f'Preparing data....')
 		xtrain, ___, xtest, ytrain, ____, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)
 
+		xtrain = xtrain.reshape(xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1)
+		xtest = xtest.reshape(xtest.shape[0], xtest.shape[1], xtest.shape[2], 1)
+
 		print('Segmenting the evaluation data....')
-		evaluation_dict = segmenting_testing_data(xtest, ytest, dates_dict['test'], storm_months=['2012-03-01', '2017-09-01'])
+		evaluation_dict = segmenting_testing_data(xtest, ytest, dates_dict['test'], storm_months=['2017-09-01', '2012-03-01'])
 
 		print('Loading model....')
 		model = loading_model(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')
