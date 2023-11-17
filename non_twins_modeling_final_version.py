@@ -44,12 +44,9 @@ from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
+import argparse
 
 import utils
-
-# from data_prep import DataPrep
-
-# from datetime import strftime
 
 pd.options.mode.chained_assignment = None
 
@@ -468,7 +465,18 @@ def main(region):
 
 
 if __name__ == '__main__':
-	for region in CONFIG['region_numbers']:
-		print(f'Starting region {region}....')
-		main(region)
-	print('It ran. God job!')
+
+ 	parser = argparse.ArgumentParser()
+ 	parser.add_argument('--region',
+ 						action='store',
+ 						choices=CONFIG['region_numbers'],
+ 						type=int,
+ 						help='Region number to be trained.')
+
+ 	args=parser.parse_args()
+
+ 	if not os.path.exists(f'outputs/{TARGET}/non_twins_modeling_region_{args.region}_version_{VERSION}.feather'):
+ 		main(args.region)
+ 		print('It ran. God job!')
+ 	else:
+ 		print('Already ran this region. Skipping...')
