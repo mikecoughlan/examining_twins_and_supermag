@@ -285,7 +285,6 @@ def main():
 		# defining two colors close to each other for each of the storms
 		colors = ['#ff0000', '#ff4d4d', '#ff8080', '#ffcccc', '#0000ff', '#4d4dff', '#8080ff', '#ccccff']
 
-
 		fig = plt.figure(figsize=(20,17))
 		ax1 = plt.subplot(211)
 		ax1.set_title(f'Mean SHAP Percentage Importance for {feature}')
