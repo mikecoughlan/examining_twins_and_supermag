@@ -168,18 +168,22 @@ def plotting_shap_values(evaluation_dict, features, region):
 		mean_pos_dict, mean_neg_dict = preparing_shap_values_for_plotting(shap_percentages[0])
 		std_pos_dict, std_neg_dict = preparing_shap_values_for_plotting(shap_percentages[1])
 
+		colors = sns.color_palette('tab20', len(mean_pos_dict.keys()))
+
 		# Creating the x-axis for the plot
-		x = evaluation_dict[key]['Date_UTC']
+		x = evaluation_dict[key]['Date_UTC'].values
 
 		# Plotting
 		fig = plt.figure(figsize=(20,17))
 
 		ax1 = plt.subplot(111)
 		ax1.set_title('SHAP Values for Mean Predictions')
+		pos_values = [val for val in mean_pos_dict.values()]
+		neg_values = [val for val in mean_neg_dict.values()]
 
 		# Stacking the positive and negative percent contributions
-		plt.stackplot(x, mean_pos_dict.values(), labels=features, colors=colors, alpha=1)
-		plt.stackplot(x, mean_neg_dict.values(), colors=colors, alpha=1)
+		plt.stackplot(x, pos_values, labels=features, colors=colors, alpha=1)
+		plt.stackplot(x, neg_values, colors=colors, alpha=1)
 		ax1.margins(x=0, y=0)				# Tightning the plot margins
 		plt.ylabel('Percent Contribution')
 
@@ -196,9 +200,12 @@ def plotting_shap_values(evaluation_dict, features, region):
 		ax1 = plt.subplot(111)
 		ax1.set_title('SHAP Values for Std Predictions')
 
+		pos_values = [val for val in std_pos_dict.values()]
+		neg_values = [val for val in std_neg_dict.values()]
+
 		# Stacking the positive and negative percent contributions
-		plt.stackplot(x, std_pos_dict.values(), labels=features, colors=colors, alpha=1)
-		plt.stackplot(x, std_neg_dict.values(), colors=colors, alpha=1)
+		plt.stackplot(x, pos_values, labels=features, colors=colors, alpha=1)
+		plt.stackplot(x, neg_values, colors=colors, alpha=1)
 		ax1.margins(x=0, y=0)				# Tightning the plot margins
 		plt.ylabel('Percent Contribution')
 

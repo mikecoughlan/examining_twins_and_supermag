@@ -72,18 +72,18 @@ CONFIG = {'region_numbers': [387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 1
 								83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 								62, 327, 293, 241, 107, 55, 111],
 			'time_history':30,
-			'random_seed':42}
+			'random_seed':7}
 
 
 MODEL_CONFIG = {'filters':128,
-				'learning_rate':1e-6,
+				'learning_rate':1e-7,
 				'epochs':500,
 				'loss':'mse',
 				'early_stop_patience':25}
 
 
 TARGET = 'rsd'
-VERSION = 'final_1'
+VERSION = 'final_2'
 
 
 def loading_data(target_var, region, percentiles=[0.5, 0.75, 0.9, 0.99]):
@@ -142,9 +142,11 @@ def getting_prepared_data(target_var, region, get_features=False):
 
 	print('Columns in Merged Dataframe: '+str(merged_df.columns))
 
+	temp_version = 'final_1'
+
 	# loading the data corresponding to the twins maps if it has already been calculated
-	if os.path.exists(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl'):
-		with open(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'rb') as f:
+	if os.path.exists(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl'):
+		with open(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'rb') as f:
 			storms_extracted_dict = pickle.load(f)
 		storms = storms_extracted_dict['storms']
 		target = storms_extracted_dict['target']
@@ -153,7 +155,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 	else:
 		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var=f'rolling_{target_var}', concat=False)
 		storms_extracted_dict = {'storms':storms, 'target':target}
-		with open(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'wb') as f:
+		with open(working_dir+f'twins_method_storm_extraction_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'wb') as f:
 			pickle.dump(storms_extracted_dict, f)
 
 	# making sure the target variable has been dropped from the input data
@@ -166,7 +168,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
 	month_df = month_df.drop([pd.to_datetime('2012-03-01'), pd.to_datetime('2017-09-01')])
 
-	train_months, test_months = train_test_split(month_df, test_size=0.2, shuffle=True, random_state=CONFIG['random_seed'])
+	train_months, test_months = train_test_split(month_df, test_size=0.1, shuffle=True, random_state=CONFIG['random_seed'])
 	train_months, val_months = train_test_split(train_months, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
 
 	test_months = test_months.tolist()
@@ -328,7 +330,7 @@ def create_CNN_model(input_shape, early_stop_patience=25):
 
 	model = Sequential()						# initalizing the model
 
-	model.add(Conv2D(MODEL_CONFIG['filters'], 3, padding='same', activation='relu', input_shape=input_shape))			# adding the CNN layer
+	model.add(Conv2D(MODEL_CONFIG['filters'], 2, padding='same', activation='relu', input_shape=input_shape))			# adding the CNN layer
 	model.add(MaxPooling2D())
 	model.add(Conv2D(MODEL_CONFIG['filters']*2, 2, padding='same', activation='relu'))			# adding the CNN layer
 	model.add(Flatten())							# changes dimensions of model. Not sure exactly how this works yet but improves results
@@ -374,6 +376,10 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, region):
 
 		model.fit(Xtrain, ytrain, validation_data=(Xval, yval), batch_size=128,
 					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
+		
+		# Saving model history
+		history_df = pd.DataFrame(model.history.history)
+		history_df.to_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}_history.feather')
 
 		# saving the model
 		model.save(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')
