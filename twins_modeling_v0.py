@@ -44,6 +44,7 @@ from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
+from data_generator import Generator
 
 import utils
 
@@ -104,11 +105,6 @@ def loading_data(target_var, region):
 	regions, stats = utils.loading_dicts()
 	solarwind = utils.loading_solarwind(omni=True, limit_to_twins=True)
 
-	with open('outputs/feature_engineering/solarwind_corr_dict.pkl', 'rb') as f:
-		solarwind_corr_dict = pickle.load(f)
-	with open('outputs/feature_engineering/mag_corr_dict.pkl', 'rb') as f:
-		supermag_corr_dict = pickle.load(f)
-
 	# converting the solarwind data to log10
 	solarwind['logT'] = np.log10(solarwind['T'])
 	solarwind.drop(columns=['T'], inplace=True)
@@ -118,13 +114,11 @@ def loading_data(target_var, region):
 	stats = stats[f'region_{region}']
 
 	# getting dbdt and rsd data for the region
-	supermag_df = utils.combining_stations_into_regions(regions['station'], stats, features=['dbht', 'MAGNITUDE', 'theta', 'N', 'E'], mean=True, std=True, maximum=True, median=True)
+	supermag_df = utils.combining_stations_into_regions(regions['station'], stats, features=['dbht', 'MAGNITUDE', \
+		'theta', 'N', 'E', 'sin_theta', 'cos_theta'], mean=True, std=True, maximum=True, median=True)
 
 	# getting the mean latitude for the region and attaching it to the regions dictionary
 	mean_lat = utils.getting_mean_lat(regions['station'])
-
-	supermag_df.drop(columns=supermag_corr_dict[f'region_{region}']['twins_corr'], inplace=True)
-	solarwind.drop(columns=solarwind_corr_dict[f'region_{region}']['twins_corr_features'], inplace=True)
 
 	merged_df = pd.merge(supermag_df, solarwind, left_index=True, right_index=True, how='inner')
 
@@ -132,7 +126,6 @@ def loading_data(target_var, region):
 	maps = utils.loading_twins_maps()
 
 	return merged_df, mean_lat, maps
-
 
 
 def getting_prepared_data(target_var, region, get_features=False):
@@ -154,20 +147,10 @@ def getting_prepared_data(target_var, region, get_features=False):
 	# target = merged_df['classification']
 	target = merged_df[f'rolling_{target_var}']
 
-	# removing the target var from the dataframe
-	vars_to_drop = [target_var]
-
-	if 'MLT' in merged_df.columns:
-		vars_to_drop.append('MLT')
-	if 'theta_max' in merged_df.columns:
-		vars_to_drop.append('theta_max')
-	if 'classification' in merged_df.columns:
-		vars_to_drop.append('classification')
-	if 'dbht_std' in merged_df.columns:
-		vars_to_drop.append('dbht_std')
-
-	merged_df.drop(columns=vars_to_drop, inplace=True)
-	# merged_df.dropna(subset=[f'rolling_{target_var}'], inplace=True)
+	# reducing the dataframe to only the features that will be used in the model plus the target variable
+	vars_to_keep = [f'rolling_{target_var}', 'dbht_median', 'MAGNITUDE_median', 'MAGNITUDE_std', 'sin_theta_std', 'cos_theta_std', 'cosMLT', 'sinMLT',
+					'B_Total', 'BY_GSM', 'BZ_GSM', 'Vx', 'Vy', 'proton_density', 'logT']
+	merged_df = merged_df[vars_to_keep]
 
 	print('Columns in Merged Dataframe: '+str(merged_df.columns))
 
@@ -192,9 +175,16 @@ def getting_prepared_data(target_var, region, get_features=False):
 
 	# splitting the data on a month to month basis to reduce data leakage
 	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
+	month_df = month_df.drop([pd.to_datetime('2012-03-01'), pd.to_datetime('2017-09-01')])
 
 	train_months, test_months = train_test_split(month_df, test_size=0.2, shuffle=True, random_state=CONFIG['random_seed'])
 	train_months, val_months = train_test_split(train_months, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
+
+	test_months = test_months.tolist()
+	# adding the two dateimte values of interest to the test months df
+	test_months.append(pd.to_datetime('2012-03-01'))
+	test_months.append(pd.to_datetime('2017-09-01'))
+	test_months = pd.to_datetime(test_months)
 
 	train_dates_df, val_dates_df, test_dates_df = pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]})
 	x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test = [], [], [], [], [], [], [], [], []
@@ -262,9 +252,12 @@ def getting_prepared_data(target_var, region, get_features=False):
 	x_test = [scaler.transform(x) for x in x_test]
 
 	# scaling the twins maps
-	twins_train = [x/np.max(x) for x in twins_train]
-	twins_val = [x/np.max(x) for x in twins_val]
-	twins_test = [x/np.max(x) for x in twins_test]
+	twins_scaling_array = np.vstack(twins_train)
+	twins_scaler = StandardScaler()
+	twins_scaler.fit(twins_scaling_array)
+	twins_train = [twins_scaler.transform(x) for twins_train]
+	twins_val = [twins_scaler.transform(x) for twins_val]
+	twins_test = [twins_scaler.transform(x) for twins_test]
 
 	# splitting the sequences for input to the CNN
 	x_train, y_train, train_dates_to_drop, twins_train = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression', maps=twins_train)
