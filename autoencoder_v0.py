@@ -45,8 +45,16 @@ from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.python.keras.backend import get_session
 
+import utils
 from data_generator import Generator
 from data_prep import DataPrep
+
+TARGET = 'rsd'
+REGION=163
+VERSION = 'final'
+
+CONFIG = {'time_history':30, 'random_seed':42}
+
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
 
@@ -217,9 +225,9 @@ def getting_prepared_data(target_var, region, get_features=False):
 	twins_scaling_array = np.vstack(twins_train)
 	twins_scaler = StandardScaler()
 	twins_scaler.fit(twins_scaling_array)
-	twins_train = [twins_scaler.transform(x) for twins_train]
-	twins_val = [twins_scaler.transform(x) for twins_val]
-	twins_test = [twins_scaler.transform(x) for twins_test]
+	twins_train = [twins_scaler.transform(x) for x in twins_train]
+	twins_val = [twins_scaler.transform(x) for x in twins_val]
+	twins_test = [twins_scaler.transform(x) for x in twins_test]
 
 	# splitting the sequences for input to the CNN
 	x_train, y_train, train_dates_to_drop, twins_train = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression', maps=twins_train)
@@ -335,7 +343,9 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	train, val, test, input_shape = getting_prepared_data()
+	___, ___, ___, ___, ___, ___, train, val, test, ___ = getting_prepared_data(target_var=TARGET, region=REGION)
+
+	input_shape = (train.shape[1], train.shape[2], 1)
 
 	# creating the model
 	print('Initalizing model...')
@@ -357,13 +367,30 @@ def main():
 
 	fig = plt.figure(figsize=(10, 10))
 	ax1 = fig.add_subplot(121)
-	ax1.imshow(predictions[15, :, :, 0])
+	ax1.imshow(predictions[0, :, :, 0])
 	ax1.set_title('Prediction')
 	ax2 = fig.add_subplot(122)
-	ax2.imshow(test[15, :, :])
+	ax2.imshow(test[0, :, :])
 	ax2.set_title('Actual')
 	plt.show()
 
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(121)
+	ax1.imshow(predictions[324, :, :, 0])
+	ax1.set_title('Prediction')
+	ax2 = fig.add_subplot(122)
+	ax2.imshow(test[324, :, :])
+	ax2.set_title('Actual')
+	plt.show()
+
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(121)
+	ax1.imshow(predictions[256, :, :, 0])
+	ax1.set_title('Prediction')
+	ax2 = fig.add_subplot(122)
+	ax2.imshow(test[256, :, :])
+	ax2.set_title('Actual')
+	plt.show()
 
 	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.bottleneck)
 	encoder.save('models/encoder_final_version.h5')
