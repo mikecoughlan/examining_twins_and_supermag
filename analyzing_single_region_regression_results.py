@@ -15,13 +15,15 @@ from tqdm import tqdm
 import utils
 
 # REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]9
-REGIONS = [9, 16, 19, 36, 61, 82, 83, 137, 143, 163, 184, 194, 202, 207, 270, 287, 361, 387]
+REGIONS = [387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
+								83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
+								62, 327, 293, 241, 107, 55, 111]
 
 data_dir = '../../../../data/'
 supermag_dir = data_dir+'supermag/feather_files/'
 regions_dict = data_dir+'mike_working_dir/identifying_regions_data/adjusted_regions.pkl'
 
-VERSION = 'final'
+VERSION = 'final_2'
 TARGET = 'rsd'
 
 def load_predictions(region=None, version=VERSION):

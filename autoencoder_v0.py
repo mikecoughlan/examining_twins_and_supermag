@@ -21,7 +21,7 @@ import pickle
 import subprocess
 import time
 
-import keras
+# import keras
 import matplotlib
 import matplotlib.animation as animation
 import matplotlib.image as mpimg
@@ -49,11 +49,19 @@ import utils
 from data_generator import Generator
 from data_prep import DataPrep
 
+# stops this program from hogging the GPU
+physical_devices = tf.config.list_physical_devices('GPU')
+try:
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+except:
+    # Invalid device or cannot modify virtual devices once initialized.
+    pass
+
 TARGET = 'rsd'
 REGION=163
 VERSION = 'final'
 
-CONFIG = {'time_history':30, 'random_seed':42}
+CONFIG = {'time_history':30, 'random_seed':7}
 
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
@@ -205,22 +213,6 @@ def getting_prepared_data(target_var, region, get_features=False):
 			twins_test.append(maps[twins_map]['map'])
 			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
 
-	date_dict['train'].reset_index(drop=True, inplace=True)
-	date_dict['val'].reset_index(drop=True, inplace=True)
-	date_dict['test'].reset_index(drop=True, inplace=True)
-
-	date_dict['train'].rename(columns={date_dict['train'].columns[0]:'Date_UTC'}, inplace=True)
-	date_dict['val'].rename(columns={date_dict['val'].columns[0]:'Date_UTC'}, inplace=True)
-	date_dict['test'].rename(columns={date_dict['test'].columns[0]:'Date_UTC'}, inplace=True)
-
-	# scaling the solar wind and mag data
-	to_scale_with = pd.concat(x_train, axis=0)
-	scaler = StandardScaler()
-	scaler.fit(to_scale_with)
-	x_train = [scaler.transform(x) for x in x_train]
-	x_val = [scaler.transform(x) for x in x_val]
-	x_test = [scaler.transform(x) for x in x_test]
-
 	# scaling the twins maps
 	twins_scaling_array = np.vstack(twins_train)
 	twins_scaler = StandardScaler()
@@ -229,24 +221,10 @@ def getting_prepared_data(target_var, region, get_features=False):
 	twins_val = [twins_scaler.transform(x) for x in twins_val]
 	twins_test = [twins_scaler.transform(x) for x in twins_test]
 
-	# splitting the sequences for input to the CNN
-	x_train, y_train, train_dates_to_drop, twins_train = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression', maps=twins_train)
-	x_val, y_val, val_dates_to_drop, twins_val = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression', maps=twins_val)
-	x_test, y_test, test_dates_to_drop, twins_test = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'], model_type='regression', maps=twins_test)
-
-	# dropping the dates that correspond to arrays that would have had nan values
-	date_dict['train'].drop(train_dates_to_drop, axis=0, inplace=True)
-	date_dict['val'].drop(val_dates_to_drop, axis=0, inplace=True)
-	date_dict['test'].drop(test_dates_to_drop, axis=0, inplace=True)
-
-	date_dict['train'].reset_index(drop=True, inplace=True)
-	date_dict['val'].reset_index(drop=True, inplace=True)
-	date_dict['test'].reset_index(drop=True, inplace=True)
-
 	if not get_features:
-		return x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test, date_dict
+		return np.array(twins_train), np.array(twins_val), np.array(twins_test), date_dict
 	else:
-		return x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test, date_dict, features
+		return np.array(twins_train), np.array(twins_val), np.array(twins_test), date_dict, features
 
 
 
@@ -257,7 +235,7 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	e = Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(model_input)
 	e = Conv2D(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(e)
-	e = Conv2D(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(e)
+	e = Conv2D(filters=256, kernel_size=2, activation='relu', strides=2, padding='same')(e)
 
 	shape = int_shape(e)
 
@@ -269,9 +247,12 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	d = Reshape((shape[1], shape[2], shape[3]))(d)
 
-	d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+	d = Conv2DTranspose(filters=256, kernel_size=2, activation='relu', strides=2, padding='same')(d)
+	d = Dropout(0.2)(d)
 	d = Conv2DTranspose(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+	d = Dropout(0.2)(d)
 	d = Conv2DTranspose(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+	d = Dropout(0.2)(d)
 
 	model_outputs = Conv2DTranspose(filters=1, kernel_size=1, activation='linear', padding='same', name='decoder_output')(d)
 
@@ -285,12 +266,12 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	encoder = Model(inputs=model_input, outputs = bottleneck)
 
-	return full_autoencoder, encoder
+	return full_autoencoder, encoder, early_stop
 
 
 def fit_autoencoder(model, train, val, early_stop):
 
-	if not os.path.exists('models/autoencoder_final_version.h5'):
+	if not os.path.exists('models/autoencoder_final_version_2.h5'):
 
 		# # reshaping the model input vectors for a single channel
 		# train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
@@ -299,14 +280,14 @@ def fit_autoencoder(model, train, val, early_stop):
 		print(model.summary())
 
 		model.fit(train, train, validation_data=(val, val),
-					verbose=1, shuffle=True, epochs=200, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
+					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
 
 		# saving the model
-		model.save('models/autoencoder_final_version.h5')
+		model.save('models/autoencoder_final_version_2.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/autoencoder_final_version.h5')				# loading the models if already trained
+		model = load_model('models/autoencoder_final_version_2.h5')				# loading the models if already trained
 		print(model.summary())
 
 	return model
@@ -343,17 +324,24 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	___, ___, ___, ___, ___, ___, train, val, test, ___ = getting_prepared_data(target_var=TARGET, region=REGION)
+	train, val, test, ___ = getting_prepared_data(target_var=TARGET, region=REGION)
 
 	input_shape = (train.shape[1], train.shape[2], 1)
 
 	# creating the model
 	print('Initalizing model...')
-	autoencoder, encoder = Autoencoder(input_shape, train, val)
+	autoencoder, encoder, early_stop = Autoencoder(input_shape, train, val)
 
 	# # fitting the model
-	# print('Fitting model...')
-	# MODEL = fit_autoencoder(MODEL, train, val, early_stop)
+	print('Fitting model...')
+	MODEL = fit_autoencoder(autoencoder, train, val, early_stop)
+
+	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.bottleneck)
+	print(encoder.summary())
+	encoder.save('models/encoder_final_version_2.h5')
+	encoder = Model(inputs=MODEL.inputs, outputs=MODEL.get_layer('bottleneck').output)
+	print(encoder.summary())
+	encoder.save('models/encoder_final_version_2-1.h5')
 
 	# making predictions
 	print('Making predictions...')
@@ -392,8 +380,7 @@ def main():
 	ax2.set_title('Actual')
 	plt.show()
 
-	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.bottleneck)
-	encoder.save('models/encoder_final_version.h5')
+
 
 	# # saving the results
 	# print('Saving results...')

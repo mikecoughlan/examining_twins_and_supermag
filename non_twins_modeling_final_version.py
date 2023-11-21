@@ -376,7 +376,7 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, region):
 
 		model.fit(Xtrain, ytrain, validation_data=(Xval, yval), batch_size=128,
 					verbose=1, shuffle=True, epochs=MODEL_CONFIG['epochs'], callbacks=[early_stop])			# doing the training! Yay!
-		
+
 		# Saving model history
 		history_df = pd.DataFrame(model.history.history)
 		history_df.to_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}_history.feather')
