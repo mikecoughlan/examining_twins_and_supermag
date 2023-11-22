@@ -6,17 +6,16 @@ import pickle
 import random
 
 import matplotlib.pyplot as plt
+import non_twins_modeling_final_version as modeling
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import shap
 import tensorflow as tf
+import utils
 from matplotlib import colors
 from tensorflow.keras.models import Sequential, load_model
 from tqdm import tqdm
-
-import non_twins_modeling_final_version as modeling
-import utils
 
 MODEL_CONFIG = {'initial_filters': 128,
 				'learning_rate': 4.1521558834373335e-07,
@@ -37,7 +36,7 @@ VERSION = 'final'
 REGIONS = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 			387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
 			62, 327, 293, 241, 107, 55, 111]
-# REGIONS = [83, 387]
+# REGIONS = [83]
 
 
 def loading_model(model_path):
@@ -79,7 +78,7 @@ def segmenting_testing_data(xtest, ytest, dates, storm_months=['2017-09-01', '20
 	return evaluation_dict
 
 
-def get_shap_values(model, model_name, training_data, evaluation_dict, background_examples=1000):
+def get_shap_values(model=None, model_name=None, training_data=None, evaluation_dict=None, background_examples=1000):
 	'''
 	Function that calculates the shap values for the given model and evaluation data. First checks for previously calculated shap
 	values and loads them if they exist. If not, it calculates them and saves them to a pickle file.
@@ -144,7 +143,9 @@ def converting_shap_to_percentages(shap_values, features):
 	return all_shap_values
 
 
-def preparing_shap_values_for_plotting(df):
+def preparing_shap_values_for_plotting(df, dates):
+
+	df = handling_gaps(df, 1000, dates)
 
 	# Seperating the positive contributions from the negative for plotting
 	pos_df = df.mask(df < 0, other=0)
@@ -157,10 +158,10 @@ def preparing_shap_values_for_plotting(df):
 		pos_dict[pos] = pos_df[pos].to_numpy()
 		neg_dict[neg] = neg_df[neg].to_numpy()
 
-	return pos_dict, neg_dict
+	return pos_dict, neg_dict, df.index
 
 
-def handling_gaps(df, threshold):
+def handling_gaps(df, threshold, dates):
 	'''
 	Function for keeping blocks of nans in the data if there is a maximum number of data points between sucessive valid data.
 	If the number of nans is too large between sucessive data points it will drop those nans.
@@ -171,6 +172,10 @@ def handling_gaps(df, threshold):
 	Returns:
 		pd.DataFrame: processed data
 	'''
+	df['Date_UTC'] = dates
+	df.set_index('Date_UTC', inplace=True)
+	df.index = pd.to_datetime(df.index)
+
 	start_time = pd.to_datetime('2009-07-19')
 	end_time = pd.to_datetime('2017-12-31')
 	date_range = pd.date_range(start_time, end_time, freq='min')
@@ -180,7 +185,7 @@ def handling_gaps(df, threshold):
 	df = full_time_df.join(df, how='left')
 
 	# creting a column in the data frame that labels the size of the gaps
-	df['gap_size'] = df['actual'].isna().groupby(df['actual'].notna().cumsum()).transform('sum')
+	df['gap_size'] = df[df.columns[1]].isna().groupby(df[df.columns[1]].notna().cumsum()).transform('sum')
 
 	# setting teh gap size column to nan if the value is above the threshold, setting it to 0 otherwise
 	df['gap_size'] = np.where(df['gap_size'] > threshold, np.nan, 0)
@@ -199,8 +204,8 @@ def plotting_shap_values(evaluation_dict, features, region):
 	for key in evaluation_dict.keys():
 
 		shap_percentages = converting_shap_to_percentages(evaluation_dict[key]['shap_values'], features)
-		mean_pos_dict, mean_neg_dict = preparing_shap_values_for_plotting(shap_percentages[0])
-		std_pos_dict, std_neg_dict = preparing_shap_values_for_plotting(shap_percentages[1])
+		mean_pos_dict, mean_neg_dict, mean_dates = preparing_shap_values_for_plotting(shap_percentages[0], evaluation_dict[key]['Date_UTC'])
+		std_pos_dict, std_neg_dict, std_dates = preparing_shap_values_for_plotting(shap_percentages[1], evaluation_dict[key]['Date_UTC'])
 
 		colors = sns.color_palette('tab20', len(mean_pos_dict.keys()))
 
@@ -216,8 +221,8 @@ def plotting_shap_values(evaluation_dict, features, region):
 		neg_values = [val for val in mean_neg_dict.values()]
 
 		# Stacking the positive and negative percent contributions
-		plt.stackplot(x, pos_values, labels=features, colors=colors, alpha=1)
-		plt.stackplot(x, neg_values, colors=colors, alpha=1)
+		plt.stackplot(mean_dates, pos_values, labels=features, colors=colors, alpha=1)
+		plt.stackplot(mean_dates, neg_values, colors=colors, alpha=1)
 		ax1.margins(x=0, y=0)				# Tightning the plot margins
 		plt.ylabel('Percent Contribution')
 
@@ -238,8 +243,8 @@ def plotting_shap_values(evaluation_dict, features, region):
 		neg_values = [val for val in std_neg_dict.values()]
 
 		# Stacking the positive and negative percent contributions
-		plt.stackplot(x, pos_values, labels=features, colors=colors, alpha=1)
-		plt.stackplot(x, neg_values, colors=colors, alpha=1)
+		plt.stackplot(std_dates, pos_values, labels=features, colors=colors, alpha=1)
+		plt.stackplot(std_dates, neg_values, colors=colors, alpha=1)
 		ax1.margins(x=0, y=0)				# Tightning the plot margins
 		plt.ylabel('Percent Contribution')
 
@@ -300,10 +305,10 @@ def main():
 		evaluation_dict = segmenting_testing_data(xtest, ytest, dates_dict['test'], storm_months=['2017-09-01', '2012-03-07'])
 
 		print('Loading model....')
-		model = loading_model(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')
+		MODEL = loading_model(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')
 
 		print('Getting shap values....')
-		evaluation_dict = get_shap_values(model, f'non_twins_region_{region}', xtrain, evaluation_dict)
+		evaluation_dict = get_shap_values(model=MODEL, model_name=f'non_twins_region_{region}', training_data=xtrain, evaluation_dict=None)
 
 		print('Plotting shap values....')
 		plotting_shap_values(evaluation_dict, features, region)
@@ -314,47 +319,47 @@ def main():
 	with open(f'outputs/shap_values/non_twins_feature_importance_dict.pkl', 'wb') as f:
 		pickle.dump(feature_importance_dict, f)
 
-	keys = [key for key in evaluation_dict.keys()]
-	# plotting feature importance for each feature as a function of mean latitude
-	for feature in features:
-		mean_mean_0, mean_std_0, std_mean_0, std_std_0, lat = [], [], [], [], []
-		mean_mean_1, mean_std_1, std_mean_1, std_std_1 = [], [], [], []
-		for region in REGIONS:
-			lat.append(feature_importance_dict[region]['mean_lat'])
-			mean_mean_0.append(feature_importance_dict[region]['feature_importance'][0]['mean_mean_shap'][feature])
-			mean_std_0.append(feature_importance_dict[region]['feature_importance'][0]['mean_std_shap'][feature])
-			std_mean_0.append(feature_importance_dict[region]['feature_importance'][0]['std_mean_shap'][feature])
-			std_std_0.append(feature_importance_dict[region]['feature_importance'][0]['std_std_shap'][feature])
-			mean_mean_1.append(feature_importance_dict[region]['feature_importance'][1]['mean_mean_shap'][feature])
-			mean_std_1.append(feature_importance_dict[region]['feature_importance'][1]['mean_std_shap'][feature])
-			std_mean_1.append(feature_importance_dict[region]['feature_importance'][1]['std_mean_shap'][feature])
-			std_std_1.append(feature_importance_dict[region]['feature_importance'][1]['std_std_shap'][feature])
+	# keys = [key for key in evaluation_dict.keys()]
+	# # plotting feature importance for each feature as a function of mean latitude
+	# for feature in features:
+	# 	mean_mean_0, mean_std_0, std_mean_0, std_std_0, lat = [], [], [], [], []
+	# 	mean_mean_1, mean_std_1, std_mean_1, std_std_1 = [], [], [], []
+	# 	for region in REGIONS:
+	# 		lat.append(feature_importance_dict[region]['mean_lat'])
+	# 		mean_mean_0.append(feature_importance_dict[region]['feature_importance'][0]['mean_mean_shap'][feature])
+	# 		mean_std_0.append(feature_importance_dict[region]['feature_importance'][0]['mean_std_shap'][feature])
+	# 		std_mean_0.append(feature_importance_dict[region]['feature_importance'][0]['std_mean_shap'][feature])
+	# 		std_std_0.append(feature_importance_dict[region]['feature_importance'][0]['std_std_shap'][feature])
+	# 		mean_mean_1.append(feature_importance_dict[region]['feature_importance'][1]['mean_mean_shap'][feature])
+	# 		mean_std_1.append(feature_importance_dict[region]['feature_importance'][1]['mean_std_shap'][feature])
+	# 		std_mean_1.append(feature_importance_dict[region]['feature_importance'][1]['std_mean_shap'][feature])
+	# 		std_std_1.append(feature_importance_dict[region]['feature_importance'][1]['std_std_shap'][feature])
 
-		# defining two colors close to each other for each of the storms
-		colors = ['#ff0000', '#ff4d4d', '#ff8080', '#ffcccc', '#0000ff', '#4d4dff', '#8080ff', '#ccccff']
+	# 	# defining two colors close to each other for each of the storms
+	# 	colors = ['#ff0000', '#ff4d4d', '#ff8080', '#ffcccc', '#0000ff', '#4d4dff', '#8080ff', '#ccccff']
 
-		fig = plt.figure(figsize=(20,17))
-		ax1 = plt.subplot(211)
-		ax1.set_title(f'Mean SHAP Percentage Importance for {feature}')
-		plt.scatter(lat, mean_mean_0, label=f'$\mu$ {keys[0]}', color=colors[0])
-		plt.scatter(lat, mean_std_0, label=f'$\sigma$ {keys[0]}', color=colors[1])
-		plt.scatter(lat, mean_mean_1, label=f'$\mu$ {keys[1]}', color=colors[4])
-		plt.scatter(lat, mean_std_1, label=f'$\sigma$ {keys[1]}', color=colors[5])
-		plt.ylabel('Mean SHAP Percentage Importance')
-		plt.xlabel('Region Latitude')
-		plt.legend()
+	# 	fig = plt.figure(figsize=(20,17))
+	# 	ax1 = plt.subplot(211)
+	# 	ax1.set_title(f'Mean SHAP Percentage Importance for {feature}')
+	# 	plt.scatter(lat, mean_mean_0, label=f'$\mu$ {keys[0]}', color=colors[0])
+	# 	plt.scatter(lat, mean_std_0, label=f'$\sigma$ {keys[0]}', color=colors[1])
+	# 	plt.scatter(lat, mean_mean_1, label=f'$\mu$ {keys[1]}', color=colors[4])
+	# 	plt.scatter(lat, mean_std_1, label=f'$\sigma$ {keys[1]}', color=colors[5])
+	# 	plt.ylabel('Mean SHAP Percentage Importance')
+	# 	plt.xlabel('Region Latitude')
+	# 	plt.legend()
 
-		ax2 = plt.subplot(212)
-		ax2.set_title(f'Std SHAP Percentage Importance for {feature}')
-		plt.scatter(lat, std_mean_0, label=f'$\mu$ {keys[0]}', color=colors[0])
-		plt.scatter(lat, std_std_0, label=f'$\sigma$ {keys[0]}', color=colors[1])
-		plt.scatter(lat, std_mean_1, label=f'$\mu$ {keys[1]}', color=colors[4])
-		plt.scatter(lat, std_std_1, label=f'$\sigma$ {keys[1]}', color=colors[5])
-		plt.ylabel('Std SHAP Percentage Importance')
-		plt.xlabel('Region Latitude')
-		plt.legend()
+	# 	ax2 = plt.subplot(212)
+	# 	ax2.set_title(f'Std SHAP Percentage Importance for {feature}')
+	# 	plt.scatter(lat, std_mean_0, label=f'$\mu$ {keys[0]}', color=colors[0])
+	# 	plt.scatter(lat, std_std_0, label=f'$\sigma$ {keys[0]}', color=colors[1])
+	# 	plt.scatter(lat, std_mean_1, label=f'$\mu$ {keys[1]}', color=colors[4])
+	# 	plt.scatter(lat, std_std_1, label=f'$\sigma$ {keys[1]}', color=colors[5])
+	# 	plt.ylabel('Std SHAP Percentage Importance')
+	# 	plt.xlabel('Region Latitude')
+	# 	plt.legend()
 
-		plt.savefig(f'plots/shap/{TARGET}/non_twins_feature_importance_{feature}.png')
+	# 	plt.savefig(f'plots/shap/{TARGET}/non_twins_feature_importance_{feature}.png')
 
 
 

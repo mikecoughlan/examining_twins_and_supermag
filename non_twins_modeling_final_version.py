@@ -29,7 +29,7 @@ import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import tensorflow as tf
+# import tensorflow as tf
 import tqdm
 from scipy.special import expit, inv_boxcox
 from scipy.stats import boxcox
@@ -37,14 +37,14 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 # from spacepy import pycdf
-from tensorflow.keras.backend import clear_session
-from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
-                                     Dense, Dropout, Flatten, Input,
-                                     MaxPooling2D, concatenate)
-from tensorflow.keras.models import Model, Sequential, load_model
-from tensorflow.keras.utils import to_categorical
-from tensorflow.python.keras.backend import get_session
+# from tensorflow.keras.backend import clear_session
+# from tensorflow.keras.callbacks import EarlyStopping
+# from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
+#                                      Dense, Dropout, Flatten, Input,
+#                                      MaxPooling2D, concatenate)
+# from tensorflow.keras.models import Model, Sequential, load_model
+# from tensorflow.keras.utils import to_categorical
+# from tensorflow.python.keras.backend import get_session
 
 import utils
 
@@ -58,7 +58,7 @@ regions_dict = 'mike_working_dir/identifying_regions_data/identifying_regions_da
 regions_stat_dict = 'mike_working_dir/identifying_regions_data/identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
 working_dir = data_directory+'mike_working_dir/twins_data_modeling/'
 
-random_seed = 42
+random_seed = 7
 
 
 # loading config and specific model config files. Using them as dictonaries

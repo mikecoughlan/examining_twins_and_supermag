@@ -268,7 +268,7 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 def fit_autoencoder(model, train, val, early_stop):
 
-	if not os.path.exists('models/autoencoder_v_final_0-4.h5'):
+	if not os.path.exists('models/autoencoder_v_final_0-5.h5'):
 
 		# # reshaping the model input vectors for a single channel
 		# train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
@@ -280,15 +280,15 @@ def fit_autoencoder(model, train, val, early_stop):
 					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=32)			# doing the training! Yay!
 
 		# saving the model
-		model.save('models/autoencoder_v_final_0-4.h5')
+		model.save('models/autoencoder_v_final_0-5.h5')
 
 		# saving history
 		history_df = pd.DataFrame(model.history.history)
-		history_df.to_feather('outputs/autoencoder_v_final_0-4_history.feather')
+		history_df.to_feather('outputs/autoencoder_v_final_0-5_history.feather')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/autoencoder_v_final_0-4.h5')				# loading the models if already trained
+		model = load_model('models/autoencoder_v_final_0-5.h5')				# loading the models if already trained
 		print(model.summary())
 
 	return model
