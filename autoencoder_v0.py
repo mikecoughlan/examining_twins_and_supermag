@@ -73,7 +73,7 @@ solarwind_path = '../data/SW/omniData.feather'
 supermag_dir_path = '../data/supermag/'
 twins_times_path = 'outputs/regular_twins_map_dates.feather'
 rsd_path = working_dir+'identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
-random_seed = 42
+random_seed = 7
 
 
 def loading_data(target_var, region):
@@ -235,7 +235,7 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	e = Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(model_input)
 	e = Conv2D(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(e)
-	e = Conv2D(filters=256, kernel_size=2, activation='relu', strides=2, padding='same')(e)
+	e = Conv2D(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(e)
 
 	shape = int_shape(e)
 
@@ -247,12 +247,9 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	d = Reshape((shape[1], shape[2], shape[3]))(d)
 
-	d = Conv2DTranspose(filters=256, kernel_size=2, activation='relu', strides=2, padding='same')(d)
-	d = Dropout(0.2)(d)
+	d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(d)
 	d = Conv2DTranspose(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(d)
-	d = Dropout(0.2)(d)
-	d = Conv2DTranspose(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(d)
-	d = Dropout(0.2)(d)
+	d = Conv2DTranspose(filters=64, kernel_size=2, activation='relu', strides=1, padding='same')(d)
 
 	model_outputs = Conv2DTranspose(filters=1, kernel_size=1, activation='linear', padding='same', name='decoder_output')(d)
 
@@ -271,7 +268,7 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 def fit_autoencoder(model, train, val, early_stop):
 
-	if not os.path.exists('models/autoencoder_final_version_2.h5'):
+	if not os.path.exists('models/autoencoder_v_final_0-4.h5'):
 
 		# # reshaping the model input vectors for a single channel
 		# train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
@@ -280,14 +277,18 @@ def fit_autoencoder(model, train, val, early_stop):
 		print(model.summary())
 
 		model.fit(train, train, validation_data=(val, val),
-					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
+					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=32)			# doing the training! Yay!
 
 		# saving the model
-		model.save('models/autoencoder_final_version_2.h5')
+		model.save('models/autoencoder_v_final_0-4.h5')
+
+		# saving history
+		history_df = pd.DataFrame(model.history.history)
+		history_df.to_feather('outputs/autoencoder_v_final_0-4_history.feather')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/autoencoder_final_version_2.h5')				# loading the models if already trained
+		model = load_model('models/autoencoder_v_final_0-4.h5')				# loading the models if already trained
 		print(model.summary())
 
 	return model
@@ -333,15 +334,15 @@ def main():
 	autoencoder, encoder, early_stop = Autoencoder(input_shape, train, val)
 
 	# # fitting the model
-	print('Fitting model...')
-	MODEL = fit_autoencoder(autoencoder, train, val, early_stop)
+	# print('Fitting model...')
+	# MODEL = fit_autoencoder(autoencoder, train, val, early_stop)
 
 	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.bottleneck)
 	print(encoder.summary())
 	encoder.save('models/encoder_final_version_2.h5')
-	encoder = Model(inputs=MODEL.inputs, outputs=MODEL.get_layer('bottleneck').output)
-	print(encoder.summary())
-	encoder.save('models/encoder_final_version_2-1.h5')
+	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.get_layer('bottleneck').output)
+	# print(encoder.summary())
+	# encoder.save('models/encoder_final_version_2-1.h5')
 
 	# making predictions
 	print('Making predictions...')
@@ -353,34 +354,49 @@ def main():
 	rmse = np.sqrt(mean_squared_error(metrics_test, metrics_predictions))
 	print(f'RMSE: {rmse}')
 
+	vmin = min([predictions[0, :, :, 0].min(), test[0, :, :].min()])
+	vmax = max([predictions[0, :, :, 0].max(), test[0, :, :].max()])
 	fig = plt.figure(figsize=(10, 10))
 	ax1 = fig.add_subplot(121)
-	ax1.imshow(predictions[0, :, :, 0])
+	ax1.imshow(predictions[0, :, :, 0], vmin=vmin, vmax=vmax)
 	ax1.set_title('Prediction')
 	ax2 = fig.add_subplot(122)
-	ax2.imshow(test[0, :, :])
+	ax2.imshow(test[0, :, :], vmin=vmin, vmax=vmax)
 	ax2.set_title('Actual')
 	plt.show()
 
+	vmin = min([predictions[324, :, :, 0].min(), test[324, :, :].min()])
+	vmax = max([predictions[324, :, :, 0].max(), test[324, :, :].max()])
 	fig = plt.figure(figsize=(10, 10))
 	ax1 = fig.add_subplot(121)
-	ax1.imshow(predictions[324, :, :, 0])
+	ax1.imshow(predictions[324, :, :, 0], vmin=vmin, vmax=vmax)
 	ax1.set_title('Prediction')
 	ax2 = fig.add_subplot(122)
-	ax2.imshow(test[324, :, :])
+	ax2.imshow(test[324, :, :], vmin=vmin, vmax=vmax)
 	ax2.set_title('Actual')
 	plt.show()
 
+	vmin = min([predictions[256, :, :, 0].min(), test[256, :, :].min()])
+	vmax = max([predictions[256, :, :, 0].max(), test[256, :, :].max()])
 	fig = plt.figure(figsize=(10, 10))
 	ax1 = fig.add_subplot(121)
-	ax1.imshow(predictions[256, :, :, 0])
+	ax1.imshow(predictions[256, :, :, 0], vmin=vmin, vmax=vmax)
 	ax1.set_title('Prediction')
 	ax2 = fig.add_subplot(122)
-	ax2.imshow(test[256, :, :])
+	ax2.imshow(test[256, :, :], vmin=vmin, vmax=vmax)
 	ax2.set_title('Actual')
 	plt.show()
 
-
+	vmin = min([predictions[1000, :, :, 0].min(), test[1000, :, :].min()])
+	vmax = max([predictions[1000, :, :, 0].max(), test[1000, :, :].max()])
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(121)
+	ax1.imshow(predictions[1000, :, :, 0], vmin=vmin, vmax=vmax)
+	ax1.set_title('Prediction')
+	ax2 = fig.add_subplot(122)
+	ax2.imshow(test[1000, :, :], vmin=vmin, vmax=vmax)
+	ax2.set_title('Actual')
+	plt.show()
 
 	# # saving the results
 	# print('Saving results...')

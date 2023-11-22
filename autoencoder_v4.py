@@ -148,7 +148,7 @@ def fit_autoencoder(model, train, val, early_stop):
 
 	'''
 
-	if not os.path.exists('models/autoencoder_v4.h5'):
+	if not os.path.exists('models/autoencoder_v0.h5'):
 
 		# # reshaping the model input vectors for a single channel
 		# train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
@@ -160,11 +160,11 @@ def fit_autoencoder(model, train, val, early_stop):
 					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
 
 		# saving the model
-		model.save('models/autoencoder_v4.h5')
+		model.save('models/autoencoder_v0.h5')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/autoencoder_v4.h5')				# loading the models if already trained
+		model = load_model('models/autoencoder_v0.h5')				# loading the models if already trained
 		print(model.summary())
 
 	return model
@@ -217,31 +217,36 @@ def main():
 
 	# rmse = np.sqrt(mean_squared_error(test, predictions[:,:,:,0]))
 	# print(f'RMSE: {rmse}')
-
+	vmin = min([predictions[0, :, :, 0].min(), test[0, :, :].min()])
+	vmax = max([predictions[0, :, :, 0].max(), test[0, :, :].max()])
 	fig = plt.figure(figsize=(10, 10))
 	ax1 = fig.add_subplot(121)
-	ax1.imshow(predictions[0, :, :, 0])
+	ax1.imshow(predictions[0, :, :, 0], vmin=vmin, vmax=vmax)
 	ax1.set_title('Prediction')
 	ax2 = fig.add_subplot(122)
-	ax2.imshow(test[0, :, :])
+	ax2.imshow(test[0, :, :], vmin=vmin, vmax=vmax)
 	ax2.set_title('Actual')
 	plt.show()
 
+	vmin = min([predictions[324, :, :, 0].min(), test[324, :, :].min()])
+	vmax = max([predictions[324, :, :, 0].max(), test[324, :, :].max()])
 	fig = plt.figure(figsize=(10, 10))
 	ax1 = fig.add_subplot(121)
-	ax1.imshow(predictions[324, :, :, 0])
+	ax1.imshow(predictions[324, :, :, 0], vmin=vmin, vmax=vmax)
 	ax1.set_title('Prediction')
 	ax2 = fig.add_subplot(122)
-	ax2.imshow(test[324, :, :])
+	ax2.imshow(test[324, :, :], vmin=vmin, vmax=vmax)
 	ax2.set_title('Actual')
 	plt.show()
 
+	vmin = min([predictions[256, :, :, 0].min(), test[256, :, :].min()])
+	vmax = max([predictions[256, :, :, 0].max(), test[256, :, :].max()])
 	fig = plt.figure(figsize=(10, 10))
 	ax1 = fig.add_subplot(121)
-	ax1.imshow(predictions[256, :, :, 0])
+	ax1.imshow(predictions[256, :, :, 0], vmin=vmin, vmax=vmax)
 	ax1.set_title('Prediction')
 	ax2 = fig.add_subplot(122)
-	ax2.imshow(test[256, :, :])
+	ax2.imshow(test[256, :, :], vmin=vmin, vmax=vmax)
 	ax2.set_title('Actual')
 	plt.show()
 

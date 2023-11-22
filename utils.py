@@ -77,12 +77,12 @@ def loading_twins_maps():
 	for file in twins_files:
 		twins_map = pycdf.CDF(file)
 		for i, date in enumerate(twins_map['Epoch']):
-			if len(np.unique(twins_map['Ion_Temperature'][i][40:120,60:120])) == 1:
+			if len(np.unique(twins_map['Ion_Temperature'][i][35:125,60:120])) == 1:
 				continue
 			check = pd.to_datetime(date.strftime(format='%Y-%m-%d %H:%M:%S'), format='%Y-%m-%d %H:%M:%S')
 			if check in times.values:
 				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = {}
-				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][40:120,60:120]
+				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i][35:125,60:120]
 
 	return maps
 
