@@ -34,10 +34,10 @@ MODEL_CONFIG = {'initial_filters': 128,
 
 TARGET = 'rsd'
 VERSION = 'final'
-# REGIONS = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
-# 			387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
-# 			62, 327, 293, 241, 107, 55, 111]
-REGIONS = [83, 387]
+REGIONS = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
+			387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
+			62, 327, 293, 241, 107, 55, 111]
+# REGIONS = [83, 387]
 
 
 def loading_model(model_path):
@@ -158,6 +158,40 @@ def preparing_shap_values_for_plotting(df):
 		neg_dict[neg] = neg_df[neg].to_numpy()
 
 	return pos_dict, neg_dict
+
+
+def handling_gaps(df, threshold):
+	'''
+	Function for keeping blocks of nans in the data if there is a maximum number of data points between sucessive valid data.
+	If the number of nans is too large between sucessive data points it will drop those nans.
+
+	Args:
+		df (pd.DataFrame): data to be processed
+
+	Returns:
+		pd.DataFrame: processed data
+	'''
+	start_time = pd.to_datetime('2009-07-19')
+	end_time = pd.to_datetime('2017-12-31')
+	date_range = pd.date_range(start_time, end_time, freq='min')
+
+	full_time_df = pd.DataFrame(index=date_range)
+
+	df = full_time_df.join(df, how='left')
+
+	# creting a column in the data frame that labels the size of the gaps
+	df['gap_size'] = df['actual'].isna().groupby(df['actual'].notna().cumsum()).transform('sum')
+
+	# setting teh gap size column to nan if the value is above the threshold, setting it to 0 otherwise
+	df['gap_size'] = np.where(df['gap_size'] > threshold, np.nan, 0)
+
+	# dropping nans from the subset of the gap size column
+	df.dropna(inplace=True, subset=['gap_size'])
+
+	# dropping the gap size column
+	df.drop(columns=['gap_size'], inplace=True)
+
+	return df
 
 
 def plotting_shap_values(evaluation_dict, features, region):
