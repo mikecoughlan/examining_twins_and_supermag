@@ -14,6 +14,7 @@ import tensorflow as tf
 from matplotlib import colors
 from tensorflow.keras.models import Sequential, load_model
 from tqdm import tqdm
+import gc 
 
 import non_twins_modeling_final_version as modeling
 import utils
@@ -34,9 +35,9 @@ MODEL_CONFIG = {'initial_filters': 128,
 
 TARGET = 'rsd'
 VERSION = 'final_2'
-REGIONS = [143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
-			387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
-			62, 327, 293, 241, 107, 55, 111, 83]
+REGIONS = [44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
+			61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
+			62, 327, 293, 241, 107, 55, 111, 83, 143, 223, 387]
 # REGIONS = [83]
 
 
@@ -295,6 +296,11 @@ def main():
 	gc.collect()
 
 	for region in REGIONS:
+
+		if os.path.exists(f'outputs/shap_values/non_twins_region_{region}_evaluation_dict.pkl'):
+			print(f'Shap values for region {region} already exist. Skipping....')
+			continue
+
 		print(f'Preparing data....')
 		xtrain, ___, xtest, ytrain, ____, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)
 
@@ -316,6 +322,8 @@ def main():
 
 		print('Getting feature importance....')
 		feature_importance_dict[region]['feature_importance'] = getting_feature_importance(evaluation_dict, features)
+
+		gc.collect()
 
 	with open(f'outputs/shap_values/non_twins_feature_importance_dict.pkl', 'wb') as f:
 		pickle.dump(feature_importance_dict, f)
