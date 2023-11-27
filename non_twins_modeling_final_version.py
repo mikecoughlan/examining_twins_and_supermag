@@ -479,7 +479,7 @@ if __name__ == '__main__':
 
  	args=parser.parse_args()
 
- 	if not os.path.exists(f'outputs/{TARGET}/non_twins_modeling_region_{args.region}_version_{VERSION}.feather'):
+ 	if not os.path.exists(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5'):
  		main(args.region)
  		print('It ran. God job!')
  	else:
