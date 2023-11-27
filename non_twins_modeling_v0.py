@@ -59,7 +59,7 @@ regions_dict = 'mike_working_dir/identifying_regions_data/identifying_regions_da
 regions_stat_dict = 'mike_working_dir/identifying_regions_data/identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
 working_dir = data_directory+'mike_working_dir/twins_data_modeling/'
 
-random_seed = 42
+random_seed = 7
 
 
 # loading config and specific model config files. Using them as dictonaries
@@ -92,7 +92,7 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 						62, 327, 293, 241, 107, 55, 111]
 
 TARGET = 'rsd'
-VERSION = 0
+VERSION = 'final_2'
 
 
 def loading_data(target_var, region, percentile=0.99):
