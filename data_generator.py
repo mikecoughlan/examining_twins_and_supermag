@@ -40,8 +40,8 @@ class Generator(Sequence):
 
 		# Generating data from batch indices. Putting the multipe features into a list
 		X = []
-		for i in range(len(features)):
-			x = np.empty((self.batch_size, self.features[i].shape[1], self.features[i].shape[2]))
+		for i in range(len(self.features)):
+			x = np.empty((self.batch_size, self.features[i].shape[1], self.features[i].shape[2], 1))
 			x = self.features[i][index * self.batch_size:(index + 1) * self.batch_size]
 			X.append(x)
 

@@ -12,6 +12,7 @@
 
 
 # Importing the libraries
+import argparse
 import datetime
 import gc
 import glob
@@ -39,14 +40,14 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from tensorflow.keras.backend import clear_session
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
-                                     Dense, Dropout, Flatten, Input,
-                                     MaxPooling2D, concatenate)
+									Dense, Dropout, Flatten, Input,
+									MaxPooling2D, concatenate)
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
-from data_generator import Generator
 
 import utils
+from data_generator import Generator
 
 # from data_prep import DataPrep
 
@@ -62,7 +63,7 @@ regions_dict = 'mike_working_dir/identifying_regions_data/identifying_regions_da
 regions_stat_dict = 'mike_working_dir/identifying_regions_data/identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
 working_dir = data_directory+'mike_working_dir/twins_data_modeling/'
 
-random_seed = 42
+random_seed = 7
 
 
 # loading config and specific model config files. Using them as dictonaries
@@ -81,13 +82,12 @@ CONFIG = {'region_numbers': [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163
 			'to_drop':[],
 			'omni_or_ace':'omni',
 			'time_history':30,
-			'random_seed':42}
-
-MODEL_CONFIG = {'filters':128,
-				'initial_learning_rate':1e-6,
-				'epochs':500,
-				'loss':'mse',
-				'early_stop_patience':25}
+			'random_seed':7,
+			'initial_filters':128,
+			'learning_rate':1e-7,
+			'epochs':500,
+			'loss':'mse',
+			'early_stop_patience':25}
 
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
@@ -95,7 +95,7 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 						62, 327, 293, 241, 107, 55, 111]
 
 TARGET = 'rsd'
-VERSION = 0
+VERSION = 'final'
 
 
 def loading_data(target_var, region):
@@ -157,8 +157,10 @@ def getting_prepared_data(target_var, region, get_features=False):
 	print(f'Target value positive percentage: {target.sum()/len(target)}')
 	# merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
 
-	if os.path.exists(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl'):
-		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'rb') as f:
+	temp_version = 'final_1'
+
+	if os.path.exists(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl'):
+		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'rb') as f:
 			storms_extracted_dict = pickle.load(f)
 		storms = storms_extracted_dict['storms']
 		target = storms_extracted_dict['target']
@@ -167,7 +169,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 		# getting the data corresponding to the twins maps
 		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var=f'rolling_{target_var}', concat=False, map_keys=maps.keys())
 		storms_extracted_dict = {'storms':storms, 'target':target}
-		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'wb') as f:
+		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'wb') as f:
 			pickle.dump(storms_extracted_dict, f)
 
 	print('Columns in Dataframe: '+str(storms[0].columns))
@@ -177,7 +179,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
 	month_df = month_df.drop([pd.to_datetime('2012-03-01'), pd.to_datetime('2017-09-01')])
 
-	train_months, test_months = train_test_split(month_df, test_size=0.2, shuffle=True, random_state=CONFIG['random_seed'])
+	train_months, test_months = train_test_split(month_df, test_size=0.1, shuffle=True, random_state=CONFIG['random_seed'])
 	train_months, val_months = train_test_split(train_months, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
 
 	test_months = test_months.tolist()
@@ -255,9 +257,9 @@ def getting_prepared_data(target_var, region, get_features=False):
 	twins_scaling_array = np.vstack(twins_train)
 	twins_scaler = StandardScaler()
 	twins_scaler.fit(twins_scaling_array)
-	twins_train = [twins_scaler.transform(x) for twins_train]
-	twins_val = [twins_scaler.transform(x) for twins_val]
-	twins_test = [twins_scaler.transform(x) for twins_test]
+	twins_train = [twins_scaler.transform(x) for x in twins_train]
+	twins_val = [twins_scaler.transform(x) for x in twins_val]
+	twins_test = [twins_scaler.transform(x) for x in twins_test]
 
 	# splitting the sequences for input to the CNN
 	x_train, y_train, train_dates_to_drop, twins_train = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression', maps=twins_train)
@@ -319,7 +321,7 @@ def calculate_crps(epsilon, sig):
 	return crps
 
 
-def full_model(sw_and_mag_input_shape, twins_input_shape, early_stop_patience=20, initial_filters=32, learning_rate=1e-06):
+def full_model(encoder, sw_and_mag_input_shape, twins_input_shape, early_stop_patience=25):
 	'''
 	Concatenating the CNN models together with the MLT input
 
@@ -335,36 +337,28 @@ def full_model(sw_and_mag_input_shape, twins_input_shape, early_stop_patience=20
 
 	# CNN model
 	inputs = Input(shape=sw_and_mag_input_shape)
-	conv1 = Conv2D(initial_filters, 5, padding='same', activation='relu')(inputs)
-	conv1 = BatchNormalization()(conv1)
+	conv1 = Conv2D(CONFIG['initial_filters'], 2, padding='same', activation='relu')(inputs)
 	pool1 = MaxPooling2D(2)(conv1)
-	conv2 = Conv2D(initial_filters*2, 3, padding='same', activation='relu')(pool1)
-	conv2 = BatchNormalization()(conv2)
-	pool2 = MaxPooling2D(2)(conv2)
+	conv2 = Conv2D(CONFIG['initial_filters']*2, 2, padding='same', activation='relu')(pool1)
 
-	flat = Flatten()(pool2)
+	flat = Flatten()(conv2)
 
 	# twins input
 	twins_input = Input(shape=twins_input_shape)
-	# encoder = encoder(twins_input)
-	# encoder = Flatten()(encoder)
+	encoder = encoder(twins_input)
+	encoder = Flatten()(encoder)
 
 	# combining the two
-	combined = concatenate([flat, twins_input])
-	dense1 = Dense(initial_filters*4, activation='relu')(combined)
-	dense1 = BatchNormalization()(dense1)
+	combined = concatenate([flat, encoder])
+	dense1 = Dense((CONFIG['initial_filters']*2)+64, activation='relu')(combined)
 	drop1 = Dropout(0.2)(dense1)
-	dense2 = Dense(initial_filters*2, activation='relu')(drop1)
-	dense2 = BatchNormalization()(dense2)
+	dense2 = Dense(CONFIG['initial_filters'], activation='relu')(drop1)
 	drop2 = Dropout(0.2)(dense2)
-	dense3 = Dense(initial_filters, activation='relu')(drop2)
-	dense3 = BatchNormalization()(dense3)
-	drop3 = Dropout(0.2)(dense3)
-	output = Dense(2, activation='linear')(drop3)
+	output = Dense(2, activation='linear')(drop2)
 
 	model = Model(inputs=[inputs, twins_input], outputs=output)
 
-	opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)		# learning rate that actually started producing good results
+	opt = tf.keras.optimizers.Adam(learning_rate=CONFIG['learning_rate'])		# learning rate that actually started producing good results
 	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
@@ -408,9 +402,16 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, ea
 		print(f'twins_train: {np.isnan(twins_train).sum()}')
 		print(f'twin_val: {np.isnan(twins_val).sum()}')
 
-		model.fit(x=[Xtrain, twins_train], y=ytrain, validation_data=([Xval, twins_val], yval),
-					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=64)			# doing the training! Yay!
+		print(model.summary())
 
+		# gen = Generator(features=[Xtrain, twins_train], results=ytrain, batch_size=4)
+		# val_gen = Generator(features=[Xval, twins_val], results=yval, batch_size=4)
+
+		# model.fit(x=gen, validation_data=(val_gen),
+		# 			verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=2)			# doing the training! Yay!
+
+		model.fit(x=[xtrain,twins_train], y=ytrain, validation_data=([xval, twins_val], yval),
+					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=8)			# doing the training! Yay!
 		# saving the model
 		model.save(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')
 
@@ -468,9 +469,6 @@ def main(region):
 	if not os.path.exists(f'models/{TARGET}'):
 		os.makedirs(f'models/{TARGET}')
 
-	encoder = load_model(f'models/encoder_v4.h5')
-	print(encoder.summary())
-
 	# loading all data and indicies
 	print('Loading data...')
 	xtrain, xval, xtest, ytrain, yval, ytest, twins_train, twins_val, twins_test, dates_dict = getting_prepared_data(target_var=TARGET, region=region)
@@ -488,25 +486,17 @@ def main(region):
 	with open(f'outputs/dates_dict_version_{VERSION}.pkl', 'wb') as f:
 		pickle.dump(dates_dict, f)
 
-	twins_train = encoder.predict(twins_train, verbose=1)
-	clear_session()
-	gc.collect()
-	twins_val = encoder.predict(twins_val, verbose=1)
-	clear_session()
-	gc.collect()
-	twins_test = encoder.predict(twins_test, verbose=1)
-	clear_session()
-	gc.collect()
+	encoder = load_model('models/encoder_final_version_2.h5')
+	encoder.trainable = False
+	print(encoder.summary())
 
-	print('twins_train shape: '+str(twins_train.shape))
-	print('twins_val shape: '+str(twins_val.shape))
-	print('twins_test shape: '+str(twins_test.shape))
 
 	# creating the model
 	print('Initalizing model...')
-	MODEL, early_stop = full_model(sw_and_mag_input_shape=(xtrain.shape[1], xtrain.shape[2], 1),
-									twins_input_shape=(twins_train.shape[1]),
-									early_stop_patience=MODEL_CONFIG['early_stop_patience'])
+	MODEL, early_stop = full_model(encoder=encoder,
+									sw_and_mag_input_shape=(xtrain.shape[1], xtrain.shape[2], 1),
+									twins_input_shape=(twins_train.shape[1], twins_train.shape[2], 1),
+									early_stop_patience=CONFIG['early_stop_patience'])
 
 	# fitting the model
 	print('Fitting model...')
@@ -514,14 +504,24 @@ def main(region):
 
 	# making predictions
 	print('Making predictions...')
-	results_df = making_predictions(model=MODEL, Xtest=xtest, twins_test=twins_test, ytest=ytest, test_dates=dates_dict['test'])
+	# results_df = making_predictions(model=MODEL, Xtest=xtest, twins_test=twins_test, ytest=ytest, test_dates=dates_dict['test'])
 
-	results_df.to_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather')
+	# results_df.to_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather')
 
 
 
 if __name__ == '__main__':
-	for region in CONFIG['region_numbers']:
-		print(region)
-		main(region)
-	print('It ran. God job!')
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--region',
+						action='store',
+						choices=CONFIG['region_numbers'],
+						type=int,
+						help='Region number to be trained.')
+
+	args=parser.parse_args()
+
+	if not os.path.exists(f'models/{TARGET}/twins_region_{args.region}_v{VERSION}.h5'):
+		main(args.region)
+		print('It ran. God job!')
+	else:
+		print('Already ran this region. Skipping...')

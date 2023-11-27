@@ -15,21 +15,22 @@ from tqdm import tqdm
 import utils
 
 # REGIONS = [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163]9
-REGIONS = [387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
-								83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
-								62, 327, 293, 241, 107, 55, 111]
+# REGIONS = [387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
+# 								83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
+# 								62, 327, 293, 241, 107, 55, 111]
+REGIONS = [19, 194, 387]
 
 data_dir = '../../../../data/'
 supermag_dir = data_dir+'supermag/feather_files/'
 regions_dict = data_dir+'mike_working_dir/identifying_regions_data/adjusted_regions.pkl'
 
-VERSION = 'final_2'
+VERSION = 'twins_final'
 TARGET = 'rsd'
 
 def load_predictions(region=None, version=VERSION):
 
-	if os.path.exists(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather'):
-		predictions = pd.read_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_{VERSION}.feather')
+	if os.path.exists(f'outputs/{TARGET}/twins_modeling_region_{region}_version_0.feather'):
+		predictions = pd.read_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_0.feather')
 		predictions.set_index('dates', inplace=True)
 		predictions.index = pd.to_datetime(predictions.index, format = '%Y-%m-%d %H:%M:%S')
 
@@ -171,7 +172,7 @@ def plotting_continuious_reliability_diagram(all_predictions, version=VERSION):
 	ax[1].set_aspect('equal')
 	plt.subplots_adjust(hspace = -0.20)
 
-	plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/reliability_diagram2.png', bbox_inches='tight')
+	plt.savefig(f'plots/{TARGET}/analysis_plots_modeling_v{version}/twins_reliability_diagram.png', bbox_inches='tight')
 
 
 	# fig = plt.figure(figsize=(20,10))
