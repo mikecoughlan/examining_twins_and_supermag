@@ -40,8 +40,8 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from tensorflow.keras.backend import clear_session
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
-									Dense, Dropout, Flatten, Input,
-									MaxPooling2D, concatenate)
+                                     Dense, Dropout, Flatten, Input,
+                                     MaxPooling2D, concatenate)
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.utils import to_categorical
 from tensorflow.python.keras.backend import get_session
@@ -418,7 +418,8 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, ea
 	else:
 
 		# loading the model if it has already been trained.
-		model = load_model(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')				# loading the models if already trained
+		model = load_model(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5', compile=False)				# loading the models if already trained
+		model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=CONFIG['learning_rate']), loss=CRPS)
 
 	return model
 
@@ -504,9 +505,9 @@ def main(region):
 
 	# making predictions
 	print('Making predictions...')
-	# results_df = making_predictions(model=MODEL, Xtest=xtest, twins_test=twins_test, ytest=ytest, test_dates=dates_dict['test'])
+	results_df = making_predictions(model=MODEL, Xtest=xtest, twins_test=twins_test, ytest=ytest, test_dates=dates_dict['test'])
 
-	# results_df.to_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather')
+	results_df.to_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather')
 
 
 
