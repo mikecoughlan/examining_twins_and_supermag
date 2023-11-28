@@ -132,15 +132,7 @@ def plotting_continuious_reliability_diagram(all_predictions, version=VERSION):
 
 	x = np.linspace(0, 1, 1000)
 
-	# actual = pd.DataFrame({region:all_predictions[region]['dataframe']['actual'] for region in all_predictions.keys()})
-	# predicted_mean = pd.DataFrame({region:all_predictions[region]['dataframe']['predicted_mean'] for region in all_predictions.keys()})
-	# predicted_std = pd.DataFrame({region:all_predictions[region]['dataframe']['predicted_std'] for region in all_predictions.keys()})
-
-	# print(actual.isnull().sum())
-	# print(predicted_mean.isnull().sum())
-	# print(predicted_std.isnull().sum())
-
-	fig, ax = plt.subplots(ncols=1, nrows=2, sharex=True, figsize=(7,9))
+	fig, ax = plt.subplots(ncols=1, nrows=2, sharex=True, figsize=(10,15))
 
 	for region in all_predictions.keys():
 		predictions = all_predictions[region]['dataframe'].dropna(inplace=False, subset=['actual', 'predicted_mean', 'predicted_std'])
@@ -148,14 +140,14 @@ def plotting_continuious_reliability_diagram(all_predictions, version=VERSION):
 		predicted_mean = predictions['predicted_mean']
 		predicted_std = predictions['predicted_std']
 
-		standard_error = (actual - predicted_mean)/(np.sqrt(2) * predicted_std.to_numpy()) #Standard error for each parameter
+		standard_error = (actual - predicted_mean)/(np.sqrt(2) * predicted_std).to_numpy() #Standard error for each parameter
 		print(standard_error.isnull().sum())
 		cumulative_dist = np.zeros((len(x), 1)) #Cumulative distribution for each parameter
 		for i in standard_error.index:
 			cumulative_dist[:,0] += (1/len(standard_error)) * np.heaviside(x - 0.5*(erf(standard_error.loc[i])+1) , 1) #Calculate the cumulative distribution for each parameter
 
 		ax[0].plot(x, cumulative_dist[:,0], label=region)
-		ax[1].plot(x, x - cumulative_dist[:,0], label=region),
+		ax[1].plot(x, x - cumulative_dist[:,0], label=region)
 
 	#Place legend to the right middle of the figure
 	ax[0].legend(bbox_to_anchor=(1.05, 0.5), loc='center left', borderaxespad=0.)
@@ -166,7 +158,7 @@ def plotting_continuious_reliability_diagram(all_predictions, version=VERSION):
 	fig.suptitle('Reliability Diagram')
 
 	ax[1].plot(x, np.zeros(len(x)), linestyle = '--', color = 'k')
-	ax[1].set_ylim(-0.15,0.15)
+	ax[1].set_ylim(-0.2,0.2)
 	ax[1].set_xlabel('Predicted Frequency')
 	ax[1].set_ylabel('Under/Over-\nEstimation')
 	ax[1].set_aspect('equal')
