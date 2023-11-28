@@ -515,14 +515,14 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--region',
 						action='store',
-						choices=CONFIG['region_numbers'],
+						choices=region_numbers,
 						type=int,
 						help='Region number to be trained.')
 
 	args=parser.parse_args()
 
-	# if not os.path.exists(f'models/{TARGET}/twins_region_{args.region}_v{VERSION}.h5'):
-	main(args.region)
-		# print('It ran. God job!')
-	# else:
-	# 	print('Already ran this region. Skipping...')
+	if not os.path.exists(f'models/{TARGET}/twins_region_{args.region}_v{VERSION}.h5'):
+		main(args.region)
+		print('It ran. God job!')
+	else:
+		print('Already ran this region. Skipping...')
