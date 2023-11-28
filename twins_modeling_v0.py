@@ -514,7 +514,7 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--region',
 						action='store',
-						choices=CONFIG['region_numbers'],
+						choices=region_numbers,
 						type=int,
 						help='Region number to be trained.')
 

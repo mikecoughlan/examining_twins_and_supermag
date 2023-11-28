@@ -29,8 +29,8 @@ TARGET = 'rsd'
 
 def load_predictions(region=None, version=VERSION):
 
-	if os.path.exists(f'outputs/{TARGET}/twins_modeling_region_{region}_version_0.feather'):
-		predictions = pd.read_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_0.feather')
+	if os.path.exists(f'outputs/{TARGET}/twins_modeling_region_{region}_version_final.feather'):
+		predictions = pd.read_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_final.feather')
 		predictions.set_index('dates', inplace=True)
 		predictions.index = pd.to_datetime(predictions.index, format = '%Y-%m-%d %H:%M:%S')
 
