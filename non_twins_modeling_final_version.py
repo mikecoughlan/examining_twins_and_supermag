@@ -29,22 +29,22 @@ import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-# import tensorflow as tf
+import tensorflow as tf
 import tqdm
 from scipy.special import expit, inv_boxcox
 from scipy.stats import boxcox
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-# from spacepy import pycdf
-# from tensorflow.keras.backend import clear_session
-# from tensorflow.keras.callbacks import EarlyStopping
-# from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
-#                                      Dense, Dropout, Flatten, Input,
-#                                      MaxPooling2D, concatenate)
-# from tensorflow.keras.models import Model, Sequential, load_model
-# from tensorflow.keras.utils import to_categorical
-# from tensorflow.python.keras.backend import get_session
+from spacepy import pycdf
+from tensorflow.keras.backend import clear_session
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
+                                     Dense, Dropout, Flatten, Input,
+                                     MaxPooling2D, concatenate)
+from tensorflow.keras.models import Model, Sequential, load_model
+from tensorflow.keras.utils import to_categorical
+from tensorflow.python.keras.backend import get_session
 
 import utils
 
@@ -481,7 +481,7 @@ if __name__ == '__main__':
 
  	args=parser.parse_args()
 
- 	if not os.path.exists(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5'):
+ 	if not os.path.exists(f'models/{TARGET}/non_twins_region_{args.region}_version_{VERSION}.h5'):
  		main(args.region)
  		print('It ran. God job!')
  	else:
