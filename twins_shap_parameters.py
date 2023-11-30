@@ -300,6 +300,10 @@ def main():
 		if os.path.exists(f'outputs/shap_values/twins_region_{region}_evaluation_dict.pkl'):
 			print(f'Shap values for region {region} already exist. Skipping....')
 			continue
+			
+		if not os.path.exists(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5'):
+			print(f'Model for region {region} is not finished training yet. Skipping....')
+			continue
 
 		print(f'Preparing data....')
 		xtrain, ___, xtest, ytrain, ____, ytest, twins_train, ___, twins_test, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)
@@ -315,7 +319,7 @@ def main():
 		MODEL = loading_model(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')
 
 		print('Getting shap values....')
-		evaluation_dict = get_shap_values(model=MODEL, model_name=f'twins_region_{region}', training_data=xtrain, evaluation_dict=evaluation_dict)
+		evaluation_dict = get_shap_values(model=MODEL, model_name=f'twins_region_{region}', training_data=[xtrain,twins_train], evaluation_dict=evaluation_dict)
 
 		print('Plotting shap values....')
 		# plotting_shap_values(evaluation_dict, features, region)
