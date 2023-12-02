@@ -412,6 +412,11 @@ if __name__ == '__main__':
 
 	args=parser.parse_args()
 
+	if args.reverse_regions:
+		print('Calculating shap values in reverse order of listed regions.')
+	else:
+		print('Calculating shap values in regular order of listed regions.')
+
 	main(reverse = args.reverse_regions)
 
 
