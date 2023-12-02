@@ -36,15 +36,15 @@ from scipy.stats import boxcox
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-# from spacepy import pycdf
-# from tensorflow.keras.backend import clear_session
-# from tensorflow.keras.callbacks import EarlyStopping
-# from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
-#                                      Dense, Dropout, Flatten, Input,
-#                                      MaxPooling2D, concatenate)
-# from tensorflow.keras.models import Model, Sequential, load_model
-# from tensorflow.keras.utils import to_categorical
-# from tensorflow.python.keras.backend import get_session
+from spacepy import pycdf
+from tensorflow.keras.backend import clear_session
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.layers import (Activation, BatchNormalization, Conv2D,
+                                     Dense, Dropout, Flatten, Input,
+                                     MaxPooling2D, concatenate)
+from tensorflow.keras.models import Model, Sequential, load_model
+from tensorflow.keras.utils import to_categorical
+from tensorflow.python.keras.backend import get_session
 
 import utils
 
@@ -116,7 +116,7 @@ def loading_data(target_var, region, percentiles=[0.5, 0.75, 0.9, 0.99]):
 
 
 
-def getting_prepared_data(target_var, region, get_features=False):
+def getting_prepared_data(target_var, region, get_features=False, do_scaling=True):
 	'''
 	Calling the data prep class without the TWINS data for this version of the model.
 
@@ -230,9 +230,14 @@ def getting_prepared_data(target_var, region, get_features=False):
 	to_scale_with = pd.concat(x_train, axis=0)
 	scaler = StandardScaler()
 	scaler.fit(to_scale_with)
-	x_train = [scaler.transform(x) for x in x_train]
-	x_val = [scaler.transform(x) for x in x_val]
-	x_test = [scaler.transform(x) for x in x_test]
+	if do_scaling:
+		x_train = [scaler.transform(x) for x in x_train]
+		x_val = [scaler.transform(x) for x in x_val]
+		x_test = [scaler.transform(x) for x in x_test]
+
+	# saving the scaler
+	with open(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}_scaler.pkl', 'wb') as f:
+		pickle.dump(scaler, f)
 
 	print(f'shape of x_train: {len(x_train)}')
 	print(f'shape of x_val: {len(x_val)}')
@@ -472,17 +477,18 @@ def main(region):
 
 if __name__ == '__main__':
 
- 	parser = argparse.ArgumentParser()
- 	parser.add_argument('--region',
- 						action='store',
- 						choices=CONFIG['region_numbers'],
- 						type=int,
- 						help='Region number to be trained.')
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--region',
+						action='store',
+						choices=CONFIG['region_numbers'],
+						type=int,
+						help='Region number to be trained.')
 
- 	args=parser.parse_args()
+	args=parser.parse_args()
 
- 	if not os.path.exists(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5'):
- 		main(args.region)
- 		print('It ran. God job!')
- 	else:
- 		print('Already ran this region. Skipping...')
+	if not os.path.exists(f'models/{TARGET}/non_twins_region_{args.region}_version_{VERSION}.h5'):
+		main(args.region)
+		print('It ran. God job!')
+	else:
+		___, ___, ___, ___, ___, ___, ___ = getting_prepared_data(target_var=TARGET, region=args.region, do_scaling=False)
+		print('Already ran this region. Skipping...')

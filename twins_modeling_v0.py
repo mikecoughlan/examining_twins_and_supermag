@@ -261,6 +261,11 @@ def getting_prepared_data(target_var, region, get_features=False):
 	twins_val = [twins_scaler.transform(x) for x in twins_val]
 	twins_test = [twins_scaler.transform(x) for x in twins_test]
 
+	# saving teh scalers
+	with open(f'models/{TARGET}/twins_region_{region}_version_{VERSION}_scaler.pkl', 'wb') as f:
+		pickle.dump({'mag_and_solarwind':scaler, 'twins':twins_scaler}, f)
+
+
 	# splitting the sequences for input to the CNN
 	x_train, y_train, train_dates_to_drop, twins_train = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression', maps=twins_train)
 	x_val, y_val, val_dates_to_drop, twins_val = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression', maps=twins_val)
