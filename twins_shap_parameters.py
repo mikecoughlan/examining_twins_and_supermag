@@ -15,6 +15,7 @@ from matplotlib import colors
 from tensorflow.keras.models import Sequential, load_model
 from tqdm import tqdm
 import gc
+import argparse
 
 import twins_modeling_v0 as modeling
 import utils
@@ -303,7 +304,7 @@ def getting_feature_importance(evaluation_dict, features):
 	return feature_importance_df
 
 
-def main():
+def main(reverse=False):
 
 	feature_importance_dict = {region:{} for region in REGIONS}
 
@@ -315,7 +316,9 @@ def main():
 	del regs
 	gc.collect()
 
-	for region in REGIONS:
+	looping_regions = REGIONS[::-1] if reverse else REGIONS
+
+	for region in looping_regions:
 
 		if os.path.exists(f'outputs/shap_values/twins_region_{region}_evaluation_dict.pkl'):
 			print(f'Shap values for region {region} already exist. Skipping....')
@@ -399,7 +402,17 @@ def main():
 
 
 if __name__ == '__main__':
-	main()
+
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--reverse_regions',
+						action='store',
+						type=bool,
+						default=False,
+						help='calculate the shap values in reverse order of listed regions or not. This is done to train on both servers.')
+
+	args=parser.parse_args()
+
+	main(reverse = args.reverse_regions)
 
 
 
