@@ -53,7 +53,7 @@ def loading_model(model_path):
 
 	return model
 
-def segmenting_testing_data(xtest, ytest, dates, storm_months=['2017-09-01', '2012-03-07'], storm_duration=[pd.DateOffset(months=1), pd.DateOffset(days=7)]):
+def segmenting_testing_data(xtest, ytest, twins_test, dates, storm_months=['2012-03-07'], storm_duration=[pd.DateOffset(days=7)]):
 
 	evaluation_dict = {month:{} for month in storm_months}
 
@@ -80,6 +80,7 @@ def segmenting_testing_data(xtest, ytest, dates, storm_months=['2017-09-01', '20
 		evaluation_dict[key]['Date_UTC'] = dates['Date_UTC'][indicies].reset_index(drop=True, inplace=False)
 		evaluation_dict[key]['xtest'] = xtest[indicies]
 		evaluation_dict[key]['ytest'] = ytest[indicies]
+		evaluation_dict[key]['twins_test'] = twins_test[indicies]
 
 	return evaluation_dict
 
@@ -105,23 +106,38 @@ def get_shap_values(model, model_name, training_data, evaluation_dict, backgroun
 
 	else:
 		# checking to see if the xtrain is a list of multiple inputs. Creates background for each using same random sampling
-		if isinstance(training_data, list):
-			background = []
-			random_indicies = np.random.choice(training_data[0].shape[0], background_examples, replace=False)
-			for data in training_data:
-				background.append(data[random_indicies])
-
-		else:
-			# Get shap values
-			background = training_data[np.random.choice(training_data.shape[0], background_examples, replace=False)]
+		background = []
+		random_indicies = np.random.choice(training_data[0].shape[0], background_examples, replace=False)
+		for data in training_data:
+			background.append(data[random_indicies])
 
 		explainer = shap.DeepExplainer(model, background)
 
 		print('Calculating shap values for each storm month....')
-		for key in tqdm(evaluation_dict.keys()):
-			shap_values = explainer.shap_values(evaluation_dict[key]['xtest'], check_additivity=False)
+		for key in evaluation_dict.keys():
+			delimiter = 10
+			shap_values = []
+			for batch in tqdm(range(0,evaluation_dict[key]['xtest'].shape[0],delimiter)):
+				try:
+					shap_values.append(explainer.shap_values([evaluation_dict[key]['xtest'][batch:(batch+delimiter)], 
+															evaluation_dict[key]['twins_test'][batch:(batch+delimiter)]], 
+															check_additivity=False))
+				except IndexError:
+					shap_values.append(explainer.shap_values([evaluation_dict[key]['xtest'][batch:(evaluation_dict[key]['xtest'].shape[0]-1)], 
+																evaluation_dict[key]['twins_test'][batch:(evaluation_dict[key]['twins_test'].shape[0]-1)]], 
+																check_additivity=False))
+			
+			# shap_values = explainer.shap_values([evaluation_dict[key]['xtest'], evaluation_dict[key]['twins_test']], check_additivity=False)
 			evaluation_dict[key]['shap_values'] = shap_values
 
+		with open(f'outputs/shap_values/{model_name}_evaluation_dict.pkl', 'wb') as f:
+			pickle.dump(evaluation_dict, f)
+
+		for key in evaluation_dict.keys():
+			stacked_shap = evaluation_dict[key]['shap_values']
+			stacked_shap = np.stack(stacked_shap, axis=0)
+			evaluation_dict[key]['shap_values'] = stacked_shap
+		
 		with open(f'outputs/shap_values/{model_name}_evaluation_dict.pkl', 'wb') as f:
 			pickle.dump(evaluation_dict, f)
 
@@ -304,33 +320,39 @@ def main():
 		if os.path.exists(f'outputs/shap_values/twins_region_{region}_evaluation_dict.pkl'):
 			print(f'Shap values for region {region} already exist. Skipping....')
 			continue
+			
+		if not os.path.exists(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5'):
+			print(f'Model for region {region} is not finished training yet. Skipping....')
+			continue
 
 		print(f'Preparing data....')
-		xtrain, ___, xtest, ytrain, ____, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)
+		xtrain, ___, xtest, ytrain, ____, ytest, twins_train, ___, twins_test, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)
 
 		# reshaping the data to match the CNN input
 		xtrain = xtrain.reshape(xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1)
 		xtest = xtest.reshape(xtest.shape[0], xtest.shape[1], xtest.shape[2], 1)
+		twins_train = twins_train.reshape(twins_train.shape[0], twins_train.shape[1], twins_train.shape[2], 1)
+		twins_test = twins_test.reshape(twins_test.shape[0], twins_test.shape[1], twins_test.shape[2], 1)
 
 		print('Segmenting the evaluation data....')
-		evaluation_dict = segmenting_testing_data(xtest, ytest, dates_dict['test'], storm_months=['2017-09-01', '2012-03-07'])
+		evaluation_dict = segmenting_testing_data(xtest, ytest, twins_test, dates_dict['test'], storm_months=['2012-03-07'])
 
 		print('Loading model....')
 		MODEL = loading_model(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')
 
 		print('Getting shap values....')
-		evaluation_dict = get_shap_values(model=MODEL, model_name=f'twins_region_{region}', training_data=xtrain, evaluation_dict=evaluation_dict)
+		evaluation_dict = get_shap_values(model=MODEL, model_name=f'twins_region_{region}', training_data=[xtrain,twins_train], evaluation_dict=evaluation_dict, background_examples=100)
 
 		print('Plotting shap values....')
-		plotting_shap_values(evaluation_dict, features, region)
+		# plotting_shap_values(evaluation_dict, features, region)
 
 		print('Getting feature importance....')
-		feature_importance_dict[region]['feature_importance'] = getting_feature_importance(evaluation_dict, features)
+		# feature_importance_dict[region]['feature_importance'] = getting_feature_importance(evaluation_dict, features)
 
 		gc.collect()
 
-	with open(f'outputs/shap_values/twins_feature_importance_dict.pkl', 'wb') as f:
-		pickle.dump(feature_importance_dict, f)
+	# with open(f'outputs/shap_values/twins_feature_importance_dict.pkl', 'wb') as f:
+	# 	pickle.dump(feature_importance_dict, f)
 
 	# keys = [key for key in evaluation_dict.keys()]
 	# # plotting feature importance for each feature as a function of mean latitude

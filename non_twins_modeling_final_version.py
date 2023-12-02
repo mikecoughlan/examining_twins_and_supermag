@@ -29,7 +29,7 @@ import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-# import tensorflow as tf
+import tensorflow as tf
 import tqdm
 from scipy.special import expit, inv_boxcox
 from scipy.stats import boxcox
@@ -486,9 +486,8 @@ if __name__ == '__main__':
 
 	args=parser.parse_args()
 
-	if not os.path.exists(f'models/{TARGET}/non_twins_region_{args.region}_version_{VERSION}.h5'):
-		main(args.region)
-		print('It ran. God job!')
-	else:
-		___, ___, ___, ___, ___, ___, ___ = getting_prepared_data(target_var=TARGET, region=args.region, do_scaling=False)
-		print('Already ran this region. Skipping...')
+ 	if not os.path.exists(f'models/{TARGET}/non_twins_region_{args.region}_version_{VERSION}.h5'):
+ 		main(args.region)
+ 		print('It ran. God job!')
+ 	else:
+ 		print('Already ran this region. Skipping...')

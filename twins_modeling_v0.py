@@ -409,14 +409,17 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, ea
 
 		print(model.summary())
 
-		# gen = Generator(features=[Xtrain, twins_train], results=ytrain, batch_size=4)
-		# val_gen = Generator(features=[Xval, twins_val], results=yval, batch_size=4)
+				# doing the training! Yay!
+		try:
+			model.fit(x=[xtrain,twins_train], y=ytrain, validation_data=([xval, twins_val], yval),
+						verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=8)			# doing the training! Yay!
+		except:
+			gen = Generator(features=[Xtrain, twins_train], results=ytrain, batch_size=4)
+			val_gen = Generator(features=[Xval, twins_val], results=yval, batch_size=4)
 
-		# model.fit(x=gen, validation_data=(val_gen),
-		# 			verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=2)			# doing the training! Yay!
-
-		model.fit(x=[xtrain,twins_train], y=ytrain, validation_data=([xval, twins_val], yval),
-					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=8)			# doing the training! Yay!
+			model.fit(x=gen, validation_data=(val_gen),
+						verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=4)	
+			
 		# saving the model
 		model.save(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')
 
@@ -508,11 +511,11 @@ def main(region):
 	print('Fitting model...')
 	MODEL = fit_full_model(MODEL, xtrain, xval, ytrain, yval, twins_train, twins_val, early_stop, region)
 
-	# making predictions
-	print('Making predictions...')
-	results_df = making_predictions(model=MODEL, Xtest=xtest, twins_test=twins_test, ytest=ytest, test_dates=dates_dict['test'])
+	# # making predictions
+	# print('Making predictions...')
+	# results_df = making_predictions(model=MODEL, Xtest=xtest, twins_test=twins_test, ytest=ytest, test_dates=dates_dict['test'])
 
-	results_df.to_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather')
+	# results_df.to_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather')
 
 
 
