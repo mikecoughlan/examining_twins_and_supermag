@@ -92,7 +92,7 @@ CONFIG = {'region_numbers': [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
-						62, 327, 293, 241, 107, 55, 111]
+						62, 327, 293, 241, 107, 55, 111, 401]
 
 TARGET = 'rsd'
 VERSION = 'final'
@@ -418,8 +418,8 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, ea
 			val_gen = Generator(features=[Xval, twins_val], results=yval, batch_size=4)
 
 			model.fit(x=gen, validation_data=(val_gen),
-						verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=4)	
-			
+						verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=4)
+
 		# saving the model
 		model.save(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')
 

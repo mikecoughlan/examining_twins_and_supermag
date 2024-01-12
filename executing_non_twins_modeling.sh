@@ -43,5 +43,6 @@ python3 non_twins_modeling_final_version.py --region 241
 python3 non_twins_modeling_final_version.py --region 107
 python3 non_twins_modeling_final_version.py --region 55
 python3 non_twins_modeling_final_version.py --region 111
+python3 non_twins_modeling_final_version.py --region 401
 
 

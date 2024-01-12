@@ -134,13 +134,13 @@ def get_shap_values(model, model_name, training_data, evaluation_dict, backgroun
 		with open(f'outputs/shap_values/{model_name}_evaluation_dict.pkl', 'wb') as f:
 			pickle.dump(evaluation_dict, f)
 
-		for key in evaluation_dict.keys():
-			stacked_shap = evaluation_dict[key]['shap_values']
-			stacked_shap = np.stack(stacked_shap, axis=0)
-			evaluation_dict[key]['shap_values'] = stacked_shap
+		# for key in evaluation_dict.keys():
+		# 	stacked_shap = evaluation_dict[key]['shap_values']
+		# 	stacked_shap = np.stack(stacked_shap, axis=0)
+		# 	evaluation_dict[key]['shap_values'] = stacked_shap
 		
-		with open(f'outputs/shap_values/{model_name}_evaluation_dict.pkl', 'wb') as f:
-			pickle.dump(evaluation_dict, f)
+		# with open(f'outputs/shap_values/{model_name}_evaluation_dict.pkl', 'wb') as f:
+		# 	pickle.dump(evaluation_dict, f)
 
 	return evaluation_dict
 
@@ -319,6 +319,8 @@ def main(reverse=False):
 	looping_regions = REGIONS[::-1] if reverse else REGIONS
 
 	for region in looping_regions:
+
+		print(f'Working on region {region}....')
 
 		if os.path.exists(f'outputs/shap_values/twins_region_{region}_evaluation_dict.pkl'):
 			print(f'Shap values for region {region} already exist. Skipping....')
