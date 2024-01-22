@@ -10,13 +10,15 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import shap
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+import argparse
+import gc
+
 import tensorflow as tf
 from matplotlib import colors
 from tensorflow.keras.models import Sequential, load_model
 from tqdm import tqdm
-import gc
-import argparse
 
 import twins_modeling_v0 as modeling
 import utils
@@ -121,14 +123,14 @@ def get_shap_values(model, model_name, training_data, evaluation_dict, backgroun
 			shap_values = []
 			for batch in tqdm(range(0,evaluation_dict[key]['xtest'].shape[0],delimiter)):
 				try:
-					shap_values.append(explainer.shap_values([evaluation_dict[key]['xtest'][batch:(batch+delimiter)], 
-															evaluation_dict[key]['twins_test'][batch:(batch+delimiter)]], 
+					shap_values.append(explainer.shap_values([evaluation_dict[key]['xtest'][batch:(batch+delimiter)],
+															evaluation_dict[key]['twins_test'][batch:(batch+delimiter)]],
 															check_additivity=False))
 				except IndexError:
-					shap_values.append(explainer.shap_values([evaluation_dict[key]['xtest'][batch:(evaluation_dict[key]['xtest'].shape[0]-1)], 
-																evaluation_dict[key]['twins_test'][batch:(evaluation_dict[key]['twins_test'].shape[0]-1)]], 
+					shap_values.append(explainer.shap_values([evaluation_dict[key]['xtest'][batch:(evaluation_dict[key]['xtest'].shape[0]-1)],
+																evaluation_dict[key]['twins_test'][batch:(evaluation_dict[key]['twins_test'].shape[0]-1)]],
 																check_additivity=False))
-			
+
 			# shap_values = explainer.shap_values([evaluation_dict[key]['xtest'], evaluation_dict[key]['twins_test']], check_additivity=False)
 			evaluation_dict[key]['shap_values'] = shap_values
 
@@ -139,7 +141,7 @@ def get_shap_values(model, model_name, training_data, evaluation_dict, backgroun
 		# 	stacked_shap = evaluation_dict[key]['shap_values']
 		# 	stacked_shap = np.stack(stacked_shap, axis=0)
 		# 	evaluation_dict[key]['shap_values'] = stacked_shap
-		
+
 		# with open(f'outputs/shap_values/{model_name}_evaluation_dict.pkl', 'wb') as f:
 		# 	pickle.dump(evaluation_dict, f)
 
@@ -325,10 +327,10 @@ def main(reverse=False):
 
 		print(f'Working on region {region}....')
 
-		if os.path.exists(f'outputs/shap_values/full_twins_region_{region}_evaluation_dict.pkl'):
+		if os.path.exists(f'outputs/shap_values/twins_region_{region}_evaluation_dict.pkl'):
 			print(f'Shap values for region {region} already exist. Skipping....')
 			continue
-			
+
 		if not os.path.exists(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5'):
 			print(f'Model for region {region} is not finished training yet. Skipping....')
 			continue
