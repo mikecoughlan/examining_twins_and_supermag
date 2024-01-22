@@ -43,6 +43,7 @@ python3 twins_modeling_v0.py --region 26
 python3 twins_modeling_v0.py --region 166
 python3 twins_modeling_v0.py --region 86
 python3 twins_modeling_v0.py --region 194
+python3 twins_modeling_v0.py --region 401
 
 
 

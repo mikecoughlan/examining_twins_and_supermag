@@ -92,10 +92,12 @@ CONFIG = {'region_numbers': [194, 270, 287, 207, 62, 241, 366, 387, 223, 19, 163
 
 region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 						387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
-						62, 327, 293, 241, 107, 55, 111]
+						62, 327, 293, 241, 107, 55, 111, 401]
+
+# region_numbers = [16, 19, 26, 62, 86, 107, 163, 166, 194, 223, 241, 270, 293, 321, 327, 387]
 
 TARGET = 'rsd'
-VERSION = 'final'
+VERSION = 'final_new_concat'
 
 
 def loading_data(target_var, region):
@@ -348,16 +350,17 @@ def full_model(encoder, sw_and_mag_input_shape, twins_input_shape, early_stop_pa
 
 	flat = Flatten()(conv2)
 
+	# combined = concatenate([flat, encoder])
+	dense1 = Dense((CONFIG['initial_filters']*2), activation='relu')(flat)
+
 	# twins input
 	twins_input = Input(shape=twins_input_shape)
 	encoder = encoder(twins_input)
 	encoder = Flatten()(encoder)
 
-	# combining the two
-	combined = concatenate([flat, encoder])
-	dense1 = Dense((CONFIG['initial_filters']*2)+64, activation='relu')(combined)
-	drop1 = Dropout(0.2)(dense1)
-	dense2 = Dense(CONFIG['initial_filters'], activation='relu')(drop1)
+	combined = concatenate([dense1, encoder])	
+	drop1 = Dropout(0.2)(combined)
+	dense2 = Dense(CONFIG['initial_filters']+32, activation='relu')(drop1)
 	drop2 = Dropout(0.2)(dense2)
 	output = Dense(2, activation='linear')(drop2)
 
@@ -511,11 +514,11 @@ def main(region):
 	print('Fitting model...')
 	MODEL = fit_full_model(MODEL, xtrain, xval, ytrain, yval, twins_train, twins_val, early_stop, region)
 
-	# # making predictions
-	# print('Making predictions...')
-	# results_df = making_predictions(model=MODEL, Xtest=xtest, twins_test=twins_test, ytest=ytest, test_dates=dates_dict['test'])
+	# making predictions
+	print('Making predictions...')
+	results_df = making_predictions(model=MODEL, Xtest=xtest, twins_test=twins_test, ytest=ytest, test_dates=dates_dict['test'])
 
-	# results_df.to_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather')
+	results_df.to_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather')
 
 
 
@@ -530,7 +533,11 @@ if __name__ == '__main__':
 	args=parser.parse_args()
 
 	if not os.path.exists(f'models/{TARGET}/twins_region_{args.region}_v{VERSION}.h5'):
-		main(args.region)
-		print('It ran. God job!')
+		if not os.path.exists(f'outputs/{TARGET}/twins_modeling_region_{args.region}_version_{VERSION}.feather'):
+			print(f'Runing region {args.region}...')
+			main(args.region)
+			print('It ran. God job!')
+		else:
+			print(f'Already have results for this region {args.region}. Skipping...')
 	else:
-		print('Already ran this region. Skipping...')
+		print(f'Already ran region {args.region}. Skipping...')

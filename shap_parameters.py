@@ -14,7 +14,6 @@ import tensorflow as tf
 from matplotlib import colors
 from tensorflow.keras.models import Sequential, load_model
 from tqdm import tqdm
-import gc 
 
 import non_twins_modeling_final_version as modeling
 import utils
@@ -147,7 +146,9 @@ def converting_shap_to_percentages(shap_values, features):
 
 def preparing_shap_values_for_plotting(df, dates):
 
-	df = handling_gaps(df, 1000, dates)
+	df = handling_gaps(df, 2000, dates)
+
+	df = df['2012-03-09 00:00:00':'2012-03-10 00:00:00']
 
 	# Seperating the positive contributions from the negative for plotting
 	pos_df = df.mask(df < 0, other=0)
@@ -297,9 +298,9 @@ def main():
 
 	for region in REGIONS:
 
-		if os.path.exists(f'outputs/shap_values/non_twins_region_{region}_evaluation_dict.pkl'):
-			print(f'Shap values for region {region} already exist. Skipping....')
-			continue
+		# if os.path.exists(f'outputs/shap_values/non_twins_region_{region}_evaluation_dict.pkl'):
+		# 	print(f'Shap values for region {region} already exist. Skipping....')
+		# 	continue
 
 		print(f'Preparing data....')
 		xtrain, ___, xtest, ytrain, ____, ytest, dates_dict, features = modeling.getting_prepared_data(target_var=TARGET, region=region, get_features=True)

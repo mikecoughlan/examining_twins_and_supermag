@@ -486,8 +486,8 @@ if __name__ == '__main__':
 
 	args=parser.parse_args()
 
- 	if not os.path.exists(f'models/{TARGET}/non_twins_region_{args.region}_version_{VERSION}.h5'):
- 		main(args.region)
- 		print('It ran. God job!')
- 	else:
- 		print('Already ran this region. Skipping...')
+	if not os.path.exists(f'models/{TARGET}/non_twins_region_{args.region}_version_{VERSION}.h5'):
+		main(args.region)
+		print('It ran. God job!')
+	else:
+		print('Already ran this region. Skipping...')

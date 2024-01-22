@@ -24,13 +24,13 @@ data_dir = '../../../../data/'
 supermag_dir = data_dir+'supermag/feather_files/'
 regions_dict = data_dir+'mike_working_dir/identifying_regions_data/adjusted_regions.pkl'
 
-VERSION = 'twins_final'
+VERSION = 'final'
 TARGET = 'rsd'
 
 def load_predictions(region=None, version=VERSION):
 
-	if os.path.exists(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_final_2.feather'):
-		predictions = pd.read_feather(f'outputs/{TARGET}/non_twins_modeling_region_{region}_version_final_2.feather')
+	if os.path.exists(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather'):
+		predictions = pd.read_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather')
 		predictions.set_index('dates', inplace=True)
 		predictions.index = pd.to_datetime(predictions.index, format = '%Y-%m-%d %H:%M:%S')
 
@@ -138,10 +138,9 @@ def plotting_continuious_reliability_diagram(all_predictions, version=VERSION):
 		predictions = all_predictions[region]['dataframe'].dropna(inplace=False, subset=['actual', 'predicted_mean', 'predicted_std'])
 		actual = predictions['actual']
 		predicted_mean = predictions['predicted_mean']
-		predicted_std = predictions['predicted_std']
+		predicted_std = predictions['predicted_std'].abs()
 
 		standard_error = (actual - predicted_mean)/(np.sqrt(2) * predicted_std).to_numpy() #Standard error for each parameter
-		print(standard_error.isnull().sum())
 		cumulative_dist = np.zeros((len(x), 1)) #Cumulative distribution for each parameter
 		for i in standard_error.index:
 			cumulative_dist[:,0] += (1/len(standard_error)) * np.heaviside(x - 0.5*(erf(standard_error.loc[i])+1) , 1) #Calculate the cumulative distribution for each parameter
@@ -315,7 +314,7 @@ def line_plot(all_predictions=None, std=False, version=VERSION, multiple_models=
 	'''
 
 	segmenting_int = 2000
-	gap_tolerance = 100
+	gap_tolerance = 2000
 
 	# check if the version keyword is a list or an int
 	if multiple_models:
@@ -358,8 +357,9 @@ def line_plot(all_predictions=None, std=False, version=VERSION, multiple_models=
 	else:
 		for region in all_predictions.keys():
 			predictions = all_predictions[region]['dataframe']
-			predictions = handling_gaps(predictions, 100)
-			predictions = predictions.iloc[segmenting_int:segmenting_int+1000]
+			predictions = handling_gaps(predictions, gap_tolerance)
+			# predictions = predictions.iloc[segmenting_int:segmenting_int+1000]
+			predictions = predictions['2012-03-09 00:00:00':'2012-03-10 00:00:00']
 			fig = plt.figure(figsize=(20,10))
 			ax = fig.add_subplot(111)
 			ax.plot(predictions['actual'], label='Actual')
@@ -396,13 +396,16 @@ def main():
 	if not os.path.exists(f'outputs/{TARGET}/analysis_plots_modeling_v{VERSION}/'):
 		os.makedirs(f'outputs/{TARGET}/analysis_plots_modeling_v{VERSION}/')
 
-	all_predictions = {region:{} for region in REGIONS}
+	all_predictions = {}
 
 	for region in REGIONS:
-	 	predictions = load_predictions(region)
-	 	predictions, average_mlat = attaching_mlt(predictions, region)
-	 	all_predictions[region]['dataframe'] = predictions
-	 	all_predictions[region]['average_mlat'] = average_mlat
+		if not os.path.exists(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather'):
+			continue
+		all_predictions[region] = {}
+		predictions = load_predictions(region)
+		predictions, average_mlat = attaching_mlt(predictions, region)
+		all_predictions[region]['dataframe'] = predictions
+		all_predictions[region]['average_mlat'] = average_mlat
 
 	plotting_continuious_reliability_diagram(all_predictions)
 

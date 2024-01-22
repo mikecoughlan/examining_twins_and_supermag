@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import shap
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import tensorflow as tf
 from matplotlib import colors
 from tensorflow.keras.models import Sequential, load_model
@@ -101,8 +102,8 @@ def get_shap_values(model, model_name, training_data, evaluation_dict, backgroun
 										for each of the model outputs.
 	'''
 
-	if os.path.exists(f'outputs/shap_values/{model_name}_evaluation_dict.pkl'):
-		with open(f'outputs/shap_values/{model_name}_evaluation_dict.pkl', 'rb') as f:
+	if os.path.exists(f'outputs/shap_values/full_{model_name}_evaluation_dict.pkl'):
+		with open(f'outputs/shap_values/full_{model_name}_evaluation_dict.pkl', 'rb') as f:
 			evaluation_dict = pickle.load(f)
 
 	else:
@@ -131,16 +132,16 @@ def get_shap_values(model, model_name, training_data, evaluation_dict, backgroun
 			# shap_values = explainer.shap_values([evaluation_dict[key]['xtest'], evaluation_dict[key]['twins_test']], check_additivity=False)
 			evaluation_dict[key]['shap_values'] = shap_values
 
-		with open(f'outputs/shap_values/{model_name}_evaluation_dict.pkl', 'wb') as f:
+		with open(f'outputs/shap_values/full_{model_name}_evaluation_dict.pkl', 'wb') as f:
 			pickle.dump(evaluation_dict, f)
 
-		for key in evaluation_dict.keys():
-			stacked_shap = evaluation_dict[key]['shap_values']
-			stacked_shap = np.stack(stacked_shap, axis=0)
-			evaluation_dict[key]['shap_values'] = stacked_shap
+		# for key in evaluation_dict.keys():
+		# 	stacked_shap = evaluation_dict[key]['shap_values']
+		# 	stacked_shap = np.stack(stacked_shap, axis=0)
+		# 	evaluation_dict[key]['shap_values'] = stacked_shap
 		
-		with open(f'outputs/shap_values/{model_name}_evaluation_dict.pkl', 'wb') as f:
-			pickle.dump(evaluation_dict, f)
+		# with open(f'outputs/shap_values/{model_name}_evaluation_dict.pkl', 'wb') as f:
+		# 	pickle.dump(evaluation_dict, f)
 
 	return evaluation_dict
 
@@ -168,7 +169,9 @@ def converting_shap_to_percentages(shap_values, features):
 
 def preparing_shap_values_for_plotting(df, dates):
 
-	df = handling_gaps(df, 1000, dates)
+	df = handling_gaps(df, 15, dates)
+
+	df = df['2012-03-09 00:00:00':'2012-03-10 00:00:00']
 
 	# Seperating the positive contributions from the negative for plotting
 	pos_df = df.mask(df < 0, other=0)
@@ -320,7 +323,9 @@ def main(reverse=False):
 
 	for region in looping_regions:
 
-		if os.path.exists(f'outputs/shap_values/twins_region_{region}_evaluation_dict.pkl'):
+		print(f'Working on region {region}....')
+
+		if os.path.exists(f'outputs/shap_values/full_twins_region_{region}_evaluation_dict.pkl'):
 			print(f'Shap values for region {region} already exist. Skipping....')
 			continue
 			
@@ -344,7 +349,7 @@ def main(reverse=False):
 		MODEL = loading_model(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')
 
 		print('Getting shap values....')
-		evaluation_dict = get_shap_values(model=MODEL, model_name=f'twins_region_{region}', training_data=[xtrain,twins_train], evaluation_dict=evaluation_dict, background_examples=100)
+		evaluation_dict = get_shap_values(model=MODEL, model_name=f'twins_region_{region}', training_data=[xtrain,twins_train], evaluation_dict=evaluation_dict, background_examples=500)
 
 		print('Plotting shap values....')
 		# plotting_shap_values(evaluation_dict, features, region)
@@ -409,6 +414,11 @@ if __name__ == '__main__':
 						type=bool,
 						default=False,
 						help='calculate the shap values in reverse order of listed regions or not. This is done to train on both servers.')
+	parser.add_argument('--gpu',
+						action='store',
+						type=bool,
+						default=True,
+						help='whether or not to engage the gpu when loading the models.')
 
 	args=parser.parse_args()
 
@@ -416,6 +426,10 @@ if __name__ == '__main__':
 		print('Calculating shap values in reverse order of listed regions.')
 	else:
 		print('Calculating shap values in regular order of listed regions.')
+
+	if not args.gpu:
+		os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+		print('Skipping use of the GPU')
 
 	main(reverse = args.reverse_regions)
 
