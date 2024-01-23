@@ -255,15 +255,26 @@ def getting_prepared_data(target_var, region, get_features=False):
 
 	# scaling the twins maps
 	twins_scaling_array = np.vstack(twins_train)
-	twins_scaler = StandardScaler()
-	twins_scaler.fit(twins_scaling_array)
-	twins_train = [twins_scaler.transform(x) for x in twins_train]
-	twins_val = [twins_scaler.transform(x) for x in twins_val]
-	twins_test = [twins_scaler.transform(x) for x in twins_test]
+	twins_scaling_array = twins_scaling_array.flatten()
+	
+	# dropping all negative values
+	twins_scaling_array = twins_scaling_array[twins_scaling_array>0]
 
-	# saving teh scalers
+	# getting the mean and std of the scaling twins maps
+	scaling_mean = twins_scaling_array.mean()
+	scaling_std = twins_scaling_array.std()
+
+	# scaling the twins maps
+	def scaling(x, mean, std):
+		return (x-mean)/std
+
+	twins_train = [scaling(x, scaling_mean, scaling_std) for x in twins_train]
+	twins_val = [scaling(x, scaling_mean, scaling_std) for x in twins_val]
+	twins_test = [scaling(x, scaling_mean, scaling_std) for x in twins_test]
+
+	# saving the scalers
 	with open(f'models/{TARGET}/twins_region_{region}_version_{VERSION}_scaler.pkl', 'wb') as f:
-		pickle.dump({'mag_and_solarwind':scaler, 'twins':twins_scaler}, f)
+		pickle.dump({'mag_and_solarwind':scaler, 'twins_mean':scaling_mean, 'twins_std':scaling_std}, f)
 
 
 	# splitting the sequences for input to the CNN
@@ -358,9 +369,11 @@ def full_model(encoder, sw_and_mag_input_shape, twins_input_shape, early_stop_pa
 
 	combined = concatenate([dense1, encoder])
 	drop1 = Dropout(0.2)(combined)
-	dense2 = Dense(CONFIG['initial_filters']+32, activation='relu')(drop1)
+	dense2 = Dense(CONFIG['initial_filters'], activation='relu')(drop1)
 	drop2 = Dropout(0.2)(dense2)
-	output = Dense(2, activation='linear')(drop2)
+	dense3 = Dense(CONFIG['initial_filters']/2, activation='relu')(drop2)
+	drop3 = Dropout(0.2)(dense3)
+	output = Dense(2, activation='linear')(drop3)
 
 	model = Model(inputs=[inputs, twins_input], outputs=output)
 
