@@ -256,7 +256,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 	# scaling the twins maps
 	twins_scaling_array = np.vstack(twins_train)
 	twins_scaling_array = twins_scaling_array.flatten()
-	
+
 	# dropping all negative values
 	twins_scaling_array = twins_scaling_array[twins_scaling_array>0]
 
@@ -378,7 +378,7 @@ def full_model(encoder, sw_and_mag_input_shape, twins_input_shape, early_stop_pa
 	model = Model(inputs=[inputs, twins_input], outputs=output)
 
 	opt = tf.keras.optimizers.Adam(learning_rate=CONFIG['learning_rate'])		# learning rate that actually started producing good results
-	model.compile(optimizer=opt, loss=CRPS)				
+	model.compile(optimizer=opt, loss=CRPS)
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
 	return model, early_stop
@@ -414,7 +414,7 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, ea
 		Xval = xval.reshape((xval.shape[0], xval.shape[1], xval.shape[2], 1))
 		# twins_val = twins_val.reshape((twins_val.shape[0], twins_val.shape[1], twins_val.shape[2], 1))
 
-		print('Mean of target variable: '+str(ytrain.mean()))	
+		print('Mean of target variable: '+str(ytrain.mean()))
 		print('Std of target variable: '+str(ytrain.std()))
 		print('Max of target variable: '+str(ytrain.max()))
 		print('Min of target variable: '+str(ytrain.min()))
@@ -543,8 +543,8 @@ if __name__ == '__main__':
 
 	args=parser.parse_args()
 
-	if os.path.exists(f'models/{TARGET}/twins_region_{args.region}_v{VERSION}.h5'):
-		if os.path.exists(f'outputs/{TARGET}/twins_modeling_region_{args.region}_version_{VERSION}.feather'):
+	if not os.path.exists(f'models/{TARGET}/twins_region_{args.region}_v{VERSION}.h5'):
+		if not os.path.exists(f'outputs/{TARGET}/twins_modeling_region_{args.region}_version_{VERSION}.feather'):
 			print(f'Runing region {args.region}...')
 			main(args.region)
 			print('It ran. God job!')
