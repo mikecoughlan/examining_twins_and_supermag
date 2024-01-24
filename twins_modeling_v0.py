@@ -543,7 +543,7 @@ if __name__ == '__main__':
 
 	args=parser.parse_args()
 
-	if os.path.exists(f'models/{TARGET}/twins_region_{args.region}_v{VERSION}.h5'):
+	if not os.path.exists(f'models/{TARGET}/twins_region_{args.region}_v{VERSION}.h5'):
 		if not os.path.exists(f'outputs/{TARGET}/twins_modeling_region_{args.region}_version_{VERSION}.feather'):
 			print(f'Runing region {args.region}...')
 			main(args.region)
