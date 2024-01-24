@@ -43,7 +43,7 @@ VERSION = 'final_new_concat'
 # REGIONS = [387, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 # 			61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
 # 			62, 327, 293, 241, 107, 55, 111, 83, 143, 223, 401]
-REGIONS = [387]
+REGIONS = [82, 387]
 # REGIONS = [83]
 
 
@@ -325,7 +325,7 @@ def main(reverse=False):
 
 		print(f'Working on region {region}....')
 
-		if os.path.exists(f'outputs/shap_values/twins_region_{region}_evaluation_dict.pkl'):
+		if os.path.exists(f'outputs/shap_values/full_concat_twins_region_{region}_evaluation_dict.pkl'):
 			print(f'Shap values for region {region} already exist. Skipping....')
 			continue
 
