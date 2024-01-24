@@ -1,3 +1,5 @@
+# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+import argparse
 import datetime as dt
 import gc
 import json
@@ -10,11 +12,6 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import shap
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-import argparse
-import gc
-
 import tensorflow as tf
 from matplotlib import colors
 from tensorflow.keras.models import Sequential, load_model
@@ -42,10 +39,11 @@ CONFIG = {'region_numbers': [44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 
 			'early_stop_patience':25}
 
 TARGET = 'rsd'
-VERSION = 'final'
-REGIONS = [44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
-			61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
-			62, 327, 293, 241, 107, 55, 111, 83, 143, 223, 387]
+VERSION = 'final_new_concat'
+# REGIONS = [387, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
+# 			61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
+# 			62, 327, 293, 241, 107, 55, 111, 83, 143, 223, 401]
+REGIONS = [387]
 # REGIONS = [83]
 
 
@@ -104,8 +102,8 @@ def get_shap_values(model, model_name, training_data, evaluation_dict, backgroun
 										for each of the model outputs.
 	'''
 
-	if os.path.exists(f'outputs/shap_values/full_{model_name}_evaluation_dict.pkl'):
-		with open(f'outputs/shap_values/full_{model_name}_evaluation_dict.pkl', 'rb') as f:
+	if os.path.exists(f'outputs/shap_values/full_concat_{model_name}_evaluation_dict.pkl'):
+		with open(f'outputs/shap_values/full_concat_{model_name}_evaluation_dict.pkl', 'rb') as f:
 			evaluation_dict = pickle.load(f)
 
 	else:
@@ -134,7 +132,7 @@ def get_shap_values(model, model_name, training_data, evaluation_dict, backgroun
 			# shap_values = explainer.shap_values([evaluation_dict[key]['xtest'], evaluation_dict[key]['twins_test']], check_additivity=False)
 			evaluation_dict[key]['shap_values'] = shap_values
 
-		with open(f'outputs/shap_values/full_{model_name}_evaluation_dict.pkl', 'wb') as f:
+		with open(f'outputs/shap_values/full_concat_{model_name}_evaluation_dict.pkl', 'wb') as f:
 			pickle.dump(evaluation_dict, f)
 
 		# for key in evaluation_dict.keys():
@@ -351,7 +349,8 @@ def main(reverse=False):
 		MODEL = loading_model(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')
 
 		print('Getting shap values....')
-		evaluation_dict = get_shap_values(model=MODEL, model_name=f'twins_region_{region}', training_data=[xtrain,twins_train], evaluation_dict=evaluation_dict, background_examples=500)
+		evaluation_dict = get_shap_values(model=MODEL, model_name=f'twins_region_{region}', training_data=[xtrain,twins_train],
+											evaluation_dict=evaluation_dict, background_examples=100)
 
 		print('Plotting shap values....')
 		# plotting_shap_values(evaluation_dict, features, region)
@@ -429,9 +428,9 @@ if __name__ == '__main__':
 	else:
 		print('Calculating shap values in regular order of listed regions.')
 
-	if not args.gpu:
-		os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-		print('Skipping use of the GPU')
+	# if not args.gpu:
+	# 	os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+	# 	print('Skipping use of the GPU')
 
 	main(reverse = args.reverse_regions)
 
