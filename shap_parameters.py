@@ -33,7 +33,7 @@ MODEL_CONFIG = {'initial_filters': 128,
 				'epochs':500}
 
 TARGET = 'rsd'
-VERSION = 'final_2'
+VERSION = 'final_new_concat'
 REGIONS = [387, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 			61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
 			62, 327, 293, 241, 107, 55, 111, 83, 143, 223, 401]
@@ -313,10 +313,11 @@ def main():
 		evaluation_dict = segmenting_testing_data(xtest, ytest, dates_dict['test'], storm_months=['2017-09-01', '2012-03-07'])
 
 		print('Loading model....')
-		MODEL = loading_model(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')
+		MODEL = loading_model(f'models/{TARGET}/twins_region_{region}_version_{VERSION}.h5')
 
 		print('Getting shap values....')
-		evaluation_dict = get_shap_values(model=MODEL, model_name=f'non_twins_region_{region}', training_data=xtrain, evaluation_dict=evaluation_dict)
+		evaluation_dict = get_shap_values(model=MODEL, model_name=f'new_concat_region_{region}', training_data=xtrain, 
+											evaluation_dict=evaluation_dict, background_examples=100)
 
 		print('Plotting shap values....')
 		plotting_shap_values(evaluation_dict, features, region)
