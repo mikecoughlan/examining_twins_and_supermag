@@ -421,13 +421,7 @@ def main():
 	run_server(storage)
 
 	optuna.visualization.plot_param_importances(study).write_image('plots/dense_param_importances.png')
-
-	best_model, ___ = Autoencoder(input_shape, study.best_params)
-
-	best_model.evaluate(test, test)
-
-	best_model.save('models/best_dense_autoencoder.h5')
-
+	optuna.visualization.plot_slice(study).write_image('plots/dense_slice.png')
 	optuna.visualization.plot_optimization_history(study).write_image('plots/optimization_history_dense_version.png')
 
 
