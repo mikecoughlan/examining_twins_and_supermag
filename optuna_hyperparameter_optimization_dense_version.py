@@ -234,7 +234,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 	twins_test = np.array([twins_scaler.transform(x) for x in twins_test])
 
 	# saving the scalers
-	with open(f'models/{TARGET}/twins_region_{region}_version_{VERSION}_scaler.pkl', 'wb') as f:
+	with open(f'models/rsd/twins_region_{region}_version_{VERSION}_scaler.pkl', 'wb') as f:
 		pickle.dump({'mag_and_solarwind':scaler, 'twins':twins_scaler}, f)
 
 	# splitting the sequences for input to the CNN
@@ -252,7 +252,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 	date_dict['test'].reset_index(drop=True, inplace=True)
 
 	# reshaping the data to be 4D for the CNN
-	x_train = x_train.reshape((x_train.shape[0], xtrain.shape[1], x_train.shape[2], 1))
+	x_train = x_train.reshape((x_train.shape[0], x_train.shape[1], x_train.shape[2], 1))
 	x_val = x_val.reshape((x_val.shape[0], x_val.shape[1], x_val.shape[2], 1))
 	x_test = x_test.reshape((x_test.shape[0], x_test.shape[1], x_test.shape[2], 1))
 
@@ -335,7 +335,7 @@ def Convolutional_Neural_Network(swmag_input_shape, twins_input_shape, encoder, 
 	dropout_rate = trial.suggest_uniform('dropout_rate', 0.2, 0.6)
 
 
-	inputs = Input(shape=input_shape)
+	inputs = Input(shape=swmag_input_shape)
 	c = Conv2D(initial_filters, window_size, padding='same', activation='relu')(inputs)			# adding the CNN layer
 	for i in range(cnn_layers):
 		c = Conv2D(initial_filters*(2*(i+1)), window_size, padding='same', activation='relu')(c)			# adding the CNN layer
@@ -368,7 +368,8 @@ def Convolutional_Neural_Network(swmag_input_shape, twins_input_shape, encoder, 
 
 def objective(trial, xtrain, twins_train, ytrain, xval, twins_val, yval, xtest, twins_test, ytest, swmag_input_shape, twins_input_shape):
 
-	encoder = load-model('models/best_autoencoder.h5')
+	encoder = load_model('models/best_autoencoder.h5')
+	encoder.trainable = False
 	model, early_stop = Convolutional_Neural_Network(swmag_input_shape, twins_input_shape, encoder, trial)
 	print(model.summary())
 	clear_session()
@@ -378,8 +379,8 @@ def objective(trial, xtrain, twins_train, ytrain, xval, twins_val, yval, xtest, 
 					verbose=1, shuffle=True, epochs=200, callbacks=[early_stop], batch_size=8)			# doing the training! Yay!
 	except:
 		try:
-			gen = Generator(features=[Xtrain, twins_train], results=ytrain, batch_size=2)
-			val_gen = Generator(features=[Xval, twins_val], results=yval, batch_size=2)
+			gen = Generator(features=[xtrain, twins_train], results=ytrain, batch_size=2)
+			val_gen = Generator(features=[xval, twins_val], results=yval, batch_size=2)
 
 			model.fit(x=gen, validation_data=(val_gen),
 					verbose=1, shuffle=True, epochs=200, callbacks=[early_stop], batch_size=2)
@@ -403,7 +404,7 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	xtrain, xval, xtest, ytrain, yval, ytest, twins_train, twins_val, twins_test, dates_dict = getting_prepared_data(target_var='rsd', region=region)
+	xtrain, xval, xtest, ytrain, yval, ytest, twins_train, twins_val, twins_test, dates_dict = getting_prepared_data(target_var='rsd', region=region_number)
 
 
 	# getting the input shapes for the model
@@ -412,7 +413,7 @@ def main():
 
 	storage = optuna.storages.InMemoryStorage()
 	# reshaping the model input vectors for a single channel
-	study = optuna.create_study(direction='minimize', study_name='autoencoder_optimization_trial')
+	study = optuna.create_study(direction='minimize', study_name='cnn_dense_optimization_trial')
 	study.optimize(lambda trial: objective(trial, xtrain, twins_train, ytrain, xval, twins_val, yval, 
 											xtest, twins_test, ytest, swmag_input_shape, twins_input_shape), 
 											n_trials=50, callbacks=[lambda study, trial: gc.collect()])
