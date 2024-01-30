@@ -5,12 +5,12 @@
 
 # Loop through regions and run non_twins_modeling_final_version for each one
 python3 twins_modeling_v0.py --region 387
+python3 twins_modeling_v0.py --region 82
 python3 twins_modeling_v0.py --region 19
 python3 twins_modeling_v0.py --region 9
 python3 twins_modeling_v0.py --region 163
 python3 twins_modeling_v0.py --region 16
 python3 twins_modeling_v0.py --region 270
-python3 twins_modeling_v0.py --region 82
 python3 twins_modeling_v0.py --region 83
 python3 twins_modeling_v0.py --region 143
 python3 twins_modeling_v0.py --region 223
