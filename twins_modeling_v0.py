@@ -246,12 +246,12 @@ def getting_prepared_data(target_var, region, get_features=False):
 	date_dict['test'].rename(columns={date_dict['test'].columns[0]:'Date_UTC'}, inplace=True)
 
 	# scaling the solar wind and mag data
-	to_scale_with = pd.concat(x_train, axis=0)
-	scaler = StandardScaler()
-	scaler.fit(to_scale_with)
-	x_train = [scaler.transform(x) for x in x_train]
-	x_val = [scaler.transform(x) for x in x_val]
-	x_test = [scaler.transform(x) for x in x_test]
+	# to_scale_with = pd.concat(x_train, axis=0)
+	# scaler = StandardScaler()
+	# scaler.fit(to_scale_with)
+	# x_train = [scaler.transform(x) for x in x_train]
+	# x_val = [scaler.transform(x) for x in x_val]
+	# x_test = [scaler.transform(x) for x in x_test]
 
 	# scaling the twins maps
 	twins_scaling_array = np.vstack(twins_train)
@@ -268,9 +268,16 @@ def getting_prepared_data(target_var, region, get_features=False):
 	def scaling(x, mean, std):
 		return (x-mean)/std
 
+	print(f"Scaling mean and std: {scaling_mean}, {scaling_std}")
+	print(twins_train[0])
+
 	twins_train = [scaling(x, scaling_mean, scaling_std) for x in twins_train]
 	twins_val = [scaling(x, scaling_mean, scaling_std) for x in twins_val]
 	twins_test = [scaling(x, scaling_mean, scaling_std) for x in twins_test]
+
+	print(twins_train[0])
+
+	raise
 
 	# saving the scalers
 	with open(f'models/{TARGET}/twins_region_{region}_version_{VERSION}_scaler.pkl', 'wb') as f:
@@ -543,8 +550,8 @@ if __name__ == '__main__':
 
 	args=parser.parse_args()
 
-	if not os.path.exists(f'models/{TARGET}/twins_region_{args.region}_v{VERSION}.h5'):
-		if not os.path.exists(f'outputs/{TARGET}/twins_modeling_region_{args.region}_version_{VERSION}.feather'):
+	if os.path.exists(f'models/{TARGET}/twins_region_{args.region}_v{VERSION}.h5'):
+		if os.path.exists(f'outputs/{TARGET}/twins_modeling_region_{args.region}_version_{VERSION}.feather'):
 			print(f'Runing region {args.region}...')
 			main(args.region)
 			print('It ran. God job!')
