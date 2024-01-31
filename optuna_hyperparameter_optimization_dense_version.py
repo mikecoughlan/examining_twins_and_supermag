@@ -67,7 +67,8 @@ twins_times_path = 'outputs/regular_twins_map_dates.feather'
 rsd_path = working_dir+'identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
 random_seed = 7
 
-VERSION = 'optimizing_autoencoder'
+VERSION = 'optimizing_dense'
+
 
 def loading_data(target_var, region):
 
@@ -128,8 +129,10 @@ def getting_prepared_data(target_var, region, get_features=False):
 	print(f'Target value positive percentage: {target.sum()/len(target)}')
 	# merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
 
-	if os.path.exists(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl'):
-		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'rb') as f:
+	temp_version = 'final_1'
+
+	if os.path.exists(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl'):
+		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'rb') as f:
 			storms_extracted_dict = pickle.load(f)
 		storms = storms_extracted_dict['storms']
 		target = storms_extracted_dict['target']
@@ -138,7 +141,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 		# getting the data corresponding to the twins maps
 		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var=f'rolling_{target_var}', concat=False, map_keys=maps.keys())
 		storms_extracted_dict = {'storms':storms, 'target':target}
-		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'wb') as f:
+		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'wb') as f:
 			pickle.dump(storms_extracted_dict, f)
 
 	print('Columns in Dataframe: '+str(storms[0].columns))
@@ -206,6 +209,22 @@ def getting_prepared_data(target_var, region, get_features=False):
 			twins_test.append(maps[twins_map]['map'])
 			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
 
+	date_dict['train'].reset_index(drop=True, inplace=True)
+	date_dict['val'].reset_index(drop=True, inplace=True)
+	date_dict['test'].reset_index(drop=True, inplace=True)
+
+	date_dict['train'].rename(columns={date_dict['train'].columns[0]:'Date_UTC'}, inplace=True)
+	date_dict['val'].rename(columns={date_dict['val'].columns[0]:'Date_UTC'}, inplace=True)
+	date_dict['test'].rename(columns={date_dict['test'].columns[0]:'Date_UTC'}, inplace=True)
+
+	# scaling the solar wind and mag data
+	to_scale_with = pd.concat(x_train, axis=0)
+	scaler = StandardScaler()
+	scaler.fit(to_scale_with)
+	x_train = [scaler.transform(x) for x in x_train]
+	x_val = [scaler.transform(x) for x in x_val]
+	x_test = [scaler.transform(x) for x in x_test]
+
 	# scaling the twins maps
 	twins_scaling_array = np.vstack(twins_train)
 	twins_scaler = MinMaxScaler()
@@ -214,81 +233,166 @@ def getting_prepared_data(target_var, region, get_features=False):
 	twins_val = np.array([twins_scaler.transform(x) for x in twins_val])
 	twins_test = np.array([twins_scaler.transform(x) for x in twins_test])
 
-	input_shape = (twins_train.shape[1], twins_train.shape[2], 1)
+	# saving the scalers
+	with open(f'models/rsd/twins_region_{region}_version_{VERSION}_scaler.pkl', 'wb') as f:
+		pickle.dump({'mag_and_solarwind':scaler, 'twins':twins_scaler}, f)
 
-	return twins_train, twins_val, twins_test, input_shape
+	# splitting the sequences for input to the CNN
+	x_train, y_train, train_dates_to_drop, twins_train = utils.split_sequences(x_train, y_train, n_steps=CONFIG['time_history'], dates=date_dict['train'], model_type='regression', maps=twins_train)
+	x_val, y_val, val_dates_to_drop, twins_val = utils.split_sequences(x_val, y_val, n_steps=CONFIG['time_history'], dates=date_dict['val'], model_type='regression', maps=twins_val)
+	x_test, y_test, test_dates_to_drop, twins_test = utils.split_sequences(x_test, y_test, n_steps=CONFIG['time_history'], dates=date_dict['test'], model_type='regression', maps=twins_test)
+
+	# dropping the dates that correspond to arrays that would have had nan values
+	date_dict['train'].drop(train_dates_to_drop, axis=0, inplace=True)
+	date_dict['val'].drop(val_dates_to_drop, axis=0, inplace=True)
+	date_dict['test'].drop(test_dates_to_drop, axis=0, inplace=True)
+
+	date_dict['train'].reset_index(drop=True, inplace=True)
+	date_dict['val'].reset_index(drop=True, inplace=True)
+	date_dict['test'].reset_index(drop=True, inplace=True)
+
+	# reshaping the data to be 4D for the CNN
+	x_train = x_train.reshape((x_train.shape[0], x_train.shape[1], x_train.shape[2], 1))
+	x_val = x_val.reshape((x_val.shape[0], x_val.shape[1], x_val.shape[2], 1))
+	x_test = x_test.reshape((x_test.shape[0], x_test.shape[1], x_test.shape[2], 1))
+
+	# reshaping the twins maps to be 4D for the CNN
+	twins_train = twins_train.reshape((twins_train.shape[0], twins_train.shape[1], twins_train.shape[2], 1))
+	twins_val = twins_val.reshape((twins_val.shape[0], twins_val.shape[1], twins_val.shape[2], 1))
+	twins_test = twins_test.reshape((twins_test.shape[0], twins_test.shape[1], twins_test.shape[2], 1))
 
 
-def Autoencoder(input_shape, trial, early_stopping_patience=10):
+	if not get_features:
+		return x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test, date_dict
+	else:
+		return x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test, date_dict, features
 
+
+def CRPS(y_true, y_pred):
+	'''
+	Defining the CRPS loss function for model training.
+
+	Args:
+		y_true (np.array): true values
+		y_pred (np.array): predicted values
+
+	Returns:
+		float: CRPS value
+	'''
+	mean, std = tf.unstack(y_pred, axis=-1)
+	y_true = tf.unstack(y_true, axis=-1)
+
+	# making the arrays the right dimensions
+	mean = tf.expand_dims(mean, -1)
+	std = tf.expand_dims(std, -1)
+	y_true = tf.expand_dims(y_true, -1)
+
+	# calculating the error
+
+	crps = tf.math.reduce_mean(calculate_crps(epsilon_error(y_true, mean), std))
+
+	return crps
+
+
+def epsilon_error(y, u):
+
+	epsilon = tf.math.abs(y-u)
+
+	return epsilon
+
+
+def calculate_crps(epsilon, sig):
+
+	crps = sig * ((epsilon/sig) * tf.math.erf((epsilon/(np.sqrt(2)*sig))) + tf.math.sqrt(2/np.pi) * tf.math.exp(-epsilon**2/(2*sig**2)) - 1/tf.math.sqrt(np.pi))
+
+	return crps
+
+
+def Convolutional_Neural_Network(swmag_input_shape, twins_input_shape, encoder, trial, early_stop_patience=25):
+	'''
+	Initializing our model
+
+	Args:
+		n_features (int): number of input features into the model
+		loss (str, optional): loss function to be uesd for training. Defaults to 'categorical_crossentropy'.
+		early_stop_patience (int, optional): number of epochs the model will continue training once there
+												is no longer val loss improvements. Defaults to 10.
+
+	Returns:
+		object: model configuration ready for training
+		object: early stopping conditions
+	'''
+
+	# defining the hyperparameters to be tuned
 
 	initial_filters = trial.suggest_categorical('initial_filters', [32, 64, 128])
-	latent_dim = trial.suggest_categorical('latent_dim', [60, 120])
 	learning_rate = trial.suggest_loguniform('learning_rate', 1e-7, 1e-2)
-	layers = trial.suggest_int('layers', 2, 4)
-	activation = trial.suggest_categorical('activation', ['relu', 'tanh', 'sigmoid'])
-	loss = trial.suggest_categorical('loss', ['mse', 'binary_crossentropy'])
+	window_size = trial.suggest_int('window_size', 1, 3)
+	stride_length = trial.suggest_int('stride_length', 1, 3)
+	cnn_layers = trial.suggest_int('cnn_layers', 1, 4)
+	dense_layers = trial.suggest_int('dense_layers', 2, 4)
+	initial_dense_nodes = trial.suggest_categorical('initial_dense_nodes', [64, 128, 256, 512])
+	dropout_rate = trial.suggest_uniform('dropout_rate', 0.2, 0.6)
 
 
-	model_input = Input(shape=input_shape, name='encoder_input')
-	filters = initial_filters
+	inputs = Input(shape=swmag_input_shape)
+	c = Conv2D(initial_filters, window_size, padding='same', activation='relu')(inputs)			# adding the CNN layer
+	for i in range(cnn_layers):
+		c = Conv2D(initial_filters*(2*(i+1)), window_size, padding='same', activation='relu')(c)			# adding the CNN layer
+		if i % 2 == 0:
+			c = MaxPooling2D()(c)
+	f = Flatten()(c)							
+	d = Dense(initial_dense_nodes, activation='relu')(f)		# Adding dense layers with dropout in between
 
-	for i in range(layers):
+	# twins input
+	twins_input = Input(shape=twins_input_shape)
+	encoder = encoder(twins_input)
+	encoder = Flatten()(encoder)
 
-		if i == 0:
-			e = Conv2D(filters=filters, kernel_size=3, activation=activation, strides=1, padding='same')(model_input)
-			filters = (filters*2)
-		elif i == (layers-1):
-			e = Conv2D(filters=filters, kernel_size=2, activation=activation, strides=2, padding='same')(e)
-		else:
-			e = Conv2D(filters=filters, kernel_size=3, activation=activation, strides=1, padding='same')(e)
-			filters = (filters*2)
+	concat = concatenate([d, encoder])
+	d = Dropout(dropout_rate)(concat)
+	for j in range(dense_layers):
+		d = Dense(int(initial_dense_nodes/(2*(j+1))), activation='relu')(d)
+		d = Dropout(dropout_rate)(d)
 
-	shape = int_shape(e)
+	output = Dense(2, activation='linear')(d)
 
-	e = Flatten()(e)
-
-	bottleneck = Dense(latent_dim, name='bottleneck')(e)
-
-	d = Dense(shape[1]*shape[2]*shape[3])(bottleneck)
-
-	d = Reshape((shape[1], shape[2], shape[3]))(d)
-
-	for i in range(layers):
-		if i == 0:
-			d = Conv2DTranspose(filters=filters, kernel_size=2, activation=activation, strides=2, padding='same')(d)
-		else:
-			d = Conv2DTranspose(filters=filters, kernel_size=3, activation=activation, strides=1, padding='same')(d)
-
-		filters = int(filters/2)
-
-	model_outputs = Conv2DTranspose(filters=1, kernel_size=1, activation='linear', padding='same', name='decoder_output')(d)
-
-	full_autoencoder = Model(inputs=model_input, outputs=model_outputs)
+	model = Model(inputs=[inputs, twins_input], outputs=output)
 
 	opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)		# learning rate that actually started producing good results
-	full_autoencoder.compile(optimizer=opt, loss=loss)					# Ive read that cross entropy is good for this type of model
-	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stopping_patience)		# early stop process prevents overfitting
+	model.compile(optimizer=opt, loss=CRPS)					# Ive read that cross entropy is good for this type of model
+	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
-	return full_autoencoder, early_stop
+	return model, early_stop
 
 
-def objective(trial, train, val, test, input_shape):
+def objective(trial, xtrain, twins_train, ytrain, xval, twins_val, yval, xtest, twins_test, ytest, swmag_input_shape, twins_input_shape):
 
-	model, early_stop = Autoencoder(input_shape, trial)
+	encoder = load_model('models/best_autoencoder.h5')
+	encoder.trainable = False
+	model, early_stop = Convolutional_Neural_Network(swmag_input_shape, twins_input_shape, encoder, trial)
 	print(model.summary())
 	clear_session()
+
 	try:
-		model.fit(train, train, validation_data=(val, val),
-				verbose=1, shuffle=True, epochs=200,
-				callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
+		model.fit(x=[xtrain,twins_train], y=ytrain, validation_data=([xval, twins_val], yval),
+					verbose=1, shuffle=True, epochs=200, callbacks=[early_stop], batch_size=8)			# doing the training! Yay!
 	except:
-		print('Resource Exhausted Error')
-		return None
-	evaluation = model.evaluate(test, test, verbose=1)
+		try:
+			gen = Generator(features=[xtrain, twins_train], results=ytrain, batch_size=2)
+			val_gen = Generator(features=[xval, twins_val], results=yval, batch_size=2)
+
+			model.fit(x=gen, validation_data=(val_gen),
+					verbose=1, shuffle=True, epochs=200, callbacks=[early_stop], batch_size=2)
+		except:
+			print('Resource Exhausted Error')
+			return None
+	
+	evaluation = model.evaluate([xtest, twins_test], ytest, verbose=1)
 	EVALUATION_DICT[trial.number] = {'evaluation':evaluation, 'params':trial.params}
-	with open('outputs/optimizing autoencoder_evaluation_dict.pkl', 'ab') as f:
+	with open('outputs/optimizing dense_version.pkl', 'ab') as f:
 		pickle.dump(EVALUATION_DICT, f)
+	
 	return evaluation
 
 
@@ -300,25 +404,26 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	train, val, test, input_shape = getting_prepared_data(target_var='rsd', region=region_number)
+	xtrain, xval, xtest, ytrain, yval, ytest, twins_train, twins_val, twins_test, dates_dict = getting_prepared_data(target_var='rsd', region=region_number)
+
+
+	# getting the input shapes for the model
+	swmag_input_shape = xtrain[0].shape
+	twins_input_shape = twins_train[0].shape
 
 	storage = optuna.storages.InMemoryStorage()
 	# reshaping the model input vectors for a single channel
-	study = optuna.create_study(direction='minimize', study_name='autoencoder_optimization_trial')
-	study.optimize(lambda trial: objective(trial, train, val, test, input_shape), n_trials=50, callbacks=[lambda study, trial: gc.collect()])
+	study = optuna.create_study(direction='minimize', study_name='cnn_dense_optimization_trial')
+	study.optimize(lambda trial: objective(trial, xtrain, twins_train, ytrain, xval, twins_val, yval, 
+											xtest, twins_test, ytest, swmag_input_shape, twins_input_shape), 
+											n_trials=50, callbacks=[lambda study, trial: gc.collect()])
 	print(study.best_params)
 
 	run_server(storage)
 
-	optuna.visualization.plot_param_importances(study).write_image('plots/param_importances.png')
-
-	best_model, ___ = Autoencoder(input_shape, study.best_params)
-
-	best_model.evaluate(test, test)
-
-	best_model.save('models/best_autoencoder.h5')
-
-	optuna.visualization.plot_optimization_history(study).write_image('plots/optimization_history.png')
+	optuna.visualization.plot_param_importances(study).write_image('plots/dense_param_importances.png')
+	optuna.visualization.plot_slice(study).write_image('plots/dense_slice.png')
+	optuna.visualization.plot_optimization_history(study).write_image('plots/optimization_history_dense_version.png')
 
 
 

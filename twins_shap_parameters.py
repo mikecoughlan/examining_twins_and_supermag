@@ -39,11 +39,11 @@ CONFIG = {'region_numbers': [44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 
 			'early_stop_patience':25}
 
 TARGET = 'rsd'
-VERSION = 'final_new_concat'
+VERSION = 'final'
 # REGIONS = [387, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 26, 166, 86,
 # 			61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 163, 16, 270, 194, 82,
 # 			62, 327, 293, 241, 107, 55, 111, 83, 143, 223, 401]
-REGIONS = [387]
+REGIONS = [82]
 # REGIONS = [83]
 
 
@@ -102,8 +102,8 @@ def get_shap_values(model, model_name, training_data, evaluation_dict, backgroun
 										for each of the model outputs.
 	'''
 
-	if os.path.exists(f'outputs/shap_values/full_concat_{model_name}_evaluation_dict.pkl'):
-		with open(f'outputs/shap_values/full_concat_{model_name}_evaluation_dict.pkl', 'rb') as f:
+	if os.path.exists(f'outputs/shap_values/{model_name}_evaluation_dict.pkl'):
+		with open(f'outputs/shap_values/{model_name}_evaluation_dict.pkl', 'rb') as f:
 			evaluation_dict = pickle.load(f)
 
 	else:
@@ -132,7 +132,7 @@ def get_shap_values(model, model_name, training_data, evaluation_dict, backgroun
 			# shap_values = explainer.shap_values([evaluation_dict[key]['xtest'], evaluation_dict[key]['twins_test']], check_additivity=False)
 			evaluation_dict[key]['shap_values'] = shap_values
 
-		with open(f'outputs/shap_values/full_concat_{model_name}_evaluation_dict.pkl', 'wb') as f:
+		with open(f'outputs/shap_values/{model_name}_evaluation_dict.pkl', 'wb') as f:
 			pickle.dump(evaluation_dict, f)
 
 		# for key in evaluation_dict.keys():

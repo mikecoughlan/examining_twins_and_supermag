@@ -95,7 +95,7 @@ region_numbers = [83, 143, 223, 44, 173, 321, 366, 383, 122, 279, 14, 95, 237, 2
 						62, 327, 293, 241, 107, 55, 111, 401]
 
 TARGET = 'rsd'
-VERSION = 'final_new_concat'
+VERSION = 'minmax'
 
 
 def loading_data(target_var, region):
@@ -388,6 +388,9 @@ def full_model(encoder, sw_and_mag_input_shape, twins_input_shape, early_stop_pa
 	model.compile(optimizer=opt, loss=CRPS)
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
+	print("after model initialization....")
+	print(model.summary())
+
 	return model, early_stop
 
 
@@ -412,7 +415,7 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, ea
 		model: fit model ready for making predictions.
 	'''
 
-	if os.path.exists(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5'):
+	if not os.path.exists(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5'):
 
 		# reshaping the model input vectors for a single channel
 		Xtrain = xtrain.reshape((xtrain.shape[0], xtrain.shape[1], xtrain.shape[2], 1))
@@ -426,8 +429,6 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, ea
 		print('Max of target variable: '+str(ytrain.max()))
 		print('Min of target variable: '+str(ytrain.min()))
 
-		raise
-
 		print(model.summary())
 
 				# doing the training! Yay!
@@ -435,11 +436,11 @@ def fit_full_model(model, xtrain, xval, ytrain, yval, twins_train, twins_val, ea
 			model.fit(x=[xtrain,twins_train], y=ytrain, validation_data=([xval, twins_val], yval),
 						verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=8)			# doing the training! Yay!
 		except:
-			gen = Generator(features=[Xtrain, twins_train], results=ytrain, batch_size=4)
-			val_gen = Generator(features=[Xval, twins_val], results=yval, batch_size=4)
+			gen = Generator(features=[Xtrain, twins_train], results=ytrain, batch_size=2)
+			val_gen = Generator(features=[Xval, twins_val], results=yval, batch_size=2)
 
 			model.fit(x=gen, validation_data=(val_gen),
-						verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=4)
+						verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=2)
 
 		# saving the model
 		model.save(f'models/{TARGET}/twins_region_{region}_v{VERSION}.h5')
@@ -520,7 +521,6 @@ def main(region):
 	encoder.trainable = False
 	print(encoder.summary())
 
-
 	# creating the model
 	print('Initalizing model...')
 	MODEL, early_stop = full_model(encoder=encoder,
@@ -534,6 +534,8 @@ def main(region):
 
 	# making predictions
 	print('Making predictions...')
+	print(MODEL.summary())
+	raise
 	results_df = making_predictions(model=MODEL, Xtest=xtest, twins_test=twins_test, ytest=ytest, test_dates=dates_dict['test'])
 
 	results_df.to_feather(f'outputs/{TARGET}/twins_modeling_region_{region}_version_{VERSION}.feather')
