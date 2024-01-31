@@ -67,7 +67,7 @@ twins_times_path = 'outputs/regular_twins_map_dates.feather'
 rsd_path = working_dir+'identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
 random_seed = 7
 
-VERSION = 'optimizing_dense'
+VERSION = 'optimizing_cnn'
 
 
 def loading_data(target_var, region):
@@ -334,20 +334,20 @@ def Convolutional_Neural_Network(swmag_input_shape, twins_input_shape, encoder, 
 	initial_dense_nodes = trial.suggest_categorical('initial_dense_nodes', [64, 128, 256, 512])
 	dropout_rate = trial.suggest_uniform('dropout_rate', 0.2, 0.6)
 
+	# twins input
+	twins_input = Input(shape=twins_input_shape)
+	encoder = encoder(twins_input)
+	encoder = encoder.reshape(swmag_input_shape[0], int(len(encoder)/swmag_input_shape[0]), 1)
 
 	inputs = Input(shape=swmag_input_shape)
-	c = Conv2D(initial_filters, window_size, padding='same', activation='relu')(inputs)			# adding the CNN layer
+	full_input = concatenate([inputs, encoder], axis=1)
+	c = Conv2D(initial_filters, window_size, padding='same', activation='relu')(full_input)			# adding the CNN layer
 	for i in range(cnn_layers):
 		c = Conv2D(initial_filters*(2*(i+1)), window_size, padding='same', activation='relu')(c)			# adding the CNN layer
 		if i % 2 == 0:
 			c = MaxPooling2D()(c)
-	f = Flatten()(c)							
+	f = Flatten()(c)						
 	d = Dense(initial_dense_nodes, activation='relu')(f)		# Adding dense layers with dropout in between
-
-	# twins input
-	twins_input = Input(shape=twins_input_shape)
-	encoder = encoder(twins_input)
-	encoder = Flatten()(encoder)
 
 	concat = concatenate([d, encoder])
 	d = Dropout(dropout_rate)(concat)
