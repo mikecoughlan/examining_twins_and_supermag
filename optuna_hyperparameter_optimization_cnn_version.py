@@ -390,7 +390,7 @@ def objective(trial, xtrain, twins_train, ytrain, xval, twins_val, yval, xtest, 
 	
 	evaluation = model.evaluate([xtest, twins_test], ytest, verbose=1)
 	EVALUATION_DICT[trial.number] = {'evaluation':evaluation, 'params':trial.params}
-	with open('outputs/optimizing dense_version.pkl', 'ab') as f:
+	with open(f'outputs/{VERSION}_version.pkl', 'ab') as f:
 		pickle.dump(EVALUATION_DICT, f)
 	
 	return evaluation
@@ -421,9 +421,9 @@ def main():
 
 	run_server(storage)
 
-	optuna.visualization.plot_param_importances(study).write_image('plots/dense_param_importances.png')
-	optuna.visualization.plot_slice(study).write_image('plots/dense_slice.png')
-	optuna.visualization.plot_optimization_history(study).write_image('plots/optimization_history_dense_version.png')
+	optuna.visualization.plot_param_importances(study).write_image('plots/cnn_param_importances.png')
+	optuna.visualization.plot_slice(study).write_image('plots/cnn_slice.png')
+	optuna.visualization.plot_optimization_history(study).write_image('plots/optimization_history_cnn_version.png')
 
 
 
