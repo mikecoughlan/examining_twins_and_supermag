@@ -336,17 +336,18 @@ def Convolutional_Neural_Network(swmag_input_shape, twins_input_shape, encoder, 
 
 	# twins input
 	twins_input = Input(shape=twins_input_shape)
-	encoder = encoder(twins_input)
-	encoder = encoder.reshape(swmag_input_shape[0], int(len(encoder)/swmag_input_shape[0]), 1)
+	e = encoder(twins_input)
+	print(encoder.layers[-1].output_shape[1])
+	e = Reshape((swmag_input_shape[0], int(encoder.layers[-1].output_shape[1]/swmag_input_shape[0]), 1))(e)
 
 	inputs = Input(shape=swmag_input_shape)
-	full_input = concatenate([inputs, encoder], axis=1)
+	full_input = concatenate([inputs, e], axis=1)
 	c = Conv2D(initial_filters, window_size, padding='same', activation='relu')(full_input)			# adding the CNN layer
 	for i in range(cnn_layers):
 		c = Conv2D(initial_filters*(2*(i+1)), window_size, padding='same', activation='relu')(c)			# adding the CNN layer
 		if i % 2 == 0:
 			c = MaxPooling2D()(c)
-	f = Flatten()(c)						
+	f = Flatten()(c)
 	d = Dense(initial_dense_nodes, activation='relu')(f)		# Adding dense layers with dropout in between
 
 	concat = concatenate([d, encoder])
@@ -368,7 +369,7 @@ def Convolutional_Neural_Network(swmag_input_shape, twins_input_shape, encoder, 
 
 def objective(trial, xtrain, twins_train, ytrain, xval, twins_val, yval, xtest, twins_test, ytest, swmag_input_shape, twins_input_shape):
 
-	encoder = load_model('models/best_autoencoder.h5')
+	encoder = load_model('models/encoder_final_version_2.h5')
 	encoder.trainable = False
 	model, early_stop = Convolutional_Neural_Network(swmag_input_shape, twins_input_shape, encoder, trial)
 	print(model.summary())
@@ -387,12 +388,12 @@ def objective(trial, xtrain, twins_train, ytrain, xval, twins_val, yval, xtest, 
 		except:
 			print('Resource Exhausted Error')
 			return None
-	
+
 	evaluation = model.evaluate([xtest, twins_test], ytest, verbose=1)
 	EVALUATION_DICT[trial.number] = {'evaluation':evaluation, 'params':trial.params}
 	with open(f'outputs/{VERSION}_version.pkl', 'ab') as f:
 		pickle.dump(EVALUATION_DICT, f)
-	
+
 	return evaluation
 
 
@@ -414,8 +415,8 @@ def main():
 	storage = optuna.storages.InMemoryStorage()
 	# reshaping the model input vectors for a single channel
 	study = optuna.create_study(direction='minimize', study_name='cnn_dense_optimization_trial')
-	study.optimize(lambda trial: objective(trial, xtrain, twins_train, ytrain, xval, twins_val, yval, 
-											xtest, twins_test, ytest, swmag_input_shape, twins_input_shape), 
+	study.optimize(lambda trial: objective(trial, xtrain, twins_train, ytrain, xval, twins_val, yval,
+											xtest, twins_test, ytest, swmag_input_shape, twins_input_shape),
 											n_trials=50, callbacks=[lambda study, trial: gc.collect()])
 	print(study.best_params)
 
