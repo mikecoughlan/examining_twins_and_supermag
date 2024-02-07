@@ -59,7 +59,7 @@ except:
 
 TARGET = 'rsd'
 REGION=163
-VERSION = 'final'
+VERSION = 'final_v0-1'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -215,11 +215,21 @@ def getting_prepared_data(target_var, region, get_features=False):
 
 	# scaling the twins maps
 	twins_scaling_array = np.vstack(twins_train)
-	twins_scaler = MinMaxScaler()
-	twins_scaler.fit(twins_scaling_array)
-	twins_train = [twins_scaler.transform(x) for x in twins_train]
-	twins_val = [twins_scaler.transform(x) for x in twins_val]
-	twins_test = [twins_scaler.transform(x) for x in twins_test]
+	# twins_scaler = MinMaxScaler()
+	# twins_scaler.fit(twins_scaling_array)
+	# twins_train = [twins_scaler.transform(x) for x in twins_train]
+	# twins_val = [twins_scaler.transform(x) for x in twins_val]
+	# twins_test = [twins_scaler.transform(x) for x in twins_test]
+
+	scaling_max = twins_scaling_array.max()
+	scaling_min = twins_scaling_array.min()
+
+	def minmax_scaling(x):
+		return (x - scaling_min) / (scaling_max - scaling_min)
+
+	twins_train = [minmax_scaling(x) for x in twins_train]
+	twins_val = [minmax_scaling(x) for x in twins_val]
+	twins_test = [minmax_scaling(x) for x in twins_test]
 
 	if not get_features:
 		return np.array(twins_train), np.array(twins_val), np.array(twins_test), date_dict
@@ -233,9 +243,15 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	model_input = Input(shape=input_shape, name='encoder_input')
 
-	e = Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(model_input)
-	e = Conv2D(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(e)
-	e = Conv2D(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(e)
+	e = Conv2D(filters=128, kernel_size=3, strides=1, padding='same')(model_input)
+	e = Activation('relu')(e)
+	e = BatchNormalization()(e)
+	e = Conv2D(filters=256, kernel_size=3, strides=1, padding='same')(e)
+	e = Activation('relu')(e)
+	e = BatchNormalization()(e)
+	e = Conv2D(filters=512, kernel_size=2, strides=2, padding='same')(e)
+	e = Activation('relu')(e)
+	e = BatchNormalization()(e)
 
 	shape = int_shape(e)
 
@@ -243,19 +259,27 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	bottleneck = Dense(120, name='bottleneck')(e)
 
+	print('Bottleneck shape: '+str(int_shape(bottleneck)))
+
 	d = Dense(shape[1]*shape[2]*shape[3])(bottleneck)
 
 	d = Reshape((shape[1], shape[2], shape[3]))(d)
 
-	d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(d)
-	d = Conv2DTranspose(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(d)
-	d = Conv2DTranspose(filters=64, kernel_size=2, activation='relu', strides=1, padding='same')(d)
+	d = Conv2DTranspose(filters=512, kernel_size=3, strides=2, padding='same')(d)
+	d = Activation('relu')(d)
+	d = BatchNormalization()(d)
+	d = Conv2DTranspose(filters=256, kernel_size=3, strides=1, padding='same')(d)
+	d = Activation('relu')(d)
+	d = BatchNormalization()(d)
+	d = Conv2DTranspose(filters=128, kernel_size=2, strides=1, padding='same')(d)
+	d = Activation('relu')(d)
+	d = BatchNormalization()(d)
 
 	model_outputs = Conv2DTranspose(filters=1, kernel_size=1, activation='linear', padding='same', name='decoder_output')(d)
 
 	full_autoencoder = Model(inputs=model_input, outputs=model_outputs)
 
-	opt = tf.keras.optimizers.Adam(learning_rate=1e-6)		# learning rate that actually started producing good results
+	opt = tf.keras.optimizers.Adam(learning_rate=2.563e-7)		# learning rate that actually started producing good results
 	full_autoencoder.compile(optimizer=opt, loss='mse')					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stopping_patience)		# early stop process prevents overfitting
 
@@ -268,7 +292,7 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 def fit_autoencoder(model, train, val, early_stop):
 
-	if not os.path.exists('models/autoencoder_v_final_minmax.h5'):
+	if not os.path.exists(f'models/autoencoder_{VERSION}.h5'):
 
 		# # reshaping the model input vectors for a single channel
 		# train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
@@ -276,19 +300,24 @@ def fit_autoencoder(model, train, val, early_stop):
 
 		print(model.summary())
 
+
+		# usign a generator to feed the data into the model
+		# train_gen = Generator(features=train, results=train, batch_size=16)
+		# val_gen = Generator(features=val, results=val, batch_size=16)
+
 		model.fit(train, train, validation_data=(val, val),
-					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=32)			# doing the training! Yay!
+					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
 
 		# saving the model
-		model.save('models/autoencoder_v_final_minmax.h5')
+		model.save(f'models/autoencoder_{VERSION}.h5')
 
 		# saving history
 		history_df = pd.DataFrame(model.history.history)
-		history_df.to_feather('outputs/autoencoder_v_final_minmax_history.feather')
+		history_df.to_feather(f'outputs/autoencoder_{VERSION}_history.feather')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/autoencoder_v_final_minmax.h5')				# loading the models if already trained
+		model = load_model(f'models/autoencoder_{VERSION}.h5')				# loading the models if already trained
 		print(model.summary())
 
 	return model
@@ -339,7 +368,7 @@ def main():
 
 	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.bottleneck)
 	print(encoder.summary())
-	encoder.save('models/encoder_final_minmax.h5')
+	encoder.save(f'models/encoder_{VERSION}.h5')
 	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.get_layer('bottleneck').output)
 	# print(encoder.summary())
 	# encoder.save('models/encoder_final_version_2-1.h5')

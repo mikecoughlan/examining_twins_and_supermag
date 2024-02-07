@@ -59,7 +59,7 @@ except:
 
 TARGET = 'rsd'
 REGION=163
-VERSION = 'final'
+VERSION = 'final_minmax_120_latent_space'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -215,11 +215,21 @@ def getting_prepared_data(target_var, region, get_features=False):
 
 	# scaling the twins maps
 	twins_scaling_array = np.vstack(twins_train)
-	twins_scaler = MinMaxScaler()
-	twins_scaler.fit(twins_scaling_array)
-	twins_train = [twins_scaler.transform(x) for x in twins_train]
-	twins_val = [twins_scaler.transform(x) for x in twins_val]
-	twins_test = [twins_scaler.transform(x) for x in twins_test]
+	# twins_scaler = MinMaxScaler()
+	# twins_scaler.fit(twins_scaling_array)
+	# twins_train = [twins_scaler.transform(x) for x in twins_train]
+	# twins_val = [twins_scaler.transform(x) for x in twins_val]
+	# twins_test = [twins_scaler.transform(x) for x in twins_test]
+
+	scaling_max = twins_scaling_array.max()
+	scaling_min = twins_scaling_array.min()
+
+	def minmax_scaling(x):
+		return (x - scaling_min) / (scaling_max - scaling_min)
+
+	twins_train = [minmax_scaling(x) for x in twins_train]
+	twins_val = [minmax_scaling(x) for x in twins_val]
+	twins_test = [minmax_scaling(x) for x in twins_test]
 
 	if not get_features:
 		return np.array(twins_train), np.array(twins_val), np.array(twins_test), date_dict
@@ -235,7 +245,7 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	e = Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(model_input)
 	e = Conv2D(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(e)
-	e = Conv2D(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(e)
+	e = Conv2D(filters=256, kernel_size=2, activation='relu', strides=2, padding='same')(e)
 
 	shape = int_shape(e)
 
@@ -247,7 +257,7 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	d = Reshape((shape[1], shape[2], shape[3]))(d)
 
-	d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+	d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=2, padding='same')(d)
 	d = Conv2DTranspose(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(d)
 	d = Conv2DTranspose(filters=64, kernel_size=2, activation='relu', strides=1, padding='same')(d)
 
@@ -268,7 +278,7 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 def fit_autoencoder(model, train, val, early_stop):
 
-	if not os.path.exists('models/autoencoder_v_final_minmax.h5'):
+	if not os.path.exists(f'models/autoencoder_{VERSION}.h5'):
 
 		# # reshaping the model input vectors for a single channel
 		# train = train.reshape((train.shape[0], train.shape[1], train.shape[2], 1))
@@ -276,19 +286,27 @@ def fit_autoencoder(model, train, val, early_stop):
 
 		print(model.summary())
 
-		model.fit(train, train, validation_data=(val, val),
-					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=32)			# doing the training! Yay!
+		try:
+			model.fit(train, train, validation_data=(val, val),
+						verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=4)			# doing the training! Yay!
+
+		except:
+			batch_size = 4
+			train_gen = Generator(train, train, to_fit=True, batch_size=batch_size, shuffle=True)
+			val_gen = Generator(val, val, to_fit=True, batch_size=batch_size, shuffle=True)
+
+			model.fit(train_gen, validation_data=val_gen, verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=batch_size)
 
 		# saving the model
-		model.save('models/autoencoder_v_final_minmax.h5')
+		model.save(f'models/autoencoder_{VERSION}.h5')
 
 		# saving history
 		history_df = pd.DataFrame(model.history.history)
-		history_df.to_feather('outputs/autoencoder_v_final_minmax_history.feather')
+		history_df.to_feather(f'outputs/autoencoder_{VERSION}_history.feather')
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model('models/autoencoder_v_final_minmax.h5')				# loading the models if already trained
+		model = load_model(f'models/autoencoder_{VERSION}.h5')				# loading the models if already trained
 		print(model.summary())
 
 	return model
@@ -339,7 +357,7 @@ def main():
 
 	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.bottleneck)
 	print(encoder.summary())
-	encoder.save('models/encoder_final_minmax.h5')
+	encoder.save(f'models/encoder_{VERSION}.h5')
 	# encoder = Model(inputs=MODEL.inputs, outputs=MODEL.get_layer('bottleneck').output)
 	# print(encoder.summary())
 	# encoder.save('models/encoder_final_version_2-1.h5')

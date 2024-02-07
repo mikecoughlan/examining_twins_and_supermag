@@ -39,11 +39,17 @@ class Generator(Sequence):
 		"""
 
 		# Generating data from batch indices. Putting the multipe features into a list
-		X = []
-		for i in range(len(self.features)):
-			x = np.empty((self.batch_size, self.features[i].shape[1], self.features[i].shape[2], 1))
-			x = self.features[i][index * self.batch_size:(index + 1) * self.batch_size]
-			X.append(x)
+		# checking if the features are a list or a single array. This is done to check
+		
+		if isinstance(self.features, list):
+			X = []
+			for i in range(len(self.features)):
+				x = np.empty((self.batch_size, self.features[i].shape[1], self.features[i].shape[2], 1))
+				x = self.features[i][index * self.batch_size:(index + 1) * self.batch_size]
+				X.append(x)
+		else:
+			X = np.empty((self.batch_size, self.features.shape[1], self.features.shape[2], 1))
+			X = self.features[index * self.batch_size:(index + 1) * self.batch_size]
 
 		# Returning X and y when fitting
 		if self.to_fit:
