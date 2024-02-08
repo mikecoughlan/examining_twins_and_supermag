@@ -59,7 +59,7 @@ except:
 
 TARGET = 'rsd'
 REGION=163
-VERSION = 'final_v0-1'
+VERSION = 'final_v0-3'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -214,22 +214,22 @@ def getting_prepared_data(target_var, region, get_features=False):
 			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
 
 	# scaling the twins maps
-	twins_scaling_array = np.vstack(twins_train)
+	twins_scaling_array = np.vstack(twins_train).flatten()
 	# twins_scaler = MinMaxScaler()
 	# twins_scaler.fit(twins_scaling_array)
 	# twins_train = [twins_scaler.transform(x) for x in twins_train]
 	# twins_val = [twins_scaler.transform(x) for x in twins_val]
 	# twins_test = [twins_scaler.transform(x) for x in twins_test]
+	twins_scaling_array = twins_scaling_array[twins_scaling_array > 0]
+	scaling_mean = twins_scaling_array.mean()
+	scaling_std = twins_scaling_array.std()
 
-	scaling_max = twins_scaling_array.max()
-	scaling_min = twins_scaling_array.min()
+	def standard_scaling(x):
+		return (x - scaling_mean) / scaling_std
 
-	def minmax_scaling(x):
-		return (x - scaling_min) / (scaling_max - scaling_min)
-
-	twins_train = [minmax_scaling(x) for x in twins_train]
-	twins_val = [minmax_scaling(x) for x in twins_val]
-	twins_test = [minmax_scaling(x) for x in twins_test]
+	twins_train = [standard_scaling(x) for x in twins_train]
+	twins_val = [standard_scaling(x) for x in twins_val]
+	twins_test = [standard_scaling(x) for x in twins_test]
 
 	if not get_features:
 		return np.array(twins_train), np.array(twins_val), np.array(twins_test), date_dict
