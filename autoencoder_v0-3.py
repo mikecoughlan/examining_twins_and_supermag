@@ -244,14 +244,14 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 	model_input = Input(shape=input_shape, name='encoder_input')
 
 	e = Conv2D(filters=128, kernel_size=3, strides=1, padding='same')(model_input)
-	e = Activation('relu')(e)
 	e = BatchNormalization()(e)
+	e = Activation('relu')(e)
 	e = Conv2D(filters=256, kernel_size=3, strides=1, padding='same')(e)
-	e = Activation('relu')(e)
 	e = BatchNormalization()(e)
+	e = Activation('relu')(e)
 	e = Conv2D(filters=512, kernel_size=2, strides=2, padding='same')(e)
-	e = Activation('relu')(e)
 	e = BatchNormalization()(e)
+	e = Activation('relu')(e)
 
 	shape = int_shape(e)
 
@@ -266,14 +266,14 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 	d = Reshape((shape[1], shape[2], shape[3]))(d)
 
 	d = Conv2DTranspose(filters=512, kernel_size=3, strides=2, padding='same')(d)
-	d = Activation('relu')(d)
 	d = BatchNormalization()(d)
+	d = Activation('relu')(d)
 	d = Conv2DTranspose(filters=256, kernel_size=3, strides=1, padding='same')(d)
-	d = Activation('relu')(d)
 	d = BatchNormalization()(d)
+	d = Activation('relu')(d)
 	d = Conv2DTranspose(filters=128, kernel_size=2, strides=1, padding='same')(d)
-	d = Activation('relu')(d)
 	d = BatchNormalization()(d)
+	d = Activation('relu')(d)
 
 	model_outputs = Conv2DTranspose(filters=1, kernel_size=1, activation='linear', padding='same', name='decoder_output')(d)
 
