@@ -59,7 +59,7 @@ except:
 
 TARGET = 'rsd'
 REGION=163
-VERSION = 'final_v0-3'
+VERSION = 'keV_to_eV'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -135,8 +135,10 @@ def getting_prepared_data(target_var, region, get_features=False):
 	print(f'Target value positive percentage: {target.sum()/len(target)}')
 	# merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
 
-	if os.path.exists(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl'):
-		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'rb') as f:
+	temp_version = 'final'
+
+	if os.path.exists(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl'):
+		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'rb') as f:
 			storms_extracted_dict = pickle.load(f)
 		storms = storms_extracted_dict['storms']
 		target = storms_extracted_dict['target']
@@ -214,22 +216,43 @@ def getting_prepared_data(target_var, region, get_features=False):
 			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
 
 	# scaling the twins maps
-	twins_scaling_array = np.vstack(twins_train).flatten()
 	# twins_scaler = MinMaxScaler()
 	# twins_scaler.fit(twins_scaling_array)
 	# twins_train = [twins_scaler.transform(x) for x in twins_train]
 	# twins_val = [twins_scaler.transform(x) for x in twins_val]
 	# twins_test = [twins_scaler.transform(x) for x in twins_test]
-	twins_scaling_array = twins_scaling_array[twins_scaling_array > 0]
-	scaling_mean = twins_scaling_array.mean()
-	scaling_std = twins_scaling_array.std()
+
 
 	def standard_scaling(x):
 		return (x - scaling_mean) / scaling_std
 
+	def keV_to_eV(x):
+		# changing positive values in the array to eV
+		x[x > 0] = x[x > 0] * 1000
+		return x
+
+	print(f'Twins train mean before converting to eV: {np.array(twins_train).mean()}')
+	print(f'Twins train std before converting to eV: {np.array(twins_train).std()}')
+
+	twins_train = [keV_to_eV(x) for x in twins_train]
+	twins_val = [keV_to_eV(x) for x in twins_val]
+	twins_test = [keV_to_eV(x) for x in twins_test]
+
+	print(f'Twins train mean after converting to eV: {np.array(twins_train).mean()}')
+	print(f'Twins train std after converting to eV: {np.array(twins_train).std()}')
+
+	twins_scaling_array = np.vstack(twins_train).flatten()
+
+	twins_scaling_array = twins_scaling_array[twins_scaling_array > 0]
+	scaling_mean = twins_scaling_array.mean()
+	scaling_std = twins_scaling_array.std()
+
 	twins_train = [standard_scaling(x) for x in twins_train]
 	twins_val = [standard_scaling(x) for x in twins_val]
 	twins_test = [standard_scaling(x) for x in twins_test]
+
+	print(f'Twins train mean after standard scaling: {np.array(twins_train).mean()}')
+	print(f'Twins train std after standard scaling: {np.array(twins_train).std()}')
 
 	if not get_features:
 		return np.array(twins_train), np.array(twins_val), np.array(twins_test), date_dict
@@ -243,15 +266,9 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	model_input = Input(shape=input_shape, name='encoder_input')
 
-	e = Conv2D(filters=128, kernel_size=3, strides=1, padding='same')(model_input)
-	e = BatchNormalization()(e)
-	e = Activation('relu')(e)
-	e = Conv2D(filters=256, kernel_size=3, strides=1, padding='same')(e)
-	e = BatchNormalization()(e)
-	e = Activation('relu')(e)
-	e = Conv2D(filters=512, kernel_size=2, strides=2, padding='same')(e)
-	e = BatchNormalization()(e)
-	e = Activation('relu')(e)
+	e = Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(model_input)
+	e = Conv2D(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(e)
+	e = Conv2D(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(e)
 
 	shape = int_shape(e)
 
@@ -259,27 +276,19 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	bottleneck = Dense(120, name='bottleneck')(e)
 
-	print('Bottleneck shape: '+str(int_shape(bottleneck)))
-
 	d = Dense(shape[1]*shape[2]*shape[3])(bottleneck)
 
 	d = Reshape((shape[1], shape[2], shape[3]))(d)
 
-	d = Conv2DTranspose(filters=512, kernel_size=3, strides=2, padding='same')(d)
-	d = BatchNormalization()(d)
-	d = Activation('relu')(d)
-	d = Conv2DTranspose(filters=256, kernel_size=3, strides=1, padding='same')(d)
-	d = BatchNormalization()(d)
-	d = Activation('relu')(d)
-	d = Conv2DTranspose(filters=128, kernel_size=2, strides=1, padding='same')(d)
-	d = BatchNormalization()(d)
-	d = Activation('relu')(d)
+	d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+	d = Conv2DTranspose(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+	d = Conv2DTranspose(filters=64, kernel_size=2, activation='relu', strides=1, padding='same')(d)
 
 	model_outputs = Conv2DTranspose(filters=1, kernel_size=1, activation='linear', padding='same', name='decoder_output')(d)
 
 	full_autoencoder = Model(inputs=model_input, outputs=model_outputs)
 
-	opt = tf.keras.optimizers.Adam(learning_rate=2.563e-7)		# learning rate that actually started producing good results
+	opt = tf.keras.optimizers.Adam(learning_rate=1e-6)		# learning rate that actually started producing good results
 	full_autoencoder.compile(optimizer=opt, loss='mse')					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stopping_patience)		# early stop process prevents overfitting
 

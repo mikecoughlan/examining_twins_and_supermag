@@ -135,8 +135,10 @@ def getting_prepared_data(target_var, region, get_features=False):
 	print(f'Target value positive percentage: {target.sum()/len(target)}')
 	# merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
 
-	if os.path.exists(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl'):
-		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'rb') as f:
+	temp_version = 'final'
+
+	if os.path.exists(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl'):
+		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'rb') as f:
 			storms_extracted_dict = pickle.load(f)
 		storms = storms_extracted_dict['storms']
 		target = storms_extracted_dict['target']
@@ -243,15 +245,9 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	model_input = Input(shape=input_shape, name='encoder_input')
 
-	e = Conv2D(filters=128, kernel_size=3, strides=1, padding='same')(model_input)
-	e = Activation('relu')(e)
-	e = BatchNormalization()(e)
-	e = Conv2D(filters=256, kernel_size=3, strides=1, padding='same')(e)
-	e = Activation('relu')(e)
-	e = BatchNormalization()(e)
-	e = Conv2D(filters=512, kernel_size=2, strides=2, padding='same')(e)
-	e = Activation('relu')(e)
-	e = BatchNormalization()(e)
+	e = Conv2D(filters=64, kernel_size=3, activation='relu', strides=1, padding='same')(model_input)
+	e = Conv2D(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(e)
+	e = Conv2D(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(e)
 
 	shape = int_shape(e)
 
@@ -259,27 +255,19 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	bottleneck = Dense(120, name='bottleneck')(e)
 
-	print('Bottleneck shape: '+str(int_shape(bottleneck)))
-
 	d = Dense(shape[1]*shape[2]*shape[3])(bottleneck)
 
 	d = Reshape((shape[1], shape[2], shape[3]))(d)
 
-	d = Conv2DTranspose(filters=512, kernel_size=3, strides=2, padding='same')(d)
-	d = Activation('relu')(d)
-	d = BatchNormalization()(d)
-	d = Conv2DTranspose(filters=256, kernel_size=3, strides=1, padding='same')(d)
-	d = Activation('relu')(d)
-	d = BatchNormalization()(d)
-	d = Conv2DTranspose(filters=128, kernel_size=2, strides=1, padding='same')(d)
-	d = Activation('relu')(d)
-	d = BatchNormalization()(d)
+	d = Conv2DTranspose(filters=256, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+	d = Conv2DTranspose(filters=128, kernel_size=3, activation='relu', strides=1, padding='same')(d)
+	d = Conv2DTranspose(filters=64, kernel_size=2, activation='relu', strides=1, padding='same')(d)
 
 	model_outputs = Conv2DTranspose(filters=1, kernel_size=1, activation='linear', padding='same', name='decoder_output')(d)
 
 	full_autoencoder = Model(inputs=model_input, outputs=model_outputs)
 
-	opt = tf.keras.optimizers.Adam(learning_rate=2.563e-7)		# learning rate that actually started producing good results
+	opt = tf.keras.optimizers.Adam(learning_rate=1e-6)		# learning rate that actually started producing good results
 	full_autoencoder.compile(optimizer=opt, loss='mse')					# Ive read that cross entropy is good for this type of model
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stopping_patience)		# early stop process prevents overfitting
 
@@ -302,11 +290,11 @@ def fit_autoencoder(model, train, val, early_stop):
 
 
 		# usign a generator to feed the data into the model
-		# train_gen = Generator(features=train, results=train, batch_size=16)
-		# val_gen = Generator(features=val, results=val, batch_size=16)
+		train_gen = Generator(features=train, results=train, batch_size=2)
+		val_gen = Generator(features=val, results=val, batch_size=2)
 
-		model.fit(train, train, validation_data=(val, val),
-					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=16)			# doing the training! Yay!
+		model.fit(train_gen, validation_data=(val_gen),
+					verbose=1, shuffle=True, epochs=500, callbacks=[early_stop], batch_size=2)			# doing the training! Yay!
 
 		# saving the model
 		model.save(f'models/autoencoder_{VERSION}.h5')
