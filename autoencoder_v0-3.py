@@ -147,7 +147,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 		# getting the data corresponding to the twins maps
 		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var=f'rolling_{target_var}', concat=False, map_keys=maps.keys())
 		storms_extracted_dict = {'storms':storms, 'target':target}
-		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'wb') as f:
+		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'wb') as f:
 			pickle.dump(storms_extracted_dict, f)
 
 	print('Columns in Dataframe: '+str(storms[0].columns))
@@ -226,6 +226,9 @@ def getting_prepared_data(target_var, region, get_features=False):
 	def standard_scaling(x):
 		return (x - scaling_mean) / scaling_std
 
+	def minmax_scaling(x):
+		return (x - scaling_min) / (scaling_max - scaling_min)
+
 	def keV_to_eV(x):
 		# changing positive values in the array to eV
 		x[x > 0] = x[x > 0] * 1000
@@ -240,19 +243,23 @@ def getting_prepared_data(target_var, region, get_features=False):
 
 	print(f'Twins train mean after converting to eV: {np.array(twins_train).mean()}')
 	print(f'Twins train std after converting to eV: {np.array(twins_train).std()}')
+	print(f'Twins train min after converting to eV: {np.array(twins_train).min()}')
 
 	twins_scaling_array = np.vstack(twins_train).flatten()
 
 	twins_scaling_array = twins_scaling_array[twins_scaling_array > 0]
 	scaling_mean = twins_scaling_array.mean()
 	scaling_std = twins_scaling_array.std()
+	scaling_min = twins_scaling_array.min()
+	scaling_max = twins_scaling_array.max()
 
-	twins_train = [standard_scaling(x) for x in twins_train]
-	twins_val = [standard_scaling(x) for x in twins_val]
-	twins_test = [standard_scaling(x) for x in twins_test]
+	twins_train = [minmax_scaling(x) for x in twins_train]
+	twins_val = [minmax_scaling(x) for x in twins_val]
+	twins_test = [minmax_scaling(x) for x in twins_test]
 
 	print(f'Twins train mean after standard scaling: {np.array(twins_train).mean()}')
 	print(f'Twins train std after standard scaling: {np.array(twins_train).std()}')
+	print(f'Twins train min after standard scaling: {np.array(twins_train).min()}')
 
 	if not get_features:
 		return np.array(twins_train), np.array(twins_val), np.array(twins_test), date_dict
@@ -274,7 +281,7 @@ def Autoencoder(input_shape, train, val, early_stopping_patience=25):
 
 	e = Flatten()(e)
 
-	bottleneck = Dense(120, name='bottleneck')(e)
+	bottleneck = Dense(60, name='bottleneck')(e)
 
 	d = Dense(shape[1]*shape[2]*shape[3])(bottleneck)
 
