@@ -10,7 +10,7 @@ from multiprocessing import Manager, Pool
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import shapely
+# import shapely
 from dateutil import parser
 # from geopack import geopack, t89
 from matplotlib.cm import ScalarMappable
@@ -366,13 +366,13 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=F
 
 	# loading the storm list
 	if twins and map_keys is None:
-		storm_list = pd.read_feather('outputs/regular_twins_map_dates.feather')
+		storm_list = pd.read_feather('outputs/regular_twins_map_dates.feather', columns=['dates'])
 		storm_list = storm_list['dates']
 	elif twins and map_keys is not None:
 		storm_list = pd.DataFrame({'dates':[pd.to_datetime(key, format='%Y-%m-%d %H:%M:%S') for key in map_keys]})
 		storm_list = storm_list['dates']
 	else:
-		storm_list = pd.read_csv('stormList.csv', header=None, names=['Date_UTC'])
+		storm_list = pd.read_csv('stormList.csv', header=None, names=['dates'])
 		storm_list = storm_list['Date_UTC']
 
 	stime, etime = [], []					# will store the resulting time stamps here then append them to the storm time df
@@ -389,8 +389,14 @@ def storm_extract(df, lead=24, recovery=48, sw_only=False, twins=False, target=F
 			etime.append(date+pd.Timedelta(hours=recovery))
 
 	# adds the time stamp lists to the storm_list dataframes
+
+	storm_list = pd.DataFrame(storm_list, columns=['dates'])
 	storm_list['stime'] = stime
 	storm_list['etime'] = etime
+
+	storm_list = pd.DataFrame({'stime':stime, 'etime':etime})
+
+
 	for start, end in zip(storm_list['stime'], storm_list['etime']):		# looping through the storms to remove the data from the larger df
 		if start < df.index[0] or end > df.index[-1]:						# if the storm is outside the range of the data, skip it
 			continue
