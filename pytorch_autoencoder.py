@@ -383,21 +383,22 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 				optimizer.step()
 
 			# using validation set
-			with model.eval():
+			model.eval()
+			with torch.no_grad():
 				for val_data in val:
 					val_data = val_data.to(DEVICE, dtype=torch.float)
 					val_data = val_data.unsqueeze(1)
 					output = model(val_data)
 					val_loss = criterion(output, val_data)
 
+			if (loss.get_device() != -1) or (val_loss.get_device() != -1):
+				loss = loss.to('cpu')
+				val_loss = val_loss.to('cpu')
+
 			# converting the loss to a numpy value and removing from gpu
 			loss = loss.item()
 			val_loss = val_loss.item()
 
-			# moving the loss back to the cpu if on the gpu
-			if (loss.get_device() != -1) or (val_loss.get_device() != -1):
-				loss = loss.to('cpu')
-				val_loss = val_loss.to('cpu')
 
 			# adding the loss to the list
 			train_loss_list.append(loss)
