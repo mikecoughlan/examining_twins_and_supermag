@@ -33,6 +33,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import torchvision
 import torchvision.transforms as transforms
 import tqdm
 from scipy.special import expit, inv_boxcox
@@ -41,7 +42,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from spacepy import pycdf
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 import utils
 
@@ -50,7 +51,7 @@ import utils
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_test'
+VERSION = 'pytorch_perceptual_v1-13'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -65,7 +66,7 @@ supermag_dir_path = '../data/supermag/'
 twins_times_path = 'outputs/regular_twins_map_dates.feather'
 rsd_path = working_dir+'identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
 RANDOM_SEED = 7
-BATCH_SIZE = 16
+BATCH_SIZE = 64
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'Device: {DEVICE}')
@@ -132,7 +133,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 	# print(f'Target value positive percentage: {target.sum()/len(target)}')
 	# # merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
 
-	temp_version = 'final'
+	temp_version = 'pytorch_test'
 
 	if os.path.exists(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl'):
 		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'rb') as f:
@@ -144,7 +145,7 @@ def getting_prepared_data(target_var, region, get_features=False):
 		# getting the data corresponding to the twins maps
 		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var=f'rolling_{target_var}', concat=False, map_keys=maps.keys())
 		storms_extracted_dict = {'storms':storms, 'target':target}
-		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{VERSION}.pkl', 'wb') as f:
+		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'wb') as f:
 			pickle.dump(storms_extracted_dict, f)
 
 	print('Columns in Dataframe: '+str(storms[0].columns))
@@ -233,13 +234,13 @@ def getting_prepared_data(target_var, region, get_features=False):
 	print(f'Twins train mean before converting to eV: {np.array(twins_train).mean()}')
 	print(f'Twins train std before converting to eV: {np.array(twins_train).std()}')
 
-	twins_train = [keV_to_eV(x) for x in twins_train]
-	twins_val = [keV_to_eV(x) for x in twins_val]
-	twins_test = [keV_to_eV(x) for x in twins_test]
+	# twins_train = [keV_to_eV(x) for x in twins_train]
+	# twins_val = [keV_to_eV(x) for x in twins_val]
+	# twins_test = [keV_to_eV(x) for x in twins_test]
 
-	print(f'Twins train mean after converting to eV: {np.array(twins_train).mean()}')
-	print(f'Twins train std after converting to eV: {np.array(twins_train).std()}')
-	print(f'Twins train min after converting to eV: {np.array(twins_train).min()}')
+	# print(f'Twins train mean after converting to eV: {np.array(twins_train).mean()}')
+	# print(f'Twins train std after converting to eV: {np.array(twins_train).std()}')
+	# print(f'Twins train min after converting to eV: {np.array(twins_train).min()}')
 
 	twins_scaling_array = np.vstack(twins_train).flatten()
 
@@ -253,6 +254,10 @@ def getting_prepared_data(target_var, region, get_features=False):
 	twins_val = [standard_scaling(x) for x in twins_val]
 	twins_test = [standard_scaling(x) for x in twins_test]
 
+	# twins_train = [minmax_scaling(x) for x in twins_train]
+	# twins_val = [minmax_scaling(x) for x in twins_val]
+	# twins_test = [minmax_scaling(x) for x in twins_test]
+
 	print(f'Twins train mean after standard scaling: {np.array(twins_train).mean()}')
 	print(f'Twins train std after standard scaling: {np.array(twins_train).std()}')
 	print(f'Twins train min after standard scaling: {np.array(twins_train).min()}')
@@ -263,41 +268,148 @@ def getting_prepared_data(target_var, region, get_features=False):
 		return torch.tensor(twins_train), torch.tensor(twins_val), torch.tensor(twins_test), date_dict, features
 
 
+
+class PerceptualLoss(nn.Module):
+	'''loss function using the residuals of a pretrained model to calculate the
+			loss between of the feature maps between the predicted and real images'''
+
+	def __init__(self, conv_index: str = '22'):
+
+		super(PerceptualLoss, self).__init__()
+		self.conv_index = conv_index
+		vgg_features = torchvision.models.vgg19(pretrained=True).features
+		modules = [m for m in vgg_features]
+
+		if self.conv_index == '22':
+			self.vgg = nn.Sequential(*modules[:8]).to(DEVICE)
+		elif self.conv_index == '54':
+			self.vgg = nn.Sequential(*modules[:35]).to(DEVICE)
+
+		self.register_buffer("mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+		self.register_buffer("std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+
+		self.vgg.requires_grad = False
+
+
+	def forward(self, output, target):
+
+		# copying the output and ytest such that they go from 1 channel to 3 channels
+		output = output.repeat(1, 3, 1, 1)
+		target = target.repeat(1, 3, 1, 1)
+
+		self.mean = self.mean.to(DEVICE)
+		self.std = self.std.to(DEVICE)
+		# output = output.to(DEVICE)
+		# target = target.to(DEVICE)
+
+		output = (output-self.mean) / self.std
+		target = (target-self.mean) / self.std
+
+		# getting the feature maps from the vgg model
+		output_features = self.vgg(output)
+		target_features = self.vgg(target)
+
+		# calculating the loss
+		loss = F.mse_loss(output_features, target_features)
+
+		return loss
+
+
+class VGGPerceptualLoss(torch.nn.Module):
+	def __init__(self, resize=True):
+		super(VGGPerceptualLoss, self).__init__()
+		blocks = []
+		blocks.append(torchvision.models.vgg16(pretrained=True).features[:4].eval())
+		blocks.append(torchvision.models.vgg16(pretrained=True).features[4:9].eval())
+		blocks.append(torchvision.models.vgg16(pretrained=True).features[9:16].eval())
+		blocks.append(torchvision.models.vgg16(pretrained=True).features[16:23].eval())
+		for bl in blocks:
+			for p in bl.parameters():
+				p.requires_grad = False
+		self.blocks = torch.nn.ModuleList(blocks)
+		self.transform = torch.nn.functional.interpolate
+		self.resize = resize
+		self.register_buffer("mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+		self.register_buffer("std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+
+	def forward(self, output, target, feature_layers=[0, 1, 2, 3], style_layers=[]):
+
+		self.mean = self.mean.to(DEVICE)
+		self.std = self.std.to(DEVICE)
+		output = output.to(DEVICE)
+		target = target.to(DEVICE)
+
+		if output.shape[1] != 3:
+			output = output.repeat(1, 3, 1, 1)
+			target = target.repeat(1, 3, 1, 1)
+
+		output = (output-self.mean) / self.std
+		target = (target-self.mean) / self.std
+		if self.resize:
+			output = self.transform(output, mode='bilinear', size=(224, 224), align_corners=False)
+			target = self.transform(target, mode='bilinear', size=(224, 224), align_corners=False)
+		loss = 0.0
+		for i, block in enumerate(self.blocks):
+			block.to(DEVICE)
+			output = block(output)
+			target = block(target)
+			# output = output.detach()
+			# target = target.detach()
+			if i in feature_layers:
+				loss += F.mse_loss(output, target)
+		return loss
+
+
 class Autoencoder(nn.Module):
 	def __init__(self):
 		super(Autoencoder, self).__init__()
 		self.encoder = nn.Sequential(
 			nn.Conv2d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding='same'),
+			# nn.BatchNorm2d(64),
 			nn.ReLU(),
-			nn.BatchNorm2d(64),
+			nn.Dropout(0.2),
 			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding='same'),
+			# nn.BatchNorm2d(128),
 			nn.ReLU(),
-			nn.BatchNorm2d(128),
-			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding='same'),
+			nn.Dropout(0.2),
+			nn.MaxPool2d(kernel_size=2, stride=2),
+			# nn.BatchNorm2d(256),
+			# nn.ReLU(),
+			# nn.Dropout(0.2),
+			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=2),
+			# nn.BatchNorm2d(256),
 			nn.ReLU(),
-			nn.BatchNorm2d(256),
+			nn.Dropout(0.2),
 			nn.Flatten(),
-			nn.Linear(256*90*60, 120)
+			nn.Linear(256*45*30, 120)
 		)
 		self.decoder = nn.Sequential(
-			nn.Linear(120, 256*90*60),
-			nn.Unflatten(1, (256, 90, 60)),
-			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
+			nn.Linear(120, 256*45*30),
+			nn.Unflatten(1, (256, 45, 30)),
+			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=2),
+			# nn.BatchNorm2d(128),
 			nn.ReLU(),
-			nn.BatchNorm2d(128),
+			nn.Dropout(0.2),
+			# nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=3, stride=3, padding=0),
+			# # nn.BatchNorm2d(128),
+			# nn.ReLU(),
+			# nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
+			# nn.BatchNorm2d(64),
 			nn.ReLU(),
-			nn.BatchNorm2d(64),
+			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=64, out_channels=1, kernel_size=3, stride=1, padding=1),
+			nn.ReLU(),
+			nn.ConvTranspose2d(in_channels=1, out_channels=1, kernel_size=1, stride=1, padding=0)
 		)
 
 	def forward(self, x, get_latent=False):
 		# x = x.unsqueeze(1)
 		latent = self.encoder(x)
-		x = self.decoder(latent)
 		if get_latent:
 			return latent
 		else:
+			x = self.decoder(latent)
 			return x
 
 
@@ -359,8 +471,13 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		model.to(DEVICE)
 
 		# defining the loss function and the optimizer
-		criterion = nn.MSELoss()
-		optimizer = optim.Adam(model.parameters(), lr=1e-7)
+		# criterion = nn.MSELoss()
+		# criterion = PerceptualLoss()
+		# criterion = PerceptualLoss(conv_index='22')
+
+		criterion = VGGPerceptualLoss()
+		optimizer = optim.Adam(model.parameters(), lr=1e-4)
+		scaler = torch.cuda.amp.GradScaler()
 
 		# initalizing the early stopping class
 		early_stopping = Early_Stopping(decreasing_loss_patience=val_loss_patience, training_diff_patience=overfit_patience)
@@ -370,35 +487,50 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			# starting the clock for the epoch
 			stime = time.time()
 
+			# setting the model to training mode
+			model.train()
+
+			# initializing the running loss
+			running_training_loss, running_val_loss = 0.0, 0.0
+
 			# shuffling data and creating batches
 			for train_data in train:
 				train_data = train_data.to(DEVICE, dtype=torch.float)
 				train_data = train_data.unsqueeze(1)
 				# forward pass
-				output = model(train_data)
-				loss = criterion(output, train_data)
+				with torch.cuda.amp.autocast():
+					output = model(train_data)
+
+					loss = criterion(output, train_data)
+					# loss.requires_grad = True
+
 				# backward pass
 				optimizer.zero_grad()
-				loss.backward()
-				optimizer.step()
+				scaler.scale(loss).backward()
+				scaler.step(optimizer)
+				scaler.update()
 
-			# using validation set
+				# adding the loss to the running loss
+				running_training_loss += loss.to('cpu').item()
+
+			# setting the model to evaluation mode
 			model.eval()
+
+			# using validation set to check for overfitting
 			with torch.no_grad():
 				for val_data in val:
 					val_data = val_data.to(DEVICE, dtype=torch.float)
 					val_data = val_data.unsqueeze(1)
 					output = model(val_data)
+
 					val_loss = criterion(output, val_data)
 
-			if (loss.get_device() != -1) or (val_loss.get_device() != -1):
-				loss = loss.to('cpu')
-				val_loss = val_loss.to('cpu')
+					# adding the loss to the running loss
+					running_val_loss += val_loss.to('cpu').item()
 
-			# converting the loss to a numpy value and removing from gpu
-			loss = loss.item()
-			val_loss = val_loss.item()
-
+			# getting the average loss for the epoch
+			loss = running_training_loss/len(train)
+			val_loss = running_val_loss/len(val)
 
 			# adding the loss to the list
 			train_loss_list.append(loss)
@@ -411,8 +543,11 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			# getting the time for the epoch
 			epoch_time = time.time() - stime
 
-			if epoch % 5 == 0:
-				print(f'Epoch [{epoch}/{num_epochs}], Loss: {loss.item():.4f} Validation Loss: {loss.item():.4f}' + f' Epoch Time: {epoch_time:.2f} seconds')
+			# if epoch % 5 == 0:
+			print(f'Epoch [{epoch}/{num_epochs}], Loss: {loss:.4f} Validation Loss: {val_loss:.4f}' + f' Epoch Time: {epoch_time:.2f} seconds')
+
+			# emptying the cuda cache
+			torch.cuda.empty_cache()
 
 			# getting the best model
 
@@ -444,8 +579,7 @@ def evaluation(model, test):
 	'''
 
 	# creting an array to store the predictions
-	predicted_list = []
-
+	predicted_list, test_list = [], []
 	# setting the encoder and decoder into evaluation model
 	model.eval()
 
@@ -466,12 +600,16 @@ def evaluation(model, test):
 			# making sure the predicted value is on the cpu
 			if predicted.get_device() != -1:
 				predicted = predicted.to('cpu')
+			if test_data.get_device() != -1:
+				test_data = test_data.to('cpu')
 
 			# adding the decoded result to the predicted list after removing the channel dimension
 			predicted = torch.squeeze(predicted, dim=1).numpy()
+			test_data = torch.squeeze(test_data, dim=1).numpy()
 			predicted_list.append(predicted)
+			test_list.append(test_data)
 
-	return np.concatenate(predicted, axis=0), running_loss/len(test)
+	return np.concatenate(predicted_list, axis=0), np.concatenate(test_list, axis=0), running_loss/len(test)
 
 
 
@@ -485,24 +623,77 @@ def main():
 	print('Loading data...')
 	train, val, test, ___ = getting_prepared_data(target_var=TARGET, region=REGION)
 
-	input_shape = (train.shape[1], train.shape[2], 1)
+	# # converting the data to a tensor dataset
+	# train = TensorDataset(train, train)
+	# val = TensorDataset(val, val)
+	# test = TensorDataset(test, test)
 
+	# creating the dataloaders
 	train = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True)
 	val = DataLoader(val, batch_size=BATCH_SIZE, shuffle=True)
-	test = DataLoader(test, batch_size=BATCH_SIZE, shuffle=True)
+	test = DataLoader(test, batch_size=BATCH_SIZE, shuffle=False)
 
 	# creating the model
-	print('Initalizing model...')
+	print('Initalizing model....')
 	autoencoder = Autoencoder()
 
-	# # fitting the model
-	# print('Fitting model...')
-	autoencoder = fit_autoencoder(autoencoder, train, val)
+	# fitting the model
+	print('Fitting model....')
+	autoencoder = fit_autoencoder(autoencoder, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500)
 
 	# evaluating the model
-	predicted, loss = evaluation(autoencoder, test)
+	print('Evaluating model....')
+	predictions, test, testing_loss = evaluation(autoencoder, test)
 
-	print(f'Loss: {loss}')
+	# turing the test data back into a numpy array
+	# test = np.concatenate([arr for arr in test], axis=0)
+
+	vmin = min([predictions[0, :, :].min(), test[0, :, :].min()])
+	vmax = max([predictions[0, :, :].max(), test[0, :, :].max()])
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(121)
+	ax1.imshow(predictions[0, :, :], vmin=vmin, vmax=vmax)
+	ax1.set_title('Prediction')
+	ax2 = fig.add_subplot(122)
+	ax2.imshow(test[0, :, :], vmin=vmin, vmax=vmax)
+	ax2.set_title('Actual')
+	plt.show()
+
+	vmin = min([predictions[324, :, :].min(), test[324, :, :].min()])
+	vmax = max([predictions[324, :, :].max(), test[324, :, :].max()])
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(121)
+	ax1.imshow(predictions[324, :, :], vmin=vmin, vmax=vmax)
+	ax1.set_title('Prediction')
+	ax2 = fig.add_subplot(122)
+	ax2.imshow(test[324, :, :], vmin=vmin, vmax=vmax)
+	ax2.set_title('Actual')
+	plt.show()
+
+	vmin = min([predictions[256, :, :].min(), test[256, :, :].min()])
+	vmax = max([predictions[256, :, :].max(), test[256, :, :].max()])
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(121)
+	ax1.imshow(predictions[256, :, :], vmin=vmin, vmax=vmax)
+	ax1.set_title('Prediction')
+	ax2 = fig.add_subplot(122)
+	ax2.imshow(test[256, :, :], vmin=vmin, vmax=vmax)
+	ax2.set_title('Actual')
+	plt.show()
+
+	vmin = min([predictions[1000, :, :].min(), test[1000, :, :].min()])
+	vmax = max([predictions[1000, :, :].max(), test[1000, :, :].max()])
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(121)
+	ax1.imshow(predictions[1000, :, :], vmin=vmin, vmax=vmax)
+	ax1.set_title('Prediction')
+	ax2 = fig.add_subplot(122)
+	ax2.imshow(test[1000, :, :], vmin=vmin, vmax=vmax)
+	ax2.set_title('Actual')
+	plt.show()
+
+
+	print(f'Loss: {testing_loss}')
 
 
 if __name__ == '__main__':
