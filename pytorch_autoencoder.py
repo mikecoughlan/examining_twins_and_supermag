@@ -376,17 +376,17 @@ class Autoencoder(nn.Module):
 			# nn.BatchNorm2d(256),
 			# nn.ReLU(),
 			# nn.Dropout(0.2),
-			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=2),
+			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=3, padding=0),
 			# nn.BatchNorm2d(256),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.Flatten(),
-			nn.Linear(256*45*30, 120)
+			nn.Linear(256*15*10, 120)
 		)
 		self.decoder = nn.Sequential(
-			nn.Linear(120, 256*45*30),
-			nn.Unflatten(1, (256, 45, 30)),
-			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=2),
+			nn.Linear(120, 256*15*10),
+			nn.Unflatten(1, (256, 15, 10)),
+			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=3, padding=0),
 			# nn.BatchNorm2d(128),
 			nn.ReLU(),
 			nn.Dropout(0.2),
