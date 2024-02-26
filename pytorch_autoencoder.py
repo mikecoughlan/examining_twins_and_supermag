@@ -51,7 +51,7 @@ import utils
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-16'
+VERSION = 'pytorch_perceptual_v1-17'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -479,7 +479,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		# criterion = PerceptualLoss()
 		# criterion = PerceptualLoss(conv_index='22')
 
-		criterion = PerceptualLoss()
+		criterion = VGGPerceptualLoss()
 		optimizer = optim.Adam(model.parameters(), lr=1e-4)
 		scaler = torch.cuda.amp.GradScaler()
 
