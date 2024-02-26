@@ -51,7 +51,7 @@ import utils
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-15'
+VERSION = 'pytorch_perceptual_v1-16'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -365,11 +365,11 @@ class Autoencoder(nn.Module):
 		super(Autoencoder, self).__init__()
 		self.encoder = nn.Sequential(
 			nn.Conv2d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding='same'),
-			# nn.BatchNorm2d(64),
+			nn.BatchNorm2d(64),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding='same'),
-			# nn.BatchNorm2d(128),
+			nn.BatchNorm2d(128),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.MaxPool2d(kernel_size=2, stride=2),
@@ -377,7 +377,7 @@ class Autoencoder(nn.Module):
 			# nn.ReLU(),
 			# nn.Dropout(0.2),
 			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=3, padding=0),
-			# nn.BatchNorm2d(256),
+			nn.BatchNorm2d(256),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.Flatten(),
@@ -387,7 +387,7 @@ class Autoencoder(nn.Module):
 			nn.Linear(120, 256*15*10),
 			nn.Unflatten(1, (256, 15, 10)),
 			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=3, padding=0),
-			# nn.BatchNorm2d(128),
+			nn.BatchNorm2d(128),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			# nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=3, stride=3, padding=0),
@@ -395,11 +395,11 @@ class Autoencoder(nn.Module):
 			# nn.ReLU(),
 			# nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=2, stride=2, padding=0),
-			# nn.BatchNorm2d(128),
+			nn.BatchNorm2d(128),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
-			# nn.BatchNorm2d(64),
+			nn.BatchNorm2d(64),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=64, out_channels=1, kernel_size=3, stride=1, padding=1),
@@ -480,7 +480,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		# criterion = PerceptualLoss(conv_index='22')
 
 		criterion = PerceptualLoss()
-		optimizer = optim.Adam(model.parameters(), lr=1e-5)
+		optimizer = optim.Adam(model.parameters(), lr=1e-4)
 		scaler = torch.cuda.amp.GradScaler()
 
 		# initalizing the early stopping class
