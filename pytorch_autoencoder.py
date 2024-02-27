@@ -51,7 +51,7 @@ import utils
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-17'
+VERSION = 'pytorch_perceptual_v1-18'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -365,44 +365,44 @@ class Autoencoder(nn.Module):
 		super(Autoencoder, self).__init__()
 		self.encoder = nn.Sequential(
 			nn.Conv2d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding='same'),
-			nn.BatchNorm2d(64),
+			# nn.BatchNorm2d(64),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding='same'),
-			nn.BatchNorm2d(128),
+			# nn.BatchNorm2d(128),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.MaxPool2d(kernel_size=2, stride=2),
+			# nn.MaxPool2d(kernel_size=2, stride=2),
 			# nn.BatchNorm2d(256),
 			# nn.ReLU(),
 			# nn.Dropout(0.2),
-			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=3, padding=0),
-			nn.BatchNorm2d(256),
+			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=0),
+			# nn.BatchNorm2d(256),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.Flatten(),
-			nn.Linear(256*15*10, 120)
+			nn.Linear(256*90*60, 120)
 		)
 		self.decoder = nn.Sequential(
-			nn.Linear(120, 256*15*10),
-			nn.Unflatten(1, (256, 15, 10)),
-			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=3, padding=0),
-			nn.BatchNorm2d(128),
+			nn.Linear(120, 256*90*60),
+			nn.Unflatten(1, (256, 90, 60)),
+			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=0),
+			# nn.BatchNorm2d(128),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			# nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=3, stride=3, padding=0),
 			# # nn.BatchNorm2d(128),
 			# nn.ReLU(),
 			# nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=2, stride=2, padding=0),
-			nn.BatchNorm2d(128),
-			nn.ReLU(),
-			nn.Dropout(0.2),
+			# nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=2, stride=2, padding=0),
+			# nn.BatchNorm2d(128),
+			# nn.ReLU(),
+			# nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
-			nn.BatchNorm2d(64),
+			# nn.BatchNorm2d(64),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=64, out_channels=1, kernel_size=3, stride=1, padding=1),
+			nn.ConvTranspose2d(in_channels=64, out_channels=1, kernel_size=2, stride=1, padding=1),
 			nn.ReLU(),
 			nn.ConvTranspose2d(in_channels=1, out_channels=1, kernel_size=1, stride=1, padding=0)
 		)
