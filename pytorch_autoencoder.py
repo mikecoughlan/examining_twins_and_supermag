@@ -51,7 +51,7 @@ import utils
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-20'
+VERSION = 'pytorch_perceptual_v1-21'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -380,17 +380,18 @@ class Autoencoder(nn.Module):
 			# # nn.BatchNorm2d(256),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, stride=1, padding='same'),
-			# nn.BatchNorm2d(512),
-			nn.ReLU(),
-			nn.Dropout(0.2),
+			# nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, stride=3, padding=0),
+			# # nn.BatchNorm2d(512),
+			# nn.ReLU(),
+			# nn.Dropout(0.2),
+			nn.MaxPool2d(kernel_size=2, stride=2),
 			nn.Flatten(),
-			nn.Linear(512*90*60, 120)
+			nn.Linear(256*45*30, 120)
 		)
 		self.decoder = nn.Sequential(
-			nn.Linear(120, 512*90*60),
-			nn.Unflatten(1, (512, 90, 60)),
-			nn.ConvTranspose2d(in_channels=512, out_channels=256, kernel_size=3, stride=1, padding=1),
+			nn.Linear(120, 256*45*30),
+			nn.Unflatten(1, (256, 45, 30)),
+			nn.ConvTranspose2d(in_channels=256, out_channels=256, kernel_size=2, stride=2, padding=0),
 			# # nn.BatchNorm2d(256),
 			nn.ReLU(),
 			nn.Dropout(0.2),
@@ -453,11 +454,11 @@ class Early_Stopping():
 			if self.loss_counter >= self.decreasing_loss_patience:
 				print(f'Engaging Early Stopping due to lack of improvement in validation loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.best_loss} and a validation loss of {self.best_score}')
 				return True
-		elif val_loss > (1.5 * train_loss):
-			self.training_counter += 1
-			if self.training_counter >= self.training_diff_patience:
-				print(f'Engaging Early Stopping due to large seperation between train and val loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.best_loss} and a validation loss of {self.best_score}')
-				return True
+		# elif val_loss > (1.5 * train_loss):
+		# 	self.training_counter += 1
+		# 	if self.training_counter >= self.training_diff_patience:
+		# 		print(f'Engaging Early Stopping due to large seperation between train and val loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.best_loss} and a validation loss of {self.best_score}')
+		# 		return True
 
 		else:
 			self.best_score = val_loss
