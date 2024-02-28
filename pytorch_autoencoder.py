@@ -51,7 +51,7 @@ import utils
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-19'
+VERSION = 'pytorch_perceptual_v1-20'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -66,7 +66,7 @@ supermag_dir_path = '../data/supermag/'
 twins_times_path = 'outputs/regular_twins_map_dates.feather'
 rsd_path = working_dir+'identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
 RANDOM_SEED = 7
-BATCH_SIZE = 64
+BATCH_SIZE = 16
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'Device: {DEVICE}')
@@ -376,20 +376,28 @@ class Autoencoder(nn.Module):
 			# nn.BatchNorm2d(256),
 			# nn.ReLU(),
 			# nn.Dropout(0.2),
-			# nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding='same'),
+			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding='same'),
 			# # nn.BatchNorm2d(256),
-			# nn.ReLU(),
-			# nn.Dropout(0.2),
+			nn.ReLU(),
+			nn.Dropout(0.2),
+			nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, stride=1, padding='same'),
+			# nn.BatchNorm2d(512),
+			nn.ReLU(),
+			nn.Dropout(0.2),
 			nn.Flatten(),
-			nn.Linear(128*90*60, 120)
+			nn.Linear(512*90*60, 120)
 		)
 		self.decoder = nn.Sequential(
-			nn.Linear(120, 128*90*60),
-			nn.Unflatten(1, (128, 90, 60)),
-			# nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
+			nn.Linear(120, 512*90*60),
+			nn.Unflatten(1, (512, 90, 60)),
+			nn.ConvTranspose2d(in_channels=512, out_channels=256, kernel_size=3, stride=1, padding=1),
+			# # nn.BatchNorm2d(256),
+			nn.ReLU(),
+			nn.Dropout(0.2),
+			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
 			# # nn.BatchNorm2d(128),
-			# nn.ReLU(),
-			# nn.Dropout(0.2),
+			nn.ReLU(),
+			nn.Dropout(0.2),
 			# nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=3, stride=3, padding=0),
 			# # nn.BatchNorm2d(128),
 			# nn.ReLU(),
