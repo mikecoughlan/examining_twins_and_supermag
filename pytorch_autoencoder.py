@@ -480,7 +480,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		# criterion = PerceptualLoss()
 		# criterion = PerceptualLoss(conv_index='22')
 
-		criterion = MSELoss()
+		criterion = nn.MSELoss()
 		optimizer = optim.Adam(model.parameters(), lr=1e-4)
 		scaler = torch.cuda.amp.GradScaler()
 
