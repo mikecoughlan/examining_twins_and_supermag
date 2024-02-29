@@ -51,7 +51,7 @@ import utils
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-22'
+VERSION = 'pytorch_perceptual_v1-23'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -151,31 +151,31 @@ def getting_prepared_data(target_var, region, get_features=False):
 	print('Columns in Dataframe: '+str(storms[0].columns))
 	features = storms[0].columns
 
-	# splitting the data on a month to month basis to reduce data leakage
-	month_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='MS')
-	month_df = month_df.drop([pd.to_datetime('2012-03-01'), pd.to_datetime('2017-09-01')])
+	# splitting the data on a day to day basis to reduce data leakage
+	day_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='D')
+	specific_test_days = pd.date_range(start=pd.to_datetime('2012-03-07'), end=pd.to_datetime('2012-03-13'), freq='D')
+	day_df = day_df.drop(specific_test_days)
 
-	train_months, test_months = train_test_split(month_df, test_size=0.1, shuffle=True, random_state=CONFIG['random_seed'])
-	train_months, val_months = train_test_split(train_months, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
+	train_days, test_days = train_test_split(day_df, test_size=0.1, shuffle=True, random_state=CONFIG['random_seed'])
+	train_days, val_days = train_test_split(train_days, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
 
-	test_months = test_months.tolist()
-	# adding the two dateimte values of interest to the test months df
-	test_months.append(pd.to_datetime('2012-03-01'))
-	test_months.append(pd.to_datetime('2017-09-01'))
-	test_months = pd.to_datetime(test_months)
+	test_days = test_days.tolist()
+	# adding the two dateimte values of interest to the test days df
+	test_days.append(specific_test_days)
+	test_days = pd.to_datetime(test_days)
 
 	train_dates_df, val_dates_df, test_dates_df = pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]})
 	x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test = [], [], [], [], [], [], [], [], []
 
-	# using the months to split the data
-	for month in train_months:
-		train_dates_df = pd.concat([train_dates_df, pd.DataFrame({'dates':pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min')})], axis=0)
+	# using the days to split the data
+	for day in train_days:
+		train_dates_df = pd.concat([train_dates_df, pd.DataFrame({'dates':pd.date_range(start=day, end=day+pd.DateOffset(days=1), freq='min')})], axis=0)
 
-	for month in val_months:
-		val_dates_df = pd.concat([val_dates_df, pd.DataFrame({'dates':pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min')})], axis=0)
+	for day in val_days:
+		val_dates_df = pd.concat([val_dates_df, pd.DataFrame({'dates':pd.date_range(start=day, end=day+pd.DateOffset(days=1), freq='min')})], axis=0)
 
-	for month in test_months:
-		test_dates_df = pd.concat([test_dates_df, pd.DataFrame({'dates':pd.date_range(start=month, end=month+pd.DateOffset(months=1), freq='min')})], axis=0)
+	for day in test_days:
+		test_dates_df = pd.concat([test_dates_df, pd.DataFrame({'dates':pd.date_range(start=day, end=day+pd.DateOffset(days=1), freq='min')})], axis=0)
 
 	train_dates_df.set_index('dates', inplace=True)
 	val_dates_df.set_index('dates', inplace=True)
@@ -382,8 +382,8 @@ class Autoencoder(nn.Module):
 		self.decoder = nn.Sequential(
 			nn.Linear(120, 256*90*60),
 			# nn.BatchNorm1d(256*90*60),
-			nn.ReLU(),
-			nn.Dropout(0.2),
+			# nn.ReLU(),
+			# nn.Dropout(0.2),
 			nn.Unflatten(1, (256, 90, 60)),
 			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
 			# nn.BatchNorm2d(128),
