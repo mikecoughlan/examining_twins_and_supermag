@@ -378,7 +378,6 @@ class Autoencoder(nn.Module):
 			nn.Dropout(0.2),
 			nn.Flatten(),
 			nn.Linear(256*90*60, 120),
-			nn.ReLU(),
 		)
 		self.decoder = nn.Sequential(
 			nn.Linear(120, 256*90*60),
