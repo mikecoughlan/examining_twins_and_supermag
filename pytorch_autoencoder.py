@@ -101,6 +101,57 @@ def loading_data(target_var, region):
 
 	return merged_df, mean_lat, maps
 
+def creating_pretraining_data(tensor_shape, train_max, train_min, scaling_mean, scaling_std, num_samples=10000):
+	'''
+	Function to create the data to pretrain the autoencoder. This data is used to train the autoencoder
+	to reduce the dimensionality of the TWINS maps.
+
+	Args:
+		tensor_shape (tuple): the shape of the tensor to be created
+		train_max (float): the maximum value of the training data
+		train_min (float): the minimum value of the training data
+		scaling_mean (float): the mean of the training data
+		scaling_std (float): the standard deviation of the training data
+		num_samples (int): the number of samples to be created
+		distribution (str): the distribution of the data to be created
+
+	Returns:
+		torch.tensor: the training data for the autoencoder
+		torch.tensor: the validation data for the autoencoder
+		torch.tensor: the testing data for the autoencoder
+
+	'''
+
+	if distribution == 'uniform':
+		train_data = np.random.uniform(low=train_min, high=train_max, size=(int(num_samples*0.7), tensor_shape[0], tensor_shape[1]))
+		val_data = np.random.uniform(low=train_min, high=train_max, size=(int(num_samples*0.2), tensor_shape[0], tensor_shape[1]))
+		test_data = np.random.uniform(low=train_min, high=train_max, size=(int(num_samples*0.1), tensor_shape[0], tensor_shape[1]))
+
+	# scaling the data
+	train_data = standard_scaling(train_data)
+	val_data = standard_scaling(val_data)
+	test_data = standard_scaling(test_data)
+
+	# converting the data to tensors
+	train_data = torch.tensor(train_data, dtype=torch.float)
+	val_data = torch.tensor(val_data, dtype=torch.float)
+	test_data = torch.tensor(test_data, dtype=torch.float)
+
+	return train_data, val_data, test_data
+
+
+def standard_scaling(x):
+		return (x - scaling_mean) / scaling_std
+
+
+def minmax_scaling(x):
+	return (x - scaling_min) / (scaling_max - scaling_min)
+
+
+def keV_to_eV(x):
+	# changing positive values in the array to eV
+	return x *1000
+
 
 def getting_prepared_data(target_var, region, get_features=False):
 	'''
@@ -220,17 +271,6 @@ def getting_prepared_data(target_var, region, get_features=False):
 	# twins_val = [twins_scaler.transform(x) for x in twins_val]
 	# twins_test = [twins_scaler.transform(x) for x in twins_test]
 
-
-	def standard_scaling(x):
-		return (x - scaling_mean) / scaling_std
-
-	def minmax_scaling(x):
-		return (x - scaling_min) / (scaling_max - scaling_min)
-
-	def keV_to_eV(x):
-		# changing positive values in the array to eV
-		return x *1000
-
 	print(f'Twins train mean before converting to eV: {np.array(twins_train).mean()}')
 	print(f'Twins train std before converting to eV: {np.array(twins_train).std()}')
 
@@ -263,9 +303,9 @@ def getting_prepared_data(target_var, region, get_features=False):
 	print(f'Twins train min after standard scaling: {np.array(twins_train).min()}')
 
 	if not get_features:
-		return torch.tensor(twins_train), torch.tensor(twins_val), torch.tensor(twins_test), date_dict
+		return torch.tensor(twins_train), torch.tensor(twins_val), torch.tensor(twins_test), date_dict, scaling_mean, scaling_std
 	else:
-		return torch.tensor(twins_train), torch.tensor(twins_val), torch.tensor(twins_test), date_dict, features
+		return torch.tensor(twins_train), torch.tensor(twins_val), torch.tensor(twins_test), date_dict, scaling_mean, scaling_std, features
 
 
 
@@ -415,7 +455,7 @@ class Early_Stopping():
 
 	'''
 
-	def __init__(self, decreasing_loss_patience=25, training_diff_patience=3):
+	def __init__(self, decreasing_loss_patience=25, training_diff_patience=3, pretraining=False):
 		self.decreasing_loss_patience = decreasing_loss_patience
 		self.training_diff_patience = training_diff_patience
 		self.loss_counter = 0
@@ -423,8 +463,9 @@ class Early_Stopping():
 		self.best_score = None
 		self.early_stop = False
 		self.best_epoch = None
+		self.pretraining = pretraining
 
-	def __call__(self, train_loss, val_loss, model, epoch):
+	def __call__(self, train_loss, val_loss, model, epoch, pretraining=False):
 		self.model = model
 		if self.best_score is None:
 			self.best_score = val_loss
@@ -454,10 +495,13 @@ class Early_Stopping():
 	def save_checkpoint(self, val_loss):
 		if self.best_loss > val_loss:
 			self.best_loss = val_loss
-			torch.save(self.model.state_dict(), f'models/autoencoder_{VERSION}.pt')
+			if self.pretraining:
+				torch.save(self.model.state_dict(), f'models/autoencoder_pretraining_{VERSION}.pt')
+			else:
+				torch.save(self.model.state_dict(), f'models/autoencoder_{VERSION}.pt')
 
 
-def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500):
+def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500, pretraining=False):
 
 	if not os.path.exists(f'models/autoencoder_{VERSION}.pt'):
 
@@ -467,21 +511,42 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		model.to(DEVICE)
 
 		# defining the loss function and the optimizer
-		# criterion = nn.MSELoss()
-		criterion = PerceptualLoss()
-		# criterion = PerceptualLoss(conv_index='22')
+		if pretraining:
+			criterion = nn.MSELoss()
+		else:
+			criterion = VGGPerceptualLoss()
 
-		# criterion = nn.MSELoss()
 		optimizer = optim.Adam(model.parameters(), lr=1e-4)
 		scaler = torch.cuda.amp.GradScaler()
 
 		# initalizing the early stopping class
-		early_stopping = Early_Stopping(decreasing_loss_patience=val_loss_patience, training_diff_patience=overfit_patience)
+		early_stopping = Early_Stopping(decreasing_loss_patience=val_loss_patience, training_diff_patience=overfit_patience, pretraining=pretraining)
 
 		for epoch in range(num_epochs):
 
 			# starting the clock for the epoch
 			stime = time.time()
+
+			# if not pretraining, freezing all but the last layer for the first 10 epochs
+			if not pretraining:
+				if epoch < 10:
+
+					# freezing all layers of encoder
+					for param in model.encoder.parameters():
+						param.requires_grad = False
+					# freezing all layers of decoder except the last layer
+					for param in model.decoder.parameters():
+						param.requires_grad = False
+					for param in model.decoder[-1].parameters():
+						param.requires_grad = True
+
+				else:
+					# unfreezing all layers of encoder
+					for param in model.encoder.parameters():
+						param.requires_grad = True
+					# unfreezing all layers of decoder
+					for param in model.decoder.parameters():
+						param.requires_grad = True
 
 			# setting the model to training mode
 			model.train()
@@ -608,41 +673,7 @@ def evaluation(model, test):
 	return np.concatenate(predicted_list, axis=0), np.concatenate(test_list, axis=0), running_loss/len(test)
 
 
-
-def main():
-	'''
-	Pulls all the above functions together. Outputs a saved file with the results.
-
-	'''
-
-	# loading all data and indicies
-	print('Loading data...')
-	train, val, test, ___ = getting_prepared_data(target_var=TARGET, region=REGION)
-
-	# # converting the data to a tensor dataset
-	# train = TensorDataset(train, train)
-	# val = TensorDataset(val, val)
-	# test = TensorDataset(test, test)
-
-	# creating the dataloaders
-	train = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True)
-	val = DataLoader(val, batch_size=BATCH_SIZE, shuffle=True)
-	test = DataLoader(test, batch_size=BATCH_SIZE, shuffle=False)
-
-	# creating the model
-	print('Initalizing model....')
-	autoencoder = Autoencoder()
-
-	# fitting the model
-	print('Fitting model....')
-	autoencoder = fit_autoencoder(autoencoder, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500)
-
-	# evaluating the model
-	print('Evaluating model....')
-	predictions, test, testing_loss = evaluation(autoencoder, test)
-
-	# turing the test data back into a numpy array
-	# test = np.concatenate([arr for arr in test], axis=0)
+def plotting_some_examples(predictions, test):
 
 	vmin = min([predictions[0, :, :].min(), test[0, :, :].min()])
 	vmax = max([predictions[0, :, :].max(), test[0, :, :].max()])
@@ -687,6 +718,64 @@ def main():
 	ax2.imshow(test[1000, :, :], vmin=vmin, vmax=vmax)
 	ax2.set_title('Actual')
 	plt.show()
+
+
+
+def main():
+	'''
+	Pulls all the above functions together. Outputs a saved file with the results.
+
+	'''
+
+	# loading all data and indicies
+	print('Loading data...')
+	train, val, test, ___, scaling_mean, scaling_std = getting_prepared_data(target_var=TARGET, region=REGION)
+
+	# getting the shape of the tensor
+	train_size = list(train.size())
+
+	# getting the pretraining data
+	pretrain_train, pretrain_val, pretrain_test = creating_pretraining_data(tensor_shape=(train_size[1], train_size[2]),
+																				train_max=torch.max(train).item(), train_min=torch.min(train).item(),
+																				scaling_mean=scaling_mean, scaling_std=scaling_std,
+																				num_samples=30000)
+
+	# creating the dataloaders
+	train = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True)
+	val = DataLoader(val, batch_size=BATCH_SIZE, shuffle=True)
+	test = DataLoader(test, batch_size=BATCH_SIZE, shuffle=False)
+
+	pretrain_train = DataLoader(pretrain_train, batch_size=BATCH_SIZE, shuffle=True)
+	pretrain_val = DataLoader(pretrain_val, batch_size=BATCH_SIZE, shuffle=True)
+	pretrain_test = DataLoader(pretrain_test, batch_size=BATCH_SIZE, shuffle=False)
+
+	# creating the model
+	print('Initalizing model....')
+	autoencoder = Autoencoder()
+
+	# pretraining the model
+	print('Pretraining model....')
+	autoencoder = fit_autoencoder(autoencoder, pretrain_train, pretrain_val, val_loss_patience=25, num_epochs=500, pretraining=True)
+
+	# testing teh pretrained model to make sure it works
+	print('Testing pretrained model....')
+	pretrained_predictions, pretrained_test, testing_loss = evaluation(autoencoder, pretrain_test)
+
+	# plotting some examples
+	print('Plotting some examples from pretrained....')
+	plotting_some_examples(pretrained_predictions, pretrained_test)
+
+	# fitting the model
+	print('Fitting model....')
+	autoencoder = fit_autoencoder(autoencoder, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500)
+
+	# evaluating the model
+	print('Evaluating model....')
+	predictions, test, testing_loss = evaluation(autoencoder, test)
+
+	# plotting some examples
+	print('Plotting some examples....')
+	plotting_some_examples(predictions, test)
 
 
 	print(f'Loss: {testing_loss}')
