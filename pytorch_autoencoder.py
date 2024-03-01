@@ -51,7 +51,7 @@ import utils
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-23'
+VERSION = 'pytorch_perceptual_v1-24'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -161,8 +161,8 @@ def getting_prepared_data(target_var, region, get_features=False):
 
 	test_days = test_days.tolist()
 	# adding the two dateimte values of interest to the test days df
-	test_days.append(specific_test_days)
 	test_days = pd.to_datetime(test_days)
+	test_days.append(specific_test_days)
 
 	train_dates_df, val_dates_df, test_dates_df = pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]})
 	x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test = [], [], [], [], [], [], [], [], []
@@ -367,15 +367,15 @@ class Autoencoder(nn.Module):
 			nn.Conv2d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding='same'),
 			# nn.BatchNorm2d(64),
 			nn.ReLU(),
-			nn.Dropout(0.2),
+			nn.Dropout(0.4),
 			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding='same'),
 			# nn.BatchNorm2d(128),
 			nn.ReLU(),
-			nn.Dropout(0.2),
+			nn.Dropout(0.4),
 			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding='same'),
 			# nn.BatchNorm2d(256),
 			nn.ReLU(),
-			nn.Dropout(0.2),
+			nn.Dropout(0.4),
 			nn.Flatten(),
 			nn.Linear(256*90*60, 120),
 		)
@@ -388,14 +388,14 @@ class Autoencoder(nn.Module):
 			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
 			# nn.BatchNorm2d(128),
 			nn.ReLU(),
-			nn.Dropout(0.2),
+			nn.Dropout(0.4),
 			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
 			# nn.BatchNorm2d(64),
 			nn.ReLU(),
-			nn.Dropout(0.2),
+			nn.Dropout(0.4),
 			nn.ConvTranspose2d(in_channels=64, out_channels=1, kernel_size=3, stride=1, padding=1),
 			nn.ReLU(),
-			nn.Dropout(0.2),
+			nn.Dropout(0.4),
 			nn.ConvTranspose2d(in_channels=1, out_channels=1, kernel_size=1, stride=1, padding=0)
 		)
 
