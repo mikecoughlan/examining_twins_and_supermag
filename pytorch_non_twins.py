@@ -282,8 +282,13 @@ class CRSP(nn.Module):
 		y_true = torch.unbind(y_true, dim=-1)
 
 		# making the arrays the right dimensions
+		print(f'mean size before unsqueeze: {mean.size()}')
 		mean = mean.unsqueeze(-1)
+		print(f'mean size after unsqueeze: {mean.size()}')
+		print(f'std size before unsqueeze: {std.size()}')
 		std = std.unsqueeze(-1)
+		print(f'std size after unsqueeze: {std.size()}')
+		print(f'y_true size before unsqueeze: {y_true.shape()}')
 		y_true = y_true.unsqueeze(-1)
 
 		# calculating the error
