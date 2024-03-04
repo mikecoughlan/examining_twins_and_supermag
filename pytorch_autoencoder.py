@@ -165,10 +165,30 @@ def creating_pretraining_data(tensor_shape, train_max, train_min, scaling_mean, 
 	val_data = generate_gaussian_2d(int(num_samples*0.2), tensor_shape, train_max)
 	test_data = generate_gaussian_2d(int(num_samples*0.1), tensor_shape, train_max)
 
+	# making figures of examples of the data
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(121)
+	ax1.imshow(train_data[10, :, :])
+	ax1.set_title('Training Example')
+	ax2 = fig.add_subplot(122)
+	ax2.imshow(val_data[10, :, :])
+	ax2.set_title('Validation Example')
+	plt.show()
+
 	# scaling the data
 	train_data = standard_scaling(train_data, scaling_mean, scaling_std)
 	val_data = standard_scaling(val_data, scaling_mean, scaling_std)
 	test_data = standard_scaling(test_data, scaling_mean, scaling_std)
+
+	# making figures of examples of the data
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(121)
+	ax1.imshow(train_data[10, :, :])
+	ax1.set_title('Training Example')
+	ax2 = fig.add_subplot(122)
+	ax2.imshow(val_data[10, :, :])
+	ax2.set_title('Validation Example')
+	plt.show()
 
 	# converting the data to tensors
 	train_data = torch.tensor(train_data, dtype=torch.float)
@@ -505,6 +525,7 @@ class Early_Stopping():
 
 	def __call__(self, train_loss, val_loss, model, epoch, pretraining=False):
 		self.model = model
+		print('Early stopping entered....')
 		if self.best_score is None:
 			self.best_score = val_loss
 			self.best_loss = val_loss
@@ -533,6 +554,7 @@ class Early_Stopping():
 	def save_checkpoint(self, val_loss):
 		if self.best_loss > val_loss:
 			self.best_loss = val_loss
+			print('Saving checkpoint!')
 			if self.pretraining:
 				torch.save(self.model.state_dict(), f'models/autoencoder_pretraining_{VERSION}.pt')
 			else:
@@ -566,7 +588,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		else:
 			criterion = VGGPerceptualLoss()
 
-		optimizer = optim.Adam(model.parameters(), lr=1e-6)
+		optimizer = optim.Adam(model.parameters(), lr=1e-4)
 		scaler = torch.cuda.amp.GradScaler()
 
 		# initalizing the early stopping class

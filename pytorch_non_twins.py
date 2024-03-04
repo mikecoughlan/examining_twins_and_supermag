@@ -274,21 +274,14 @@ class CRSP(nn.Module):
 
 	def forward(self, y_pred, y_true):
 
-		print(f'within loss function y_pred size: {y_pred.size()}')
-
 		# splitting the y_pred tensor into mean and std
 
 		mean, std = torch.unbind(y_pred, dim=-1)
-		y_true = torch.unbind(y_true, dim=-1)
+		# y_true = torch.unbind(y_true, dim=-1)
 
 		# making the arrays the right dimensions
-		print(f'mean size before unsqueeze: {mean.size()}')
 		mean = mean.unsqueeze(-1)
-		print(f'mean size after unsqueeze: {mean.size()}')
-		print(f'std size before unsqueeze: {std.size()}')
 		std = std.unsqueeze(-1)
-		print(f'std size after unsqueeze: {std.size()}')
-		print(f'y_true size before unsqueeze: {y_true.shape()}')
 		y_true = y_true.unsqueeze(-1)
 
 		# calculating the error
@@ -325,24 +318,18 @@ class CNN(nn.Module):
 			nn.Conv2d(in_channels=1, out_channels=128, kernel_size=2, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			PrintLayer(),
 			nn.MaxPool2d(kernel_size=2, stride=2),
-			PrintLayer(),
 			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=2, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			PrintLayer(),
 			nn.Flatten(),
 			nn.Linear(256*15*7, 256),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			PrintLayer(),
 			nn.Linear(256, 128),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			PrintLayer(),
 			nn.Linear(128, 2),
-			PrintLayer()
 		)
 
 	def forward(self, x):
@@ -436,7 +423,6 @@ def fit_model(model, train, val, val_loss_patience=25, num_epochs=500):
 				# forward pass
 				with torch.cuda.amp.autocast():
 					output = model(x)
-					print(f'output size: {output.size()}')
 
 					loss = criterion(output, y)
 					# loss.requires_grad = True
