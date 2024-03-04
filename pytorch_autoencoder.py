@@ -124,7 +124,7 @@ def generate_gaussian_2d(num_sample, shape, max_value, peak_location=None, peak_
 		if peak_location is None:
 			peak_location = (np.random.randint(0, shape[0]), np.random.randint(0, shape[1]))
 		if peak_std is None:
-			peak_std = np.random.uniform(0.1, 0.5) * shape[0]
+			peak_std = np.random.uniform(0.01, 0.5) * shape[0]
 
 		# Generate 2D Gaussian distribution
 		x, y = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
