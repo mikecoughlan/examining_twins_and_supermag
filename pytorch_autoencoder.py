@@ -101,6 +101,41 @@ def loading_data(target_var, region):
 
 	return merged_df, mean_lat, maps
 
+
+def generate_gaussian_2d(num_sample, shape, max_value, peak_location=None, peak_std=None):
+	"""
+	Generate a 2D NumPy array representing a Gaussian distribution with a specified maximum value and optional random peak location.
+
+	Args:
+		shape (tuple): Shape of the array (height, width).
+		max_value (float): Maximum value of the Gaussian distribution.
+		peak_location (tuple): Peak location coordinates (row, column). If None, a random location is chosen.
+		peak_std (float): Standard deviation of the Gaussian peak.
+
+	Returns:
+		numpy.ndarray: 2D array representing the Gaussian distribution.
+	"""
+
+	# initalizing the np.array to store the gaussian distributions
+	gaussian_array = np.zeros((num_sample, shape[0], shape[1]))
+
+	for i in range(num_sample):
+		# Generate random peak location and standard deviation if not specified
+		if peak_location is None:
+			peak_location = (np.random.randint(0, shape[0]), np.random.randint(0, shape[1]))
+		if peak_std is None:
+			peak_std = np.random.uniform(0.1, 0.5) * shape[0]
+
+		# Generate 2D Gaussian distribution
+		x, y = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
+		x0, y0 = peak_location
+		gaussian = max_value * np.exp(-((x - x0) ** 2 + (y - y0) ** 2) / (2 * peak_std ** 2))
+
+		gaussian_array[i, :, :] = gaussian
+
+	return gaussian_array
+
+
 def creating_pretraining_data(tensor_shape, train_max, train_min, scaling_mean, scaling_std, num_samples=10000):
 	'''
 	Function to create the data to pretrain the autoencoder. This data is used to train the autoencoder
@@ -122,15 +157,18 @@ def creating_pretraining_data(tensor_shape, train_max, train_min, scaling_mean, 
 
 	'''
 
-	if distribution == 'uniform':
-		train_data = np.random.uniform(low=train_min, high=train_max, size=(int(num_samples*0.7), tensor_shape[0], tensor_shape[1]))
-		val_data = np.random.uniform(low=train_min, high=train_max, size=(int(num_samples*0.2), tensor_shape[0], tensor_shape[1]))
-		test_data = np.random.uniform(low=train_min, high=train_max, size=(int(num_samples*0.1), tensor_shape[0], tensor_shape[1]))
+	# train_data = np.random.normal(low=train_min, high=train_max, size=(int(num_samples*0.7), tensor_shape[0], tensor_shape[1]))
+	# val_data = np.random.normal(low=train_min, high=train_max, size=(int(num_samples*0.2), tensor_shape[0], tensor_shape[1]))
+	# test_data = np.random.normal(low=train_min, high=train_max, size=(int(num_samples*0.1), tensor_shape[0], tensor_shape[1]))
+
+	train_data = generate_gaussian_2d(int(num_samples*0.7), tensor_shape, train_max)
+	val_data = generate_gaussian_2d(int(num_samples*0.2), tensor_shape, train_max)
+	test_data = generate_gaussian_2d(int(num_samples*0.1), tensor_shape, train_max)
 
 	# scaling the data
-	train_data = standard_scaling(train_data)
-	val_data = standard_scaling(val_data)
-	test_data = standard_scaling(test_data)
+	train_data = standard_scaling(train_data, scaling_mean, scaling_std)
+	val_data = standard_scaling(val_data, scaling_mean, scaling_std)
+	test_data = standard_scaling(test_data, scaling_mean, scaling_std)
 
 	# converting the data to tensors
 	train_data = torch.tensor(train_data, dtype=torch.float)
@@ -140,11 +178,11 @@ def creating_pretraining_data(tensor_shape, train_max, train_min, scaling_mean, 
 	return train_data, val_data, test_data
 
 
-def standard_scaling(x):
+def standard_scaling(x, scaling_mean, scaling_std):
 		return (x - scaling_mean) / scaling_std
 
 
-def minmax_scaling(x):
+def minmax_scaling(x, scaling_min, scaling_max):
 	return (x - scaling_min) / (scaling_max - scaling_min)
 
 
@@ -290,9 +328,9 @@ def getting_prepared_data(target_var, region, get_features=False):
 	scaling_min = twins_scaling_array.min()
 	scaling_max = twins_scaling_array.max()
 
-	twins_train = [standard_scaling(x) for x in twins_train]
-	twins_val = [standard_scaling(x) for x in twins_val]
-	twins_test = [standard_scaling(x) for x in twins_test]
+	twins_train = [standard_scaling(x, scaling_mean, scaling_std) for x in twins_train]
+	twins_val = [standard_scaling(x, scaling_mean, scaling_std) for x in twins_val]
+	twins_test = [standard_scaling(x, scaling_mean, scaling_std) for x in twins_test]
 
 	# twins_train = [minmax_scaling(x) for x in twins_train]
 	# twins_val = [minmax_scaling(x) for x in twins_val]
@@ -407,15 +445,15 @@ class Autoencoder(nn.Module):
 			nn.Conv2d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding='same'),
 			# nn.BatchNorm2d(64),
 			nn.ReLU(),
-			nn.Dropout(0.4),
+			nn.Dropout(0.2),
 			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding='same'),
 			# nn.BatchNorm2d(128),
 			nn.ReLU(),
-			nn.Dropout(0.4),
+			nn.Dropout(0.2),
 			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding='same'),
 			# nn.BatchNorm2d(256),
 			nn.ReLU(),
-			nn.Dropout(0.4),
+			nn.Dropout(0.2),
 			nn.Flatten(),
 			nn.Linear(256*90*60, 120),
 		)
@@ -428,14 +466,14 @@ class Autoencoder(nn.Module):
 			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
 			# nn.BatchNorm2d(128),
 			nn.ReLU(),
-			nn.Dropout(0.4),
+			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
 			# nn.BatchNorm2d(64),
 			nn.ReLU(),
-			nn.Dropout(0.4),
+			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=64, out_channels=1, kernel_size=3, stride=1, padding=1),
 			nn.ReLU(),
-			nn.Dropout(0.4),
+			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=1, out_channels=1, kernel_size=1, stride=1, padding=0)
 		)
 
@@ -503,7 +541,19 @@ class Early_Stopping():
 
 def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500, pretraining=False):
 
-	if not os.path.exists(f'models/autoencoder_{VERSION}.pt'):
+	# checking if the model has already been trained
+	if pretraining:
+		if os.path.exists(f'models/autoencoder_pretraining_{VERSION}.pt'):
+			train_model = False
+		else:
+			train_model = True
+	else:
+		if os.path.exists(f'models/autoencoder_{VERSION}.pt'):
+			train_model = False
+		else:
+			train_model = True
+
+	if train_model:
 
 		train_loss_list, val_loss_list = [], []
 
@@ -516,7 +566,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		else:
 			criterion = VGGPerceptualLoss()
 
-		optimizer = optim.Adam(model.parameters(), lr=1e-4)
+		optimizer = optim.Adam(model.parameters(), lr=1e-6)
 		scaler = torch.cuda.amp.GradScaler()
 
 		# initalizing the early stopping class
@@ -613,7 +663,10 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			# getting the best model
 
 		# getting the best params saved in the Early Stopping class
-		model.load_state_dict(torch.load(f'models/autoencoder_{VERSION}.pt'))
+		if pretraining:
+			model.load_state_dict(torch.load(f'models/autoencoder_pretraining_{VERSION}.pt'))
+		else:
+			model.load_state_dict(torch.load(f'models/autoencoder_{VERSION}.pt'))
 
 		# transforming the lists to a dataframe to be saved
 		loss_tracker = pd.DataFrame({'train_loss':train_loss_list, 'val_loss':val_loss_list})
@@ -621,7 +674,10 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 	else:
 		# loading the model if it has already been trained.
-		model.load_state_dict(torch.load(f'models/autoencoder_{VERSION}.pt')) 			# loading the models if already trained
+		if pretraining:
+			model.load_state_dict(torch.load(f'models/autoencoder_pretraining_{VERSION}.pt'))
+		else:
+			model.load_state_dict(torch.load(f'models/autoencoder_{VERSION}.pt')) 			# loading the models if already trained
 
 	return model
 
@@ -767,7 +823,7 @@ def main():
 
 	# fitting the model
 	print('Fitting model....')
-	autoencoder = fit_autoencoder(autoencoder, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500)
+	autoencoder = fit_autoencoder(autoencoder, train, val, val_loss_patience=25, num_epochs=500)
 
 	# evaluating the model
 	print('Evaluating model....')

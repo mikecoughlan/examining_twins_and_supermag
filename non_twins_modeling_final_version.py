@@ -348,7 +348,6 @@ def create_CNN_model(input_shape, early_stop_patience=25):
 	model.compile(optimizer=opt, loss=CRPS)					# compiling the model with custom loss function
 	early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=early_stop_patience)		# early stop process prevents overfitting
 
-
 	return model, early_stop
 
 
