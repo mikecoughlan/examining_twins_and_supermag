@@ -51,7 +51,7 @@ import utils
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-25'
+VERSION = 'pytorch_perceptual_v1-26'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -124,7 +124,7 @@ def generate_gaussian_2d(num_sample, shape, max_value, peak_location=None, peak_
 		if peak_location is None:
 			peak_location = (np.random.randint(0, shape[0]), np.random.randint(0, shape[1]))
 		if peak_std is None:
-			peak_std = np.random.uniform(0.01, 0.5) * shape[0]
+			peak_std = np.random.uniform(0.01, 0.9) * shape[0]
 
 		# Generate 2D Gaussian distribution
 		x, y = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
@@ -132,6 +132,10 @@ def generate_gaussian_2d(num_sample, shape, max_value, peak_location=None, peak_
 		gaussian = max_value * np.exp(-((x - x0) ** 2 + (y - y0) ** 2) / (2 * peak_std ** 2))
 
 		gaussian_array[i, :, :] = gaussian
+
+		# resetting the peak location and peak std
+		peak_location = None
+		peak_std = None
 
 	return gaussian_array
 
@@ -165,14 +169,18 @@ def creating_pretraining_data(tensor_shape, train_max, train_min, scaling_mean, 
 	val_data = generate_gaussian_2d(int(num_samples*0.2), tensor_shape, train_max)
 	test_data = generate_gaussian_2d(int(num_samples*0.1), tensor_shape, train_max)
 
-	# making figures of examples of the data
-	fig = plt.figure(figsize=(10, 10))
-	ax1 = fig.add_subplot(121)
-	ax1.imshow(train_data[10, :, :])
-	ax1.set_title('Training Example')
-	ax2 = fig.add_subplot(122)
-	ax2.imshow(val_data[10, :, :])
-	ax2.set_title('Validation Example')
+	# plotting 9 random examples of training data
+	fig, axes = plt.subplots(3, 3, figsize=(10, 10))
+	for i, ax in enumerate(axes.flatten()):
+		ax.imshow(train_data[i, :, :])
+		ax.set_title(f'Example {i+1}')
+	plt.show()
+
+	# plotting 9 random examples of validation data
+	fig, axes = plt.subplots(3, 3, figsize=(10, 10))
+	for i, ax in enumerate(axes.flatten()):
+		ax.imshow(val_data[i, :, :])
+		ax.set_title(f'Example {i+1}')
 	plt.show()
 
 	# scaling the data
@@ -462,36 +470,34 @@ class Autoencoder(nn.Module):
 	def __init__(self):
 		super(Autoencoder, self).__init__()
 		self.encoder = nn.Sequential(
-			nn.Conv2d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding='same'),
-			# nn.BatchNorm2d(64),
+			nn.Conv2d(in_channels=1, out_channels=256, kernel_size=3, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding='same'),
-			# nn.BatchNorm2d(128),
+			nn.Conv2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding='same'),
-			# nn.BatchNorm2d(256),
+			nn.Conv2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding='same'),
+			nn.ReLU(),
+			nn.Dropout(0.2),
+			nn.Conv2d(in_channels=64, out_channels=32, kernel_size=3, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.Flatten(),
-			nn.Linear(256*90*60, 120),
+			nn.Linear(32*90*60, 420),
 		)
 		self.decoder = nn.Sequential(
-			nn.Linear(120, 256*90*60),
-			# nn.BatchNorm1d(256*90*60),
-			# nn.ReLU(),
-			# nn.Dropout(0.2),
-			nn.Unflatten(1, (256, 90, 60)),
-			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
-			# nn.BatchNorm2d(128),
+			nn.Linear(420, 32*90*60),
+			nn.Unflatten(1, (32, 90, 60)),
+			nn.ConvTranspose2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
-			# nn.BatchNorm2d(64),
+			nn.ConvTranspose2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=64, out_channels=1, kernel_size=3, stride=1, padding=1),
+			nn.ConvTranspose2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1),
+			nn.ReLU(),
+			nn.Dropout(0.2),
+			nn.ConvTranspose2d(in_channels=256, out_channels=1, kernel_size=3, stride=1, padding=1),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=1, out_channels=1, kernel_size=1, stride=1, padding=0)
@@ -563,6 +569,22 @@ class Early_Stopping():
 
 def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500, pretraining=False):
 
+	'''
+	_summary_: Function to train the autoencoder model.
+
+	Args:
+		model (object): the model to be trained
+		train (torch.utils.data.DataLoader): the training data
+		val (torch.utils.data.DataLoader): the validation data
+		val_loss_patience (int): the number of epochs to wait before stopping the model if the validation loss does not decrease
+		overfit_patience (int): the number of epochs to wait before stopping the model if the training loss is significantly lower than the validation loss
+		num_epochs (int): the number of epochs to train the model
+		pretraining (bool): whether the model is being pre-trained
+
+	Returns:
+		object: the trained model
+	'''
+
 	# checking if the model has already been trained
 	if pretraining:
 		if os.path.exists(f'models/autoencoder_pretraining_{VERSION}.pt'):
@@ -584,11 +606,12 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 		# defining the loss function and the optimizer
 		if pretraining:
-			criterion = nn.MSELoss()
+			# criterion = nn.MSELoss()
+			criterion = nn.L1Loss() 		# this calculates the mean absolute error losses
 		else:
 			criterion = VGGPerceptualLoss()
 
-		optimizer = optim.Adam(model.parameters(), lr=1e-4)
+		optimizer = optim.Adam(model.parameters(), lr=1e-5)
 		scaler = torch.cuda.amp.GradScaler()
 
 		# initalizing the early stopping class
