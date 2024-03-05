@@ -73,6 +73,19 @@ print(f'Device: {DEVICE}')
 
 
 def loading_data(target_var, region):
+	'''
+	Function to load the data for the model.
+
+	Args:
+		target_var (str): the target variable to be used in the model
+		region (int): the region to be used in the model
+	
+	Returns:
+		pd.DataFrame: the merged dataframe
+		float: the mean latitude of the region
+		dict: the TWINS maps
+
+	'''
 
 	# loading all the datasets and dictonaries
 
@@ -207,10 +220,12 @@ def creating_pretraining_data(tensor_shape, train_max, train_min, scaling_mean, 
 
 
 def standard_scaling(x, scaling_mean, scaling_std):
-		return (x - scaling_mean) / scaling_std
+	# scaling the data to have a mean of 0 and a standard deviation of 1
+	return (x - scaling_mean) / scaling_std
 
 
 def minmax_scaling(x, scaling_min, scaling_max):
+	# scaling the data to be between 0 and 1
 	return (x - scaling_min) / (scaling_max - scaling_min)
 
 
@@ -222,6 +237,10 @@ def keV_to_eV(x):
 def getting_prepared_data(target_var, region, get_features=False):
 	'''
 	Calling the data prep class without the TWINS data for this version of the model.
+
+	Args:
+		target_var (str): the target variable to be used in the model
+		region (int): the region to be used in the model
 
 	Returns:
 		X_train (np.array): training inputs for the model
@@ -380,6 +399,13 @@ class PerceptualLoss(nn.Module):
 			loss between of the feature maps between the predicted and real images'''
 
 	def __init__(self, conv_index: str = '22'):
+		'''
+		Initializing the PerceptualLoss class.
+
+		Args:
+			conv_index (str): the index of the convolutional layer to be used to calculate the loss
+
+		'''
 
 		super(PerceptualLoss, self).__init__()
 		self.conv_index = conv_index
@@ -398,6 +424,16 @@ class PerceptualLoss(nn.Module):
 
 
 	def forward(self, output, target):
+		'''
+		Function to calculate the perceptual loss between the output and target images.
+
+		Args:
+			output (torch.tensor): the predicted image
+			target (torch.tensor): the real image
+		
+		Returns:
+			float: the loss between the two images
+		'''
 
 		# copying the output and ytest such that they go from 1 channel to 3 channels
 		output = output.repeat(1, 3, 1, 1)
@@ -423,6 +459,14 @@ class PerceptualLoss(nn.Module):
 
 class VGGPerceptualLoss(torch.nn.Module):
 	def __init__(self, resize=True):
+		'''
+		Initializing the VGGPerceptualLoss class.
+
+		Args:
+			resize (bool): whether to resize the images to 224x224
+
+		'''
+
 		super(VGGPerceptualLoss, self).__init__()
 		blocks = []
 		blocks.append(torchvision.models.vgg16(pretrained=True).features[:4].eval())
@@ -439,6 +483,17 @@ class VGGPerceptualLoss(torch.nn.Module):
 		self.register_buffer("std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
 
 	def forward(self, output, target, feature_layers=[0, 1, 2, 3], style_layers=[]):
+		'''
+		Function to calculate the perceptual loss between the output and target images.
+
+		Args:
+			output (torch.tensor): the predicted image
+			target (torch.tensor): the real image
+			feature_layers (list): the layers to be used to calculate the loss
+
+		Returns:
+			float: the loss between the two images
+		'''
 
 		self.mean = self.mean.to(DEVICE)
 		self.std = self.std.to(DEVICE)
@@ -459,8 +514,6 @@ class VGGPerceptualLoss(torch.nn.Module):
 			block.to(DEVICE)
 			output = block(output)
 			target = block(target)
-			# output = output.detach()
-			# target = target.detach()
 			if i in feature_layers:
 				loss += F.mse_loss(output, target)
 		return loss
@@ -468,6 +521,10 @@ class VGGPerceptualLoss(torch.nn.Module):
 
 class Autoencoder(nn.Module):
 	def __init__(self):
+		'''
+		Initializing the autoencoder model.
+
+		'''
 		super(Autoencoder, self).__init__()
 		self.encoder = nn.Sequential(
 			nn.Conv2d(in_channels=1, out_channels=256, kernel_size=3, stride=1, padding='same'),
@@ -504,6 +561,17 @@ class Autoencoder(nn.Module):
 		)
 
 	def forward(self, x, get_latent=False):
+		'''
+		Function to pass the input through the model.
+
+		Args:
+			x (torch.tensor): the input data
+			get_latent (bool): whether to return the latent space representation of the data
+
+		Returns:
+			torch.tensor: the output of the model
+		'''
+
 		# x = x.unsqueeze(1)
 		latent = self.encoder(x)
 		if get_latent:
@@ -520,6 +588,15 @@ class Early_Stopping():
 	'''
 
 	def __init__(self, decreasing_loss_patience=25, training_diff_patience=3, pretraining=False):
+		'''
+		Initializing the class.
+
+		Args:
+			decreasing_loss_patience (int): the number of epochs to wait before stopping the model if the validation loss does not decrease
+			training_diff_patience (int): the number of epochs to wait before stopping the model if the training loss is significantly lower than the validation loss
+			pretraining (bool): whether the model is being pre-trained. Just used for saving model names.
+
+		'''
 		self.decreasing_loss_patience = decreasing_loss_patience
 		self.training_diff_patience = training_diff_patience
 		self.loss_counter = 0
@@ -530,8 +607,20 @@ class Early_Stopping():
 		self.pretraining = pretraining
 
 	def __call__(self, train_loss, val_loss, model, epoch, pretraining=False):
+		'''
+		Function to call the early stopping condition.
+
+		Args:
+			train_loss (float): the training loss for the model
+			val_loss (float): the validation loss for the model
+			model (object): the model to be saved
+			epoch (int): the current epoch
+
+		Returns:
+			bool: whether the model should stop training or not
+		'''
+
 		self.model = model
-		print('Early stopping entered....')
 		if self.best_score is None:
 			self.best_score = val_loss
 			self.best_loss = val_loss
@@ -558,6 +647,13 @@ class Early_Stopping():
 			return False
 
 	def save_checkpoint(self, val_loss):
+		'''
+		Function to continually save the best model.
+
+		Args:
+			val_loss (float): the validation loss for the model
+		'''
+
 		if self.best_loss > val_loss:
 			self.best_loss = val_loss
 			print('Saving checkpoint!')
@@ -856,7 +952,7 @@ def main():
 
 	# pretraining the model
 	print('Pretraining model....')
-	autoencoder = fit_autoencoder(autoencoder, pretrain_train, pretrain_val, val_loss_patience=25, num_epochs=500, pretraining=True)
+	autoencoder = fit_autoencoder(autoencoder, pretrain_train, pretrain_val, val_loss_patience=50, num_epochs=500, pretraining=True)
 
 	# testing teh pretrained model to make sure it works
 	print('Testing pretrained model....')
