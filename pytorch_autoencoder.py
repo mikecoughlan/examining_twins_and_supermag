@@ -51,7 +51,7 @@ import utils
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-29'
+VERSION = 'pytorch_perceptual_v1-30'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -707,7 +707,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		else:
 			criterion = VGGPerceptualLoss()
 
-		optimizer = optim.Adam(model.parameters(), lr=1e-4)
+		optimizer = optim.Adam(model.parameters(), lr=1e-3)
 		scaler = torch.cuda.amp.GradScaler()
 
 		# initalizing the early stopping class
