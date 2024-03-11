@@ -34,9 +34,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
+from torchvision import models
 import torchvision.transforms as transforms
 import tqdm
-from scipy.special import expit, inv_boxcox
 from scipy.stats import boxcox
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
@@ -51,7 +51,7 @@ import utils
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-30'
+VERSION = 'pytorch_perceptual_v1-32'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -527,16 +527,16 @@ class Autoencoder(nn.Module):
 		'''
 		super(Autoencoder, self).__init__()
 		self.encoder = nn.Sequential(
-			nn.Conv2d(in_channels=1, out_channels=256, kernel_size=2, stride=1, padding='same'),
+			nn.Conv2d(in_channels=1, out_channels=256, kernel_size=5, stride=1, padding='same', bias=False),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Conv2d(in_channels=256, out_channels=128, kernel_size=2, stride=1, padding='same'),
+			nn.Conv2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding='same', bias=False),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Conv2d(in_channels=128, out_channels=64, kernel_size=2, stride=2, padding=0),
+			nn.Conv2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding='same', bias=False),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Conv2d(in_channels=64, out_channels=32, kernel_size=3, stride=1, padding='same'),
+			nn.Conv2d(in_channels=64, out_channels=32, kernel_size=2, stride=2, padding=0, bias=False),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.Flatten(),
@@ -545,16 +545,16 @@ class Autoencoder(nn.Module):
 		self.decoder = nn.Sequential(
 			nn.Linear(420, 32*45*30),
 			nn.Unflatten(1, (32, 45, 30)),
-			nn.ConvTranspose2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1),
+			nn.ConvTranspose2d(in_channels=32, out_channels=64, kernel_size=2, stride=2, padding=1),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=64, out_channels=128, kernel_size=2, stride=2, padding=0),
+			nn.ConvTranspose2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=128, out_channels=256, kernel_size=2, stride=1, padding=1),
+			nn.ConvTranspose2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=256, out_channels=1, kernel_size=2, stride=1, padding=0),
+			nn.ConvTranspose2d(in_channels=256, out_channels=1, kernel_size=5, stride=1, padding=1),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=1, out_channels=1, kernel_size=1, stride=1, padding=0)
@@ -579,6 +579,150 @@ class Autoencoder(nn.Module):
 		else:
 			x = self.decoder(latent)
 			return x
+
+
+class BaseModel(nn.Module):
+	'''
+	_summary_: Base class for all models.
+
+	Args:
+		nn (nn): the base class for all neural network modules
+	'''
+	def __init__(self):
+		super(BaseModel, self).__init__()
+		self.logger = logging.getLogger(self.__class__.__name__)
+
+	def forward(self):
+		raise NotImplementedError
+
+	def summary(self):
+		model_parameters = filter(lambda p: p.requires_grad, self.parameters())
+		nbr_params = sum([np.prod(p.size()) for p in model_parameters])
+		self.logger.info(f'Nbr of trainable parameters: {nbr_params}')
+
+	def __str__(self):
+		model_parameters = filter(lambda p: p.requires_grad, self.parameters())
+		nbr_params = sum([np.prod(p.size()) for p in model_parameters])
+		return super(BaseModel, self).__str__() + f'\nNbr of trainable parameters: {nbr_params}'
+
+
+class SegNet(BaseModel):
+	def __init__(self, latent_dims=120, in_channels=3, pretrained=True, freeze_bn=False, **_):
+		super(SegNet, self).__init__()
+		vgg_bn = models.vgg16_bn(pretrained= pretrained)
+		encoder = list(vgg_bn.features.children())
+		self.latent_dims = latent_dims
+
+		# Adjust the input size
+		if in_channels != 3:
+			encoder[0] = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1)
+
+		# Encoder, VGG without any maxpooling
+		self.stage1_encoder = nn.Sequential(*encoder[:6])
+		self.stage2_encoder = nn.Sequential(*encoder[7:13])
+		self.stage3_encoder = nn.Sequential(*encoder[14:23])
+		self.stage4_encoder = nn.Sequential(*encoder[24:33])
+		self.stage5_encoder = nn.Sequential(*encoder[34:-1])
+		self.pool = nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)
+
+		self.flatten = nn.Flatten()
+
+		# Decoder, same as the encoder but reversed, maxpool will not be used
+		decoder = encoder
+		decoder = [i for i in list(reversed(decoder)) if not isinstance(i, nn.MaxPool2d)]
+		# Replace the last conv layer
+		decoder[-1] = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+		# When reversing, we also reversed conv->batchN->relu, correct it
+		decoder = [item for i in range(0, len(decoder), 3) for item in decoder[i:i+3][::-1]]
+		# Replace some conv layers & batchN after them
+		for i, module in enumerate(decoder):
+			if isinstance(module, nn.Conv2d):
+				if module.in_channels != module.out_channels:
+					decoder[i+1] = nn.BatchNorm2d(module.in_channels)
+					decoder[i] = nn.Conv2d(module.out_channels, module.in_channels, kernel_size=3, stride=1, padding=1)
+
+		self.stage1_decoder = nn.Sequential(*decoder[0:9])
+		self.stage2_decoder = nn.Sequential(*decoder[9:18])
+		self.stage3_decoder = nn.Sequential(*decoder[18:27])
+		self.stage4_decoder = nn.Sequential(*decoder[27:33])
+		self.stage5_decoder = nn.Sequential(*decoder[33:],
+				nn.Conv2d(64, 1, kernel_size=3, stride=1, padding=1)
+		)
+		self.unpool = nn.MaxUnpool2d(kernel_size=2, stride=2)
+
+		self._initialize_weights(self.stage1_decoder, self.stage2_decoder, self.stage3_decoder,
+									self.stage4_decoder, self.stage5_decoder)
+		if freeze_bn: self.freeze_bn()
+
+	def _initialize_weights(self, *stages):
+		for modules in stages:
+			for module in modules.modules():
+				if isinstance(module, nn.Conv2d):
+					nn.init.kaiming_normal_(module.weight)
+					if module.bias is not None:
+						module.bias.data.zero_()
+				elif isinstance(module, nn.BatchNorm2d):
+					module.weight.data.fill_(1)
+					module.bias.data.zero_()
+
+	def forward(self, x):
+		# Encoder
+		x = self.stage1_encoder(x)
+		x1_size = x.size()
+		x, indices1 = self.pool(x)
+
+		x = self.stage2_encoder(x)
+		x2_size = x.size()
+		x, indices2 = self.pool(x)
+
+		x = self.stage3_encoder(x)
+		x3_size = x.size()
+		x, indices3 = self.pool(x)
+
+		x = self.stage4_encoder(x)
+		x4_size = x.size()
+		x, indices4 = self.pool(x)
+
+		x = self.stage5_encoder(x)
+		x5_size = x.size()
+		x, indices5 = self.pool(x)
+
+		last_pool_size = x.size()
+
+		# Latent space
+		x = self.flatten(x)
+		x = nn.Linear(last_pool_size[1]*last_pool_size[2]*last_pool_size[3], self.latent_dims)(x)
+
+		# Decoder
+		x = nn.Linear(self.latent_dims, last_pool_size[1]*last_pool_size[2]*last_pool_size[3])(x)
+		x = x.view(last_pool_size)
+
+		x = self.unpool(x, indices=indices5, output_size=x5_size)
+		x = self.stage1_decoder(x)
+
+		x = self.unpool(x, indices=indices4, output_size=x4_size)
+		x = self.stage2_decoder(x)
+
+		x = self.unpool(x, indices=indices3, output_size=x3_size)
+		x = self.stage3_decoder(x)
+
+		x = self.unpool(x, indices=indices2, output_size=x2_size)
+		x = self.stage4_decoder(x)
+
+		x = self.unpool(x, indices=indices1, output_size=x1_size)
+		x = self.stage5_decoder(x)
+
+		return x
+
+	def get_backbone_params(self):
+		return []
+
+	def get_decoder_params(self):
+		return self.parameters()
+
+	def freeze_bn(self):
+		for module in self.modules():
+			if isinstance(module, nn.BatchNorm2d): module.eval()
 
 
 class Early_Stopping():
@@ -702,8 +846,8 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 		# defining the loss function and the optimizer
 		if pretraining:
-			# criterion = nn.MSELoss()
-			criterion = nn.L1Loss() 		# this calculates the mean absolute error losses
+			criterion = nn.MSELoss()
+			# criterion = nn.L1Loss() 		# this calculates the mean absolute error losses
 		else:
 			criterion = VGGPerceptualLoss()
 
@@ -948,13 +1092,13 @@ def main():
 
 	# creating the model
 	print('Initalizing model....')
-	autoencoder = Autoencoder()
+	autoencoder = SegNet()
 
 	# pretraining the model
 	print('Pretraining model....')
 	autoencoder = fit_autoencoder(autoencoder, pretrain_train, pretrain_val, val_loss_patience=50, num_epochs=500, pretraining=True)
 
-	# testing teh pretrained model to make sure it works
+	# testing the pretrained model to make sure it works
 	print('Testing pretrained model....')
 	pretrained_predictions, pretrained_test, testing_loss = evaluation(autoencoder, pretrain_test)
 
