@@ -16,6 +16,7 @@ import datetime
 import gc
 import glob
 import json
+import logging
 import os
 import pickle
 import subprocess
@@ -34,7 +35,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
-from torchvision import models
 import torchvision.transforms as transforms
 import tqdm
 from scipy.stats import boxcox
@@ -43,15 +43,18 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from spacepy import pycdf
 from torch.utils.data import DataLoader, Dataset, TensorDataset
+from torchvision import models
 
 import utils
 
 # from data_generator import Generator
 # from data_prep import DataPrep
 
+logging.basicConfig(level=logging.INFO, format='')
+
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-32'
+VERSION = 'pytorch_perceptual_v1-33'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -70,6 +73,17 @@ BATCH_SIZE = 16
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'Device: {DEVICE}')
+
+
+class Logger:
+	def __init__(self):
+		self.entries = {}
+
+	def add_entry(self, entry):
+		self.entries[len(self.entries) + 1] = entry
+
+	def __str__(self):
+		return json.dumps(self.entries, sort_keys=True, indent=4)
 
 
 def loading_data(target_var, region):
@@ -546,16 +560,16 @@ class Autoencoder(nn.Module):
 			nn.Linear(420, 32*45*30),
 			nn.Unflatten(1, (32, 45, 30)),
 			nn.ConvTranspose2d(in_channels=32, out_channels=64, kernel_size=2, stride=2, padding=1),
-			nn.ReLU(),
+			# nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
-			nn.ReLU(),
+			# nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1),
-			nn.ReLU(),
+			# nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=256, out_channels=1, kernel_size=5, stride=1, padding=1),
-			nn.ReLU(),
+			# nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=1, out_channels=1, kernel_size=1, stride=1, padding=0)
 		)
@@ -607,15 +621,13 @@ class BaseModel(nn.Module):
 
 
 class SegNet(BaseModel):
-	def __init__(self, latent_dims=120, in_channels=3, pretrained=True, freeze_bn=False, **_):
+	def __init__(self, latent_dims=120, in_channels=1, pretrained=True, freeze_bn=False, **_):
 		super(SegNet, self).__init__()
 		vgg_bn = models.vgg16_bn(pretrained= pretrained)
 		encoder = list(vgg_bn.features.children())
 		self.latent_dims = latent_dims
 
-		# Adjust the input size
-		if in_channels != 3:
-			encoder[0] = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1)
+		encoder[0] = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1)
 
 		# Encoder, VGG without any maxpooling
 		self.stage1_encoder = nn.Sequential(*encoder[:6])
@@ -654,6 +666,10 @@ class SegNet(BaseModel):
 									self.stage4_decoder, self.stage5_decoder)
 		if freeze_bn: self.freeze_bn()
 
+	def linear(self, in_channels, out_channels):
+		return nn.Sequential(nn.Linear(in_channels, out_channels)).to(DEVICE)
+
+
 	def _initialize_weights(self, *stages):
 		for modules in stages:
 			for module in modules.modules():
@@ -665,7 +681,10 @@ class SegNet(BaseModel):
 					module.weight.data.fill_(1)
 					module.bias.data.zero_()
 
-	def forward(self, x):
+	def forward(self, x, get_latent=False):
+
+		# x = x.repeat(1, 3, 1, 1)
+
 		# Encoder
 		x = self.stage1_encoder(x)
 		x1_size = x.size()
@@ -688,13 +707,15 @@ class SegNet(BaseModel):
 		x, indices5 = self.pool(x)
 
 		last_pool_size = x.size()
+		# last_pool_size.to(DEVICE)
 
 		# Latent space
 		x = self.flatten(x)
-		x = nn.Linear(last_pool_size[1]*last_pool_size[2]*last_pool_size[3], self.latent_dims)(x)
+
+		latent = self.linear(last_pool_size[1]*last_pool_size[2]*last_pool_size[3], self.latent_dims)(x)
 
 		# Decoder
-		x = nn.Linear(self.latent_dims, last_pool_size[1]*last_pool_size[2]*last_pool_size[3])(x)
+		x = self.linear(self.latent_dims, last_pool_size[1]*last_pool_size[2]*last_pool_size[3])(latent)
 		x = x.view(last_pool_size)
 
 		x = self.unpool(x, indices=indices5, output_size=x5_size)
@@ -712,7 +733,10 @@ class SegNet(BaseModel):
 		x = self.unpool(x, indices=indices1, output_size=x1_size)
 		x = self.stage5_decoder(x)
 
-		return x
+		if get_latent:
+			return latent
+		else:
+			return x
 
 	def get_backbone_params(self):
 		return []
@@ -1079,7 +1103,7 @@ def main():
 	pretrain_train, pretrain_val, pretrain_test = creating_pretraining_data(tensor_shape=(train_size[1], train_size[2]),
 																				train_max=torch.max(train).item(), train_min=torch.min(train).item(),
 																				scaling_mean=scaling_mean, scaling_std=scaling_std,
-																				num_samples=30000)
+																				num_samples=100000)
 
 	# creating the dataloaders
 	train = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True)
@@ -1092,7 +1116,7 @@ def main():
 
 	# creating the model
 	print('Initalizing model....')
-	autoencoder = SegNet()
+	autoencoder = Autoencoder()
 
 	# pretraining the model
 	print('Pretraining model....')
