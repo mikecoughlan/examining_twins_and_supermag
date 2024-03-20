@@ -43,7 +43,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from spacepy import pycdf
 from torch.utils.data import DataLoader, Dataset, TensorDataset
+from torchsummary import summary
 from torchvision import models
+from torchvision.transforms.functional import rotate
 
 import utils
 
@@ -54,7 +56,7 @@ logging.basicConfig(level=logging.INFO, format='')
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-33'
+VERSION = 'pytorch_perceptual_v1-35'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -233,6 +235,69 @@ def creating_pretraining_data(tensor_shape, train_max, train_min, scaling_mean, 
 	return train_data, val_data, test_data
 
 
+def creating_fake_twins_data(train, scaling_mean, scaling_std):
+
+	# splitting the training data into train val and test
+	train_data, test_data = train_test_split(train, test_size=0.1, random_state=RANDOM_SEED)
+	train_data, val_data = train_test_split(train_data, test_size=0.125, random_state=RANDOM_SEED)
+
+	# rotating the data 90 degrees with expansion then cutting them to the 90,60 size
+	train_rotated_90 = rotate(train_data, angle=90, expand=True)
+	val_rotated_90 = rotate(val_data, angle=90, expand=True)
+	test_rotated_90 = rotate(test_data, angle=90, expand=True)
+
+	train_rotated_90 = train_rotated_90[:, 0:90, 0:60]
+	val_rotated_90 = val_rotated_90[:, 0:90, 0:60]
+	test_rotated_90 = test_rotated_90[:, 0:90, 0:60]
+
+	# adding a 30, 60 slice to the data at the 1 dimension
+	train_rotated_90 = torch.cat([train_rotated_90, train_rotated_90[:, 0:30, 0:60]], dim=1)
+	val_rotated_90 = torch.cat([val_rotated_90, val_rotated_90[:, 0:30, 0:60]], dim=1)
+	test_rotated_90 = torch.cat([test_rotated_90, test_rotated_90[:, 0:30, 0:60]], dim=1)
+
+	# rotating the data 180 degrees
+	train_rotated_180 = rotate(train_data, angle=180, expand=False)
+	val_rotated_180 = rotate(val_data, angle=180, expand=False)
+	test_rotated_180 = rotate(test_data, angle=180, expand=False)
+
+	# rotating the data 270 with an expansion and then cutting it down to the 90, 60 size
+	train_rotated_270 = rotate(train_data, angle=270, expand=True)
+	val_rotated_270 = rotate(val_data, angle=270, expand=True)
+	test_rotated_270 = rotate(test_data, angle=270, expand=True)
+
+	train_rotated_270 = train_rotated_270[:, 0:90, 0:60]
+	val_rotated_270 = val_rotated_270[:, 0:90, 0:60]
+	test_rotated_270 = test_rotated_270[:, 0:90, 0:60]
+
+	# adding a 30, 60 slice to the data at the 1 dimension
+	train_rotated_270 = torch.cat([train_rotated_270, train_rotated_270[:, 0:30, 0:60]], dim=1)
+	val_rotated_270 = torch.cat([val_rotated_270, val_rotated_270[:, 0:30, 0:60]], dim=1)
+	test_rotated_270 = torch.cat([test_rotated_270, test_rotated_270[:, 0:30, 0:60]], dim=1)
+
+	# flipping the data
+	flipped_train_data = torch.flip(train_data, [1])
+	flipped_val_data = torch.flip(val_data, [1])
+	flipped_test_data = torch.flip(test_data, [1])
+
+	# flipping the data
+	flipped_train_data_2 = torch.flip(train_data, [2])
+	flipped_val_data_2 = torch.flip(val_data, [2])
+	flipped_test_data_2 = torch.flip(test_data, [2])
+
+	# concatenating the data without the origonal data
+	train_data = torch.cat([train_rotated_90, train_rotated_180, train_rotated_270, flipped_train_data, flipped_train_data_2], dim=0)
+	val_data = torch.cat([val_rotated_90, val_rotated_180, val_rotated_270, flipped_val_data, flipped_val_data_2], dim=0)
+	test_data = torch.cat([test_rotated_90, test_rotated_180, test_rotated_270, flipped_test_data, flipped_test_data_2], dim=0)
+
+	# scaling the data
+	train_data = standard_scaling(train_data, scaling_mean, scaling_std)
+	val_data = standard_scaling(val_data, scaling_mean, scaling_std)
+	test_data = standard_scaling(test_data, scaling_mean, scaling_std)
+
+	return train_data, val_data, test_data
+
+
+
 def standard_scaling(x, scaling_mean, scaling_std):
 	# scaling the data to have a mean of 0 and a standard deviation of 1
 	return (x - scaling_mean) / scaling_std
@@ -248,57 +313,32 @@ def keV_to_eV(x):
 	return x *1000
 
 
-def getting_prepared_data(target_var, region, get_features=False):
+def getting_prepared_data(get_features=False):
 	'''
-	Calling the data prep class without the TWINS data for this version of the model.
+	Function to get the prepared data for the model.
 
 	Args:
-		target_var (str): the target variable to be used in the model
-		region (int): the region to be used in the model
+		get_features (bool): whether to return the features of the data
 
 	Returns:
-		X_train (np.array): training inputs for the model
-		X_val (np.array): validation inputs for the model
-		X_test (np.array): testing inputs for the model
-		y_train (np.array): training targets for the model
-		y_val (np.array): validation targets for the model
-		y_test (np.array): testing targets for the model
+		twins_train (torch.tensor): the training data for the autoencoder
+		twins_val (torch.tensor): the validation data for the autoencoder
+		twins_test (torch.tensor): the testing data for the autoencoder
+		date_dict (dict): the dates of the data
+		scaling_mean (float): the mean of the training data
+		scaling_std (float): the standard deviation of the training data
+		features (list): the features of the data
 
 	'''
 
 	maps = utils.loading_twins_maps()
 
-	# merged_df, mean_lat, maps = loading_data(target_var=target_var, region=region)
-
-	# # target = merged_df['classification']
-	# target = merged_df[f'rolling_{target_var}']
-
-	# # reducing the dataframe to only the features that will be used in the model plus the target variable
-	# vars_to_keep = [f'rolling_{target_var}', 'dbht_median', 'MAGNITUDE_median', 'MAGNITUDE_std', 'sin_theta_std', 'cos_theta_std', 'cosMLT', 'sinMLT',
-	# 				'B_Total', 'BY_GSM', 'BZ_GSM', 'Vx', 'Vy', 'proton_density', 'logT']
-	# merged_df = merged_df[vars_to_keep]
-
-	# print('Columns in Merged Dataframe: '+str(merged_df.columns))
-
-	# print(f'Target value positive percentage: {target.sum()/len(target)}')
-	# # merged_df.drop(columns=[f'rolling_{target_var}', 'classification'], inplace=True)
-
 	temp_version = 'pytorch_test'
 
-	if os.path.exists(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl'):
-		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'rb') as f:
-			storms_extracted_dict = pickle.load(f)
-		storms = storms_extracted_dict['storms']
-		target = storms_extracted_dict['target']
-
-	else:
-		# getting the data corresponding to the twins maps
-		storms, target = utils.storm_extract(df=merged_df, lead=30, recovery=9, twins=True, target=True, target_var=f'rolling_{target_var}', concat=False, map_keys=maps.keys())
-		storms_extracted_dict = {'storms':storms, 'target':target}
-		with open(working_dir+f'twins_method_storm_extraction_map_keys_region_{region}_time_history_{CONFIG["time_history"]}_version_{temp_version}.pkl', 'wb') as f:
-			pickle.dump(storms_extracted_dict, f)
-
-	print('Columns in Dataframe: '+str(storms[0].columns))
+	with open(working_dir+f'twins_method_storm_extraction_map_keys_version_{temp_version}.pkl', 'rb') as f:
+		storms_extracted_dict = pickle.load(f)
+	storms = storms_extracted_dict['storms']
+	target = storms_extracted_dict['target']
 	features = storms[0].columns
 
 	# splitting the data on a day to day basis to reduce data leakage
@@ -306,8 +346,8 @@ def getting_prepared_data(target_var, region, get_features=False):
 	specific_test_days = pd.date_range(start=pd.to_datetime('2012-03-07'), end=pd.to_datetime('2012-03-13'), freq='D')
 	day_df = day_df.drop(specific_test_days)
 
-	train_days, test_days = train_test_split(day_df, test_size=0.1, shuffle=True, random_state=CONFIG['random_seed'])
-	train_days, val_days = train_test_split(train_days, test_size=0.125, shuffle=True, random_state=CONFIG['random_seed'])
+	train_days, test_days = train_test_split(day_df, test_size=0.1, shuffle=True, random_state=RANDOM_SEED)
+	train_days, val_days = train_test_split(train_days, test_size=0.125, shuffle=True, random_state=RANDOM_SEED)
 
 	test_days = test_days.tolist()
 	# adding the two dateimte values of interest to the test days df
@@ -363,43 +403,15 @@ def getting_prepared_data(target_var, region, get_features=False):
 			twins_test.append(maps[twins_map]['map'])
 			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
 
-	# scaling the twins maps
-	# twins_scaler = MinMaxScaler()
-	# twins_scaler.fit(twins_scaling_array)
-	# twins_train = [twins_scaler.transform(x) for x in twins_train]
-	# twins_val = [twins_scaler.transform(x) for x in twins_val]
-	# twins_test = [twins_scaler.transform(x) for x in twins_test]
-
-	print(f'Twins train mean before converting to eV: {np.array(twins_train).mean()}')
-	print(f'Twins train std before converting to eV: {np.array(twins_train).std()}')
-
-	# twins_train = [keV_to_eV(x) for x in twins_train]
-	# twins_val = [keV_to_eV(x) for x in twins_val]
-	# twins_test = [keV_to_eV(x) for x in twins_test]
-
-	# print(f'Twins train mean after converting to eV: {np.array(twins_train).mean()}')
-	# print(f'Twins train std after converting to eV: {np.array(twins_train).std()}')
-	# print(f'Twins train min after converting to eV: {np.array(twins_train).min()}')
-
 	twins_scaling_array = np.vstack(twins_train).flatten()
 
 	twins_scaling_array = twins_scaling_array[twins_scaling_array > 0]
 	scaling_mean = twins_scaling_array.mean()
 	scaling_std = twins_scaling_array.std()
-	scaling_min = twins_scaling_array.min()
-	scaling_max = twins_scaling_array.max()
 
 	twins_train = [standard_scaling(x, scaling_mean, scaling_std) for x in twins_train]
 	twins_val = [standard_scaling(x, scaling_mean, scaling_std) for x in twins_val]
 	twins_test = [standard_scaling(x, scaling_mean, scaling_std) for x in twins_test]
-
-	# twins_train = [minmax_scaling(x) for x in twins_train]
-	# twins_val = [minmax_scaling(x) for x in twins_val]
-	# twins_test = [minmax_scaling(x) for x in twins_test]
-
-	print(f'Twins train mean after standard scaling: {np.array(twins_train).mean()}')
-	print(f'Twins train std after standard scaling: {np.array(twins_train).std()}')
-	print(f'Twins train min after standard scaling: {np.array(twins_train).min()}')
 
 	if not get_features:
 		return torch.tensor(twins_train), torch.tensor(twins_val), torch.tensor(twins_test), date_dict, scaling_mean, scaling_std
@@ -541,37 +553,60 @@ class Autoencoder(nn.Module):
 		'''
 		super(Autoencoder, self).__init__()
 		self.encoder = nn.Sequential(
-			nn.Conv2d(in_channels=1, out_channels=256, kernel_size=5, stride=1, padding='same', bias=False),
+			nn.Conv2d(in_channels=1, out_channels=64, kernel_size=2, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Conv2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding='same', bias=False),
+			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=2, stride=2, padding=0),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Conv2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding='same', bias=False),
+			# nn.Conv2d(in_channels=128, out_channels=128, kernel_size=2, stride=1, padding='same'),
+			# nn.ReLU(),
+			# nn.Dropout(0.2),
+			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Conv2d(in_channels=64, out_channels=32, kernel_size=2, stride=2, padding=0, bias=False),
-			nn.ReLU(),
-			nn.Dropout(0.2),
+			# nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding='same'),
+			# nn.ReLU(),
+			# nn.Dropout(0.2),
+			# nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, stride=1, padding='same'),
+			# nn.ReLU(),
+			# nn.Dropout(0.2),
+			# nn.Conv2d(in_channels=512, out_channels=512, kernel_size=5, stride=1, padding='same'),
+			# nn.ReLU(),
+			# nn.Dropout(0.2),
+			# nn.Conv2d(in_channels=512, out_channels=512, kernel_size=5, stride=1, padding='same'),
+			# nn.ReLU(),
+			# nn.Dropout(0.2),
 			nn.Flatten(),
-			nn.Linear(32*45*30, 420),
+			nn.Linear(256*45*30, 420),
 		)
 		self.decoder = nn.Sequential(
-			nn.Linear(420, 32*45*30),
-			nn.Unflatten(1, (32, 45, 30)),
-			nn.ConvTranspose2d(in_channels=32, out_channels=64, kernel_size=2, stride=2, padding=1),
+			nn.Linear(420, 256*45*30),
+			nn.Unflatten(1, (256, 45, 30)),
+			# nn.ConvTranspose2d(in_channels=512, out_channels=512, kernel_size=5, stride=1, padding=3),
+			# # nn.ReLU(),
+			# nn.Dropout(0.2),
+			# nn.ConvTranspose2d(in_channels=512, out_channels=512, kernel_size=5, stride=1, padding=1),
+			# # nn.ReLU(),
+			# nn.Dropout(0.2),
+			# nn.ConvTranspose2d(in_channels=512, out_channels=256, kernel_size=3, stride=1, padding=0),
+			# # nn.ReLU(),
+			# nn.Dropout(0.2),
+			# nn.ConvTranspose2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1),
+			# # nn.ReLU(),
+			# nn.Dropout(0.2),
+			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
 			# nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
+			# nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=2, stride=1, padding=2),
+			# # nn.ReLU(),
+			# nn.Dropout(0.2),
+			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=2, stride=2, padding=0),
 			# nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1),
-			# nn.ReLU(),
+			nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=2, stride=1, padding=1),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=256, out_channels=1, kernel_size=5, stride=1, padding=1),
-			# nn.ReLU(),
-			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=1, out_channels=1, kernel_size=1, stride=1, padding=0)
+			nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=2, stride=1, padding=0),
 		)
 
 	def forward(self, x, get_latent=False):
@@ -868,12 +903,14 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		# moving the model to the available device
 		model.to(DEVICE)
 
-		# defining the loss function and the optimizer
-		if pretraining:
-			criterion = nn.MSELoss()
-			# criterion = nn.L1Loss() 		# this calculates the mean absolute error losses
-		else:
-			criterion = VGGPerceptualLoss()
+		# # defining the loss function and the optimizer
+		# if pretraining:
+		# 	criterion = nn.MSELoss()
+		# 	# criterion = nn.L1Loss() 		# this calculates the mean absolute error losses
+		# else:
+		# 	criterion = VGGPerceptualLoss()
+
+		criterion = nn.MSELoss()
 
 		optimizer = optim.Adam(model.parameters(), lr=1e-7)
 		scaler = torch.cuda.amp.GradScaler()
@@ -887,25 +924,25 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			stime = time.time()
 
 			# if not pretraining, freezing all but the last layer for the first 10 epochs
-			if not pretraining:
-				if epoch < 10:
+			# if not pretraining:
+			# 	if epoch < 10:
 
-					# freezing all layers of encoder
-					for param in model.encoder.parameters():
-						param.requires_grad = False
-					# freezing all layers of decoder except the last layer
-					for param in model.decoder.parameters():
-						param.requires_grad = False
-					for param in model.decoder[-1].parameters():
-						param.requires_grad = True
+			# 		# freezing all layers of encoder
+			# 		for param in model.encoder.parameters():
+			# 			param.requires_grad = False
+			# 		# freezing all layers of decoder except the last layer
+			# 		for param in model.decoder.parameters():
+			# 			param.requires_grad = False
+			# 		for param in model.decoder[-1].parameters():
+			# 			param.requires_grad = True
 
-				else:
-					# unfreezing all layers of encoder
-					for param in model.encoder.parameters():
-						param.requires_grad = True
-					# unfreezing all layers of decoder
-					for param in model.decoder.parameters():
-						param.requires_grad = True
+			# 	else:
+			# 		# unfreezing all layers of encoder
+			# 		for param in model.encoder.parameters():
+			# 			param.requires_grad = True
+			# 		# unfreezing all layers of decoder
+			# 		for param in model.decoder.parameters():
+			# 			param.requires_grad = True
 
 			# setting the model to training mode
 			model.train()
@@ -1038,7 +1075,7 @@ def evaluation(model, test):
 	return np.concatenate(predicted_list, axis=0), np.concatenate(test_list, axis=0), running_loss/len(test)
 
 
-def plotting_some_examples(predictions, test):
+def plotting_some_examples(predictions, test, pretraining=False):
 
 	vmin = min([predictions[0, :, :].min(), test[0, :, :].min()])
 	vmax = max([predictions[0, :, :].max(), test[0, :, :].max()])
@@ -1049,7 +1086,10 @@ def plotting_some_examples(predictions, test):
 	ax2 = fig.add_subplot(122)
 	ax2.imshow(test[0, :, :], vmin=vmin, vmax=vmax)
 	ax2.set_title('Actual')
-	plt.show()
+	if pretraining:
+		plt.savefig(f'plots/pretraining_{VERSION}_example_1.png')
+	else:
+		plt.savefig(f'plots/{VERSION}_example_1.png')
 
 	vmin = min([predictions[324, :, :].min(), test[324, :, :].min()])
 	vmax = max([predictions[324, :, :].max(), test[324, :, :].max()])
@@ -1060,7 +1100,10 @@ def plotting_some_examples(predictions, test):
 	ax2 = fig.add_subplot(122)
 	ax2.imshow(test[324, :, :], vmin=vmin, vmax=vmax)
 	ax2.set_title('Actual')
-	plt.show()
+	if pretraining:
+		plt.savefig(f'plots/pretraining_{VERSION}_example_2.png')
+	else:
+		plt.savefig(f'plots/{VERSION}_example_2.png')
 
 	vmin = min([predictions[256, :, :].min(), test[256, :, :].min()])
 	vmax = max([predictions[256, :, :].max(), test[256, :, :].max()])
@@ -1071,7 +1114,10 @@ def plotting_some_examples(predictions, test):
 	ax2 = fig.add_subplot(122)
 	ax2.imshow(test[256, :, :], vmin=vmin, vmax=vmax)
 	ax2.set_title('Actual')
-	plt.show()
+	if pretraining:
+		plt.savefig(f'plots/pretraining_{VERSION}_example_3.png')
+	else:
+		plt.savefig(f'plots/{VERSION}_example_3.png')
 
 	vmin = min([predictions[1000, :, :].min(), test[1000, :, :].min()])
 	vmax = max([predictions[1000, :, :].max(), test[1000, :, :].max()])
@@ -1082,7 +1128,10 @@ def plotting_some_examples(predictions, test):
 	ax2 = fig.add_subplot(122)
 	ax2.imshow(test[1000, :, :], vmin=vmin, vmax=vmax)
 	ax2.set_title('Actual')
-	plt.show()
+	if pretraining:
+		plt.savefig(f'plots/pretraining_{VERSION}_example_4.png')
+	else:
+		plt.savefig(f'plots/{VERSION}_example_4.png')
 
 
 
@@ -1094,16 +1143,19 @@ def main():
 
 	# loading all data and indicies
 	print('Loading data...')
-	train, val, test, ___, scaling_mean, scaling_std = getting_prepared_data(target_var=TARGET, region=REGION)
+	train, val, test, ___, scaling_mean, scaling_std = getting_prepared_data()
 
 	# getting the shape of the tensor
 	train_size = list(train.size())
 
+	# # getting the pretraining data
+	# pretrain_train, pretrain_val, pretrain_test = creating_pretraining_data(tensor_shape=(train_size[1], train_size[2]),
+	# 																			train_max=torch.max(train).item(), train_min=torch.min(train).item(),
+	# 																			scaling_mean=scaling_mean, scaling_std=scaling_std,
+	# 																			num_samples=100000)
+
 	# getting the pretraining data
-	pretrain_train, pretrain_val, pretrain_test = creating_pretraining_data(tensor_shape=(train_size[1], train_size[2]),
-																				train_max=torch.max(train).item(), train_min=torch.min(train).item(),
-																				scaling_mean=scaling_mean, scaling_std=scaling_std,
-																				num_samples=100000)
+	pretrain_train, pretrain_val, pretrain_test = creating_fake_twins_data(train, scaling_mean, scaling_std)
 
 	# creating the dataloaders
 	train = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True)
@@ -1117,18 +1169,24 @@ def main():
 	# creating the model
 	print('Initalizing model....')
 	autoencoder = Autoencoder()
+	autoencoder.to(DEVICE)
+	print(summary(autoencoder, (1, train_size[1], train_size[2])))
 
 	# pretraining the model
 	print('Pretraining model....')
 	autoencoder = fit_autoencoder(autoencoder, pretrain_train, pretrain_val, val_loss_patience=50, num_epochs=500, pretraining=True)
 
-	# testing the pretrained model to make sure it works
+	# testing teh pretrained model to make sure it works
 	print('Testing pretrained model....')
 	pretrained_predictions, pretrained_test, testing_loss = evaluation(autoencoder, pretrain_test)
 
+	# creating a directory to save the plots if it doesn't already exist
+	if not os.path.exists('plots'):
+		os.makedirs('plots')
+
 	# plotting some examples
 	print('Plotting some examples from pretrained....')
-	plotting_some_examples(pretrained_predictions, pretrained_test)
+	plotting_some_examples(pretrained_predictions, pretrained_test, pretraining=True)
 
 	# fitting the model
 	print('Fitting model....')
