@@ -912,7 +912,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 		criterion = nn.MSELoss()
 
-		optimizer = optim.Adam(model.parameters(), lr=1e-7)
+		optimizer = optim.Adam(model.parameters(), lr=1e-6)
 		scaler = torch.cuda.amp.GradScaler()
 
 		# initalizing the early stopping class
