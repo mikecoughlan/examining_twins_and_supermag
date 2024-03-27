@@ -1190,7 +1190,7 @@ def main():
 
 	# fitting the model
 	print('Fitting model....')
-	autoencoder = fit_autoencoder(autoencoder, train, val, val_loss_patience=25, num_epochs=500)
+	autoencoder = fit_autoencoder(autoencoder, train, val, val_loss_patience=50, num_epochs=500)
 
 	# evaluating the model
 	print('Evaluating model....')
