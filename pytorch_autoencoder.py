@@ -37,6 +37,7 @@ import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 import tqdm
+from matplotlib import patches
 from scipy.stats import boxcox
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
@@ -56,7 +57,7 @@ logging.basicConfig(level=logging.INFO, format='')
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-35'
+VERSION = 'pytorch_perceptual_v1-36'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -289,12 +290,25 @@ def creating_fake_twins_data(train, scaling_mean, scaling_std):
 	val_data = torch.cat([val_rotated_90, val_rotated_180, val_rotated_270, flipped_val_data, flipped_val_data_2], dim=0)
 	test_data = torch.cat([test_rotated_90, test_rotated_180, test_rotated_270, flipped_test_data, flipped_test_data_2], dim=0)
 
+	mean, std = -0.9, 0.2141
+
+	X_train = train_data + torch.tensor(np.random.normal(loc=mean, scale=std, size=train_data.shape))
+	X_val = val_data + torch.tensor(np.random.normal(loc=mean, scale=std, size=val_data.shape))
+	X_test = test_data + torch.tensor(np.random.normal(loc=mean, scale=std, size=test_data.shape))
+
 	# scaling the data
 	train_data = standard_scaling(train_data, scaling_mean, scaling_std)
 	val_data = standard_scaling(val_data, scaling_mean, scaling_std)
 	test_data = standard_scaling(test_data, scaling_mean, scaling_std)
 
-	return train_data, val_data, test_data
+	# plotting some examples of the data
+	fig, axes = plt.subplots(3, 3, figsize=(10, 10))
+	for i, ax in enumerate(axes.flatten()):
+		ax.imshow(train_data[i, :, :])
+		ax.set_title(f'Example {i+1}')
+	plt.show()
+
+	return X_train, X_val, X_test, train_data, val_data, test_data
 
 
 
@@ -951,39 +965,71 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			running_training_loss, running_val_loss = 0.0, 0.0
 
 			# shuffling data and creating batches
-			for train_data in train:
-				train_data = train_data.to(DEVICE, dtype=torch.float)
-				train_data = train_data.unsqueeze(1)
-				# forward pass
-				with torch.cuda.amp.autocast():
-					output = model(train_data)
+			if isinstance(next(iter(train)), list):
+				for X, y in train:
+					X = X.to(DEVICE, dtype=torch.float)
+					y = y.to(DEVICE, dtype=torch.float)
+					X = X.unsqueeze(1)
+					# forward pass
+					with torch.cuda.amp.autocast():
+						output = model(X)
 
-					loss = criterion(output, train_data)
-					# loss.requires_grad = True
+						loss = criterion(output, y)
+						# loss.requires_grad = True
 
-				# backward pass
-				optimizer.zero_grad()
-				scaler.scale(loss).backward()
-				scaler.step(optimizer)
-				scaler.update()
+					# backward pass
+					optimizer.zero_grad()
+					scaler.scale(loss).backward()
+					scaler.step(optimizer)
+					scaler.update()
 
-				# adding the loss to the running loss
-				running_training_loss += loss.to('cpu').item()
+					# adding the loss to the running loss
+					running_training_loss += loss.to('cpu').item()
+
+			else:
+				for train_data in train:
+					train_data = train_data.to(DEVICE, dtype=torch.float)
+					train_data = train_data.unsqueeze(1)
+					# forward pass
+					with torch.cuda.amp.autocast():
+						output = model(train_data)
+
+						loss = criterion(output, train_data)
+						# loss.requires_grad = True
+
+					# backward pass
+					optimizer.zero_grad()
+					scaler.scale(loss).backward()
+					scaler.step(optimizer)
+					scaler.update()
+
+					# adding the loss to the running loss
+					running_training_loss += loss.to('cpu').item()
 
 			# setting the model to evaluation mode
 			model.eval()
 
 			# using validation set to check for overfitting
-			with torch.no_grad():
-				for val_data in val:
-					val_data = val_data.to(DEVICE, dtype=torch.float)
-					val_data = val_data.unsqueeze(1)
-					output = model(val_data)
+			if isinstance(next(iter(val)), list):
+				for X, y in val:
+					X = X.to(DEVICE, dtype=torch.float)
+					y = y.to(DEVICE, dtype=torch.float)
+					X = X.unsqueeze(1)
+					with torch.no_grad():
+						output = model(X)
+						val_loss = criterion(output, y)
+						running_val_loss += val_loss.to('cpu').item()
+			else:
+				with torch.no_grad():
+					for val_data in val:
+						val_data = val_data.to(DEVICE, dtype=torch.float)
+						val_data = val_data.unsqueeze(1)
+						output = model(val_data)
 
-					val_loss = criterion(output, val_data)
+						val_loss = criterion(output, val_data)
 
-					# adding the loss to the running loss
-					running_val_loss += val_loss.to('cpu').item()
+						# adding the loss to the running loss
+						running_val_loss += val_loss.to('cpu').item()
 
 			# getting the average loss for the epoch
 			loss = running_training_loss/len(train)
@@ -1053,24 +1099,45 @@ def evaluation(model, test):
 	model.to(DEVICE, dtype=torch.float)
 
 	with torch.no_grad():
-		for test_data in test:
-			test_data = test_data.to(DEVICE, dtype=torch.float)
-			test_data = test_data.unsqueeze(1)
-			predicted = model(test_data)
-			loss = F.mse_loss(predicted, test_data)
-			running_loss += loss.item()
+		if isinstance(next(iter(test)), list):
+			for X, y in test:
+				X = X.to(DEVICE, dtype=torch.float)
+				y = y.to(DEVICE, dtype=torch.float)
+				X = X.unsqueeze(1)
+				predicted = model(X)
+				loss = F.mse_loss(predicted, y)
+				running_loss += loss.item()
 
-			# making sure the predicted value is on the cpu
-			if predicted.get_device() != -1:
-				predicted = predicted.to('cpu')
-			if test_data.get_device() != -1:
-				test_data = test_data.to('cpu')
+				# making sure the predicted value is on the cpu
+				if predicted.get_device() != -1:
+					predicted = predicted.to('cpu')
+				if y.get_device() != -1:
+					y = y.to('cpu')
 
-			# adding the decoded result to the predicted list after removing the channel dimension
-			predicted = torch.squeeze(predicted, dim=1).numpy()
-			test_data = torch.squeeze(test_data, dim=1).numpy()
-			predicted_list.append(predicted)
-			test_list.append(test_data)
+				# adding the decoded result to the predicted list after removing the channel dimension
+				predicted = torch.squeeze(predicted, dim=1).numpy()
+				y = torch.squeeze(y, dim=1).numpy()
+				predicted_list.append(predicted)
+				test_list.append(y)
+		else:
+			for test_data in test:
+				test_data = test_data.to(DEVICE, dtype=torch.float)
+				test_data = test_data.unsqueeze(1)
+				predicted = model(test_data)
+				loss = F.mse_loss(predicted, test_data)
+				running_loss += loss.item()
+
+				# making sure the predicted value is on the cpu
+				if predicted.get_device() != -1:
+					predicted = predicted.to('cpu')
+				if test_data.get_device() != -1:
+					test_data = test_data.to('cpu')
+
+				# adding the decoded result to the predicted list after removing the channel dimension
+				predicted = torch.squeeze(predicted, dim=1).numpy()
+				test_data = torch.squeeze(test_data, dim=1).numpy()
+				predicted_list.append(predicted)
+				test_list.append(test_data)
 
 	return np.concatenate(predicted_list, axis=0), np.concatenate(test_list, axis=0), running_loss/len(test)
 
@@ -1134,6 +1201,32 @@ def plotting_some_examples(predictions, test, pretraining=False):
 		plt.savefig(f'plots/{VERSION}_example_4.png')
 
 
+def examining_distributions_in_parts_of_the_predictions(prediction, noise_dims, temp_dims):
+
+	# defining the areas of the bounding boxes
+	noise_left, noise_right, noise_top, noise_bottom = noise_dims
+	temp_left, temp_right, temp_top, temp_bottom = temp_dims
+
+	noise_box = prediction[noise_top:noise_bottom, noise_left:noise_right]
+	temp_box = prediction[temp_top:temp_bottom, temp_left:temp_right]
+
+	print(f'Noise Box: Mean: {noise_box.mean()}, Std: {noise_box.std()}')
+
+	# plotting histograms of the areas of interest
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(111)
+	ax1.hist(noise_box.flatten(), bins=100, alpha=0.5, label='Noise')
+	ax1.hist(temp_box.flatten(), bins=100, alpha=0.5, label='Temperature')
+	ax1.legend()
+	plt.show()
+
+	# plotting the prediction including bounding boxes around the areas of interest.
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(111)
+	ax1.imshow(prediction, vmin=prediction.min(), vmax=prediction.max())
+	ax1.add_patch(patches.Rectangle((noise_left, noise_top), noise_right - noise_left, noise_bottom - noise_top, edgecolor='red', facecolor='none'))
+	ax1.add_patch(patches.Rectangle((temp_left, temp_top), temp_right - temp_left, temp_bottom - temp_top, edgecolor='red', facecolor='none'))
+	plt.show()
 
 def main():
 	'''
@@ -1155,16 +1248,16 @@ def main():
 	# 																			num_samples=100000)
 
 	# getting the pretraining data
-	pretrain_train, pretrain_val, pretrain_test = creating_fake_twins_data(train, scaling_mean, scaling_std)
+	X_pretrain_train, X_pretrain_val, X_pretrain_test, y_pretrain_train, y_pretrain_val, y_pretrain_test = creating_fake_twins_data(train, scaling_mean, scaling_std)
 
 	# creating the dataloaders
 	train = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True)
 	val = DataLoader(val, batch_size=BATCH_SIZE, shuffle=True)
 	test = DataLoader(test, batch_size=BATCH_SIZE, shuffle=False)
 
-	pretrain_train = DataLoader(pretrain_train, batch_size=BATCH_SIZE, shuffle=True)
-	pretrain_val = DataLoader(pretrain_val, batch_size=BATCH_SIZE, shuffle=True)
-	pretrain_test = DataLoader(pretrain_test, batch_size=BATCH_SIZE, shuffle=False)
+	pretrain_train = DataLoader(list(zip(X_pretrain_train, y_pretrain_train)), batch_size=BATCH_SIZE, shuffle=True)
+	pretrain_val = DataLoader(list(zip(X_pretrain_val, y_pretrain_val)), batch_size=BATCH_SIZE, shuffle=True)
+	pretrain_test = DataLoader(list(zip(X_pretrain_test, y_pretrain_test)), batch_size=BATCH_SIZE, shuffle=False)
 
 	# creating the model
 	print('Initalizing model....')
@@ -1176,9 +1269,13 @@ def main():
 	print('Pretraining model....')
 	autoencoder = fit_autoencoder(autoencoder, pretrain_train, pretrain_val, val_loss_patience=50, num_epochs=500, pretraining=True)
 
-	# testing teh pretrained model to make sure it works
+	# testing the pretrained model to make sure it works
 	print('Testing pretrained model....')
 	pretrained_predictions, pretrained_test, testing_loss = evaluation(autoencoder, pretrain_test)
+
+	# unscaling the predictions and test data
+	pretrained_predictions = (pretrained_predictions * scaling_std) + scaling_mean
+	pretrained_test = (pretrained_test * scaling_std) + scaling_mean
 
 	# creating a directory to save the plots if it doesn't already exist
 	if not os.path.exists('plots'):
@@ -1196,9 +1293,17 @@ def main():
 	print('Evaluating model....')
 	predictions, test, testing_loss = evaluation(autoencoder, test)
 
+	# unscaling the predictions and test data
+	predictions = (predictions * scaling_std) + scaling_mean
+	test = (test * scaling_std) + scaling_mean
+
 	# plotting some examples
 	print('Plotting some examples....')
 	plotting_some_examples(predictions, test)
+
+	# examining the distributions in parts of the predictions
+	print('Examining the distributions of the predictions....')
+	examining_distributions_in_parts_of_the_predictions(predictions[324, :, :], noise_dims=(0, 40, 0, 90), temp_dims=(30, 60, 60, 80))
 
 
 	print(f'Loss: {testing_loss}')
