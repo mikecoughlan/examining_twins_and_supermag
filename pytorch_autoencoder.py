@@ -301,15 +301,18 @@ def creating_fake_twins_data(train, scaling_mean, scaling_std):
 	val_data = standard_scaling(val_data, scaling_mean, scaling_std)
 	test_data = standard_scaling(test_data, scaling_mean, scaling_std)
 
+	X_train = standard_scaling(X_train, scaling_mean, scaling_std)
+	X_val = standard_scaling(X_val, scaling_mean, scaling_std)
+	X_test = standard_scaling(X_test, scaling_mean, scaling_std)
+
 	# plotting some examples of the data
 	fig, axes = plt.subplots(3, 3, figsize=(10, 10))
 	for i, ax in enumerate(axes.flatten()):
-		ax.imshow(train_data[i, :, :])
+		ax.imshow(X_train[i, :, :])
 		ax.set_title(f'Example {i+1}')
 	plt.show()
 
 	return X_train, X_val, X_test, train_data, val_data, test_data
-
 
 
 def standard_scaling(x, scaling_mean, scaling_std):
@@ -821,9 +824,10 @@ class Early_Stopping():
 		self.best_score = None
 		self.early_stop = False
 		self.best_epoch = None
+		self.finished_training = False
 		self.pretraining = pretraining
 
-	def __call__(self, train_loss, val_loss, model, epoch, pretraining=False):
+	def __call__(self, train_loss, val_loss, model, optimizer, epoch, pretraining=False):
 		'''
 		Function to call the early stopping condition.
 
@@ -838,6 +842,7 @@ class Early_Stopping():
 		'''
 
 		self.model = model
+		self.optimizer = optimizer
 		if self.best_score is None:
 			self.best_score = val_loss
 			self.best_loss = val_loss
@@ -847,6 +852,7 @@ class Early_Stopping():
 			self.loss_counter += 1
 			if self.loss_counter >= self.decreasing_loss_patience:
 				print(f'Engaging Early Stopping due to lack of improvement in validation loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.best_loss} and a validation loss of {self.best_score}')
+				self.finished_training()
 				return True
 		# elif val_loss > (1.5 * train_loss):
 		# 	self.training_counter += 1
@@ -875,9 +881,60 @@ class Early_Stopping():
 			self.best_loss = val_loss
 			print('Saving checkpoint!')
 			if self.pretraining:
-				torch.save(self.model.state_dict(), f'models/autoencoder_pretraining_{VERSION}.pt')
+				torch.save({'model':self.model.state_dict(),
+							'optimizer': self.optimizer.state_dict(),
+							'best_epoch':self.best_epoch,
+							'finished_training':self.finished_training}, 
+							f'models/autoencoder_pretraining_{VERSION}.pt')
 			else:
-				torch.save(self.model.state_dict(), f'models/autoencoder_{VERSION}.pt')
+				torch.save({'model': self.model.state_dict(),
+							'optimizer':self.optimizer.state_dict(),
+							'best_epoch':self.best_epoch,
+							'finished_training':self.finished_training},
+							f'models/autoencoder_{VERSION}.pt')
+
+	def finished_training(self):
+
+		if self.pretraining:
+			final = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
+			final['finished_training'] = True
+			torch.save(final, f'models/autoencoder_pretraining_{VERSION}.pt')
+		else:
+			final = torch.load(f'models/autoencoder_{VERSION}.pt')
+			final['finished_training'] = True
+			torch.save(final, f'models/autoencoder_{VERSION}.pt')
+
+
+def resume_training(model, optimizer, pretraining=False):
+	'''
+	Function to resume training of a model.
+
+	Args:
+		model (object): the model to be trained
+		optimizer (object): the optimizer to be used
+		pretraining (bool): whether the model is being pre-trained
+
+	Returns:
+		object: the model to be trained
+		object: the optimizer to be used
+		int: the epoch to resume training from
+	'''
+
+	if pretraining:
+		checkpoint = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
+		model.load_state_dict(checkpoint['model'])
+		optimizer.load_state_dict(checkpoint['optimizer'])
+		epoch = checkpoint['best_epoch']
+		finished_training = checkpoint['finished_training']
+	
+	else:
+		checkpoint = torch.load(f'models/autoencoder_{VERSION}.pt')
+		model.load_state_dict(checkpoint['model'])
+		optimizer.load_state_dict(checkpoint['optimizer'])
+		epoch = checkpoint['best_epoch']
+		finished_training = checkpoint['finished_training']
+
+	return model, optimizer, epoch, finished_training
 
 
 def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500, pretraining=False):
@@ -901,16 +958,20 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 	# checking if the model has already been trained
 	if pretraining:
 		if os.path.exists(f'models/autoencoder_pretraining_{VERSION}.pt'):
-			train_model = False
+			model, optimizer, current_epoch, finished_training = resume_training(model=model, optimizer=optimizer, pretraining=pretraining)
 		else:
-			train_model = True
+			finished_training = False
+			current_epoch = 0
+			optimizer = None
 	else:
 		if os.path.exists(f'models/autoencoder_{VERSION}.pt'):
-			train_model = False
+			model, optimizer, current_epoch, finished_training = resume_training(model=model, optimizer=optimizer, pretraining=pretraining)
 		else:
-			train_model = True
+			finished_training = False
+			current_epoch = 0
+			optimizer = None
 
-	if train_model:
+	if not finished_training:
 
 		train_loss_list, val_loss_list = [], []
 
@@ -926,13 +987,15 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 		criterion = nn.MSELoss()
 
-		optimizer = optim.Adam(model.parameters(), lr=1e-6)
+		if optimizer is None:
+			optimizer = optim.Adam(model.parameters(), lr=1e-6)
+		
 		scaler = torch.cuda.amp.GradScaler()
 
 		# initalizing the early stopping class
 		early_stopping = Early_Stopping(decreasing_loss_patience=val_loss_patience, training_diff_patience=overfit_patience, pretraining=pretraining)
 
-		for epoch in range(num_epochs):
+		while current_epoch < num_epochs:
 
 			# starting the clock for the epoch
 			stime = time.time()
@@ -1047,12 +1110,13 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			epoch_time = time.time() - stime
 
 			# if epoch % 5 == 0:
-			print(f'Epoch [{epoch}/{num_epochs}], Loss: {loss:.4f} Validation Loss: {val_loss:.4f}' + f' Epoch Time: {epoch_time:.2f} seconds')
+			print(f'Epoch [{current_epoch}/{num_epochs}], Loss: {loss:.4f} Validation Loss: {val_loss:.4f}' + f' Epoch Time: {epoch_time:.2f} seconds')
 
 			# emptying the cuda cache
 			torch.cuda.empty_cache()
 
-			# getting the best model
+			# updating the epoch
+			current_epoch += 1
 
 		# getting the best params saved in the Early Stopping class
 		if pretraining:
