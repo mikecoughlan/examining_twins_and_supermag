@@ -57,7 +57,7 @@ logging.basicConfig(level=logging.INFO, format='')
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-36'
+VERSION = 'pytorch_perceptual_v1-37'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -573,9 +573,10 @@ class Autoencoder(nn.Module):
 			nn.Conv2d(in_channels=1, out_channels=64, kernel_size=2, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=2, stride=2, padding=0),
+			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=2, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
+			nn.MaxPool2d(kernel_size=2, stride=2),
 			# nn.Conv2d(in_channels=128, out_channels=128, kernel_size=2, stride=1, padding='same'),
 			# nn.ReLU(),
 			# nn.Dropout(0.2),
@@ -615,15 +616,16 @@ class Autoencoder(nn.Module):
 			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
 			# nn.ReLU(),
 			nn.Dropout(0.2),
+			nn.Upsample(scale_factor=2),
 			# nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=2, stride=1, padding=2),
 			# # nn.ReLU(),
 			# nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=2, stride=2, padding=0),
+			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=2, stride=1, padding=0),
 			# nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=2, stride=1, padding=1),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=2, stride=1, padding=0),
+			nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=2, stride=1, padding=1),
 		)
 
 	def forward(self, x, get_latent=False):
@@ -824,7 +826,6 @@ class Early_Stopping():
 		self.best_score = None
 		self.early_stop = False
 		self.best_epoch = None
-		self.finished_training = False
 		self.pretraining = pretraining
 
 	def __call__(self, train_loss, val_loss, model, optimizer, epoch, pretraining=False):
@@ -852,7 +853,7 @@ class Early_Stopping():
 			self.loss_counter += 1
 			if self.loss_counter >= self.decreasing_loss_patience:
 				print(f'Engaging Early Stopping due to lack of improvement in validation loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.best_loss} and a validation loss of {self.best_score}')
-				self.finished_training()
+				self.finished_training
 				return True
 		# elif val_loss > (1.5 * train_loss):
 		# 	self.training_counter += 1
@@ -884,13 +885,13 @@ class Early_Stopping():
 				torch.save({'model':self.model.state_dict(),
 							'optimizer': self.optimizer.state_dict(),
 							'best_epoch':self.best_epoch,
-							'finished_training':self.finished_training}, 
+							'finished_training':False},
 							f'models/autoencoder_pretraining_{VERSION}.pt')
 			else:
 				torch.save({'model': self.model.state_dict(),
 							'optimizer':self.optimizer.state_dict(),
 							'best_epoch':self.best_epoch,
-							'finished_training':self.finished_training},
+							'finished_training':False},
 							f'models/autoencoder_{VERSION}.pt')
 
 	def finished_training(self):
@@ -921,18 +922,30 @@ def resume_training(model, optimizer, pretraining=False):
 	'''
 
 	if pretraining:
-		checkpoint = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
-		model.load_state_dict(checkpoint['model'])
-		optimizer.load_state_dict(checkpoint['optimizer'])
-		epoch = checkpoint['best_epoch']
-		finished_training = checkpoint['finished_training']
-	
+		try:
+			checkpoint = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
+			model.load_state_dict(checkpoint['model'])
+			optimizer.load_state_dict(checkpoint['optimizer'])
+			epoch = checkpoint['best_epoch']
+			finished_training = checkpoint['finished_training']
+		except KeyError:
+			model.load_state_dict(torch.load(f'models/autoencoder_pretraining_{VERSION}.pt'))
+			optimizer=None
+			epoch = 0
+			finished_training = True
+
 	else:
-		checkpoint = torch.load(f'models/autoencoder_{VERSION}.pt')
-		model.load_state_dict(checkpoint['model'])
-		optimizer.load_state_dict(checkpoint['optimizer'])
-		epoch = checkpoint['best_epoch']
-		finished_training = checkpoint['finished_training']
+		try:
+			checkpoint = torch.load(f'models/autoencoder_{VERSION}.pt')
+			model.load_state_dict(checkpoint['model'])
+			optimizer.load_state_dict(checkpoint['optimizer'])
+			epoch = checkpoint['best_epoch']
+			finished_training = checkpoint['finished_training']
+		except KeyError:
+			model.load_state_dict(torch.load(f'models/autoencoder_{VERSION}.pt'))
+			optimizer=None
+			epoch = 0
+			finished_training = True
 
 	return model, optimizer, epoch, finished_training
 
@@ -954,6 +967,8 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 	Returns:
 		object: the trained model
 	'''
+
+	optimizer = optim.Adam(model.parameters(), lr=1e-6)
 
 	# checking if the model has already been trained
 	if pretraining:
@@ -978,18 +993,15 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		# moving the model to the available device
 		model.to(DEVICE)
 
-		# # defining the loss function and the optimizer
-		# if pretraining:
-		# 	criterion = nn.MSELoss()
-		# 	# criterion = nn.L1Loss() 		# this calculates the mean absolute error losses
-		# else:
-		# 	criterion = VGGPerceptualLoss()
+		# defining the loss function and the optimizer
+		if pretraining:
+			criterion = nn.MSELoss()
+			# criterion = nn.L1Loss() 		# this calculates the mean absolute error losses
+		else:
+			criterion = VGGPerceptualLoss()
 
-		criterion = nn.MSELoss()
+		# criterion = nn.MSELoss()
 
-		if optimizer is None:
-			optimizer = optim.Adam(model.parameters(), lr=1e-6)
-		
 		scaler = torch.cuda.amp.GradScaler()
 
 		# initalizing the early stopping class
@@ -1103,7 +1115,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			val_loss_list.append(val_loss)
 
 			# checking for early stopping
-			if early_stopping(train_loss=loss, val_loss=val_loss, model=model, epoch=epoch):
+			if early_stopping(train_loss=loss, val_loss=val_loss, model=model, epoch=current_epoch):
 				break
 
 			# getting the time for the epoch
@@ -1131,9 +1143,17 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 	else:
 		# loading the model if it has already been trained.
 		if pretraining:
-			model.load_state_dict(torch.load(f'models/autoencoder_pretraining_{VERSION}.pt'))
+			try:
+				final = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
+				model.load_state_dict(final['model'])
+			except KeyError:
+				model.load_state_dict(torch.load(f'models/autoencoder_pretraining_{VERSION}.pt'))
 		else:
-			model.load_state_dict(torch.load(f'models/autoencoder_{VERSION}.pt')) 			# loading the models if already trained
+			try:
+				final = torch.load(f'models/autoencoder_{VERSION}.pt')
+				model.load_state_dict(final['model'])
+			except KeyError:
+				model.load_state_dict(torch.load(f'models/autoencoder_{VERSION}.pt'))
 
 	return model
 
@@ -1292,6 +1312,17 @@ def examining_distributions_in_parts_of_the_predictions(prediction, noise_dims, 
 	ax1.add_patch(patches.Rectangle((temp_left, temp_top), temp_right - temp_left, temp_bottom - temp_top, edgecolor='red', facecolor='none'))
 	plt.show()
 
+
+def comparing_distributions(predictions, test):
+
+	# plotting the histograms
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(111)
+	ax1.hist(predictions.flatten(), bins=100, alpha=0.5, label='Predictions')
+	ax1.hist(test.flatten(), bins=100, alpha=0.5, label='Test')
+	ax1.legend()
+	plt.show()
+
 def main():
 	'''
 	Pulls all the above functions together. Outputs a saved file with the results.
@@ -1367,11 +1398,13 @@ def main():
 
 	# examining the distributions in parts of the predictions
 	print('Examining the distributions of the predictions....')
-	examining_distributions_in_parts_of_the_predictions(predictions[324, :, :], noise_dims=(0, 40, 0, 90), temp_dims=(30, 60, 60, 80))
+	# examining_distributions_in_parts_of_the_predictions(predictions[324, :, :], noise_dims=(0, 40, 0, 90), temp_dims=(30, 60, 60, 80))
 
+	# comparing the distributions of the predictions and the test data
+	print('Comparing the distributions of the predictions and the test data....')
+	comparing_distributions(predictions[0,:,:], test[0,:,:])
 
 	print(f'Loss: {testing_loss}')
-
 
 if __name__ == '__main__':
 	main()
