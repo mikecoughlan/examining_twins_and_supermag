@@ -57,7 +57,7 @@ logging.basicConfig(level=logging.INFO, format='')
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-37'
+VERSION = 'pytorch_perceptual_v1-38'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -573,7 +573,7 @@ class Autoencoder(nn.Module):
 			nn.Conv2d(in_channels=1, out_channels=64, kernel_size=2, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=2, stride=1, padding='same'),
+			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
 			nn.MaxPool2d(kernel_size=2, stride=2),
@@ -620,10 +620,10 @@ class Autoencoder(nn.Module):
 			# nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=2, stride=1, padding=2),
 			# # nn.ReLU(),
 			# nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=2, stride=1, padding=0),
+			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
 			# nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=2, stride=1, padding=1),
+			nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=2, stride=1, padding=0),
 			nn.Dropout(0.2),
 			nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=2, stride=1, padding=1),
 		)
@@ -853,7 +853,9 @@ class Early_Stopping():
 			self.loss_counter += 1
 			if self.loss_counter >= self.decreasing_loss_patience:
 				print(f'Engaging Early Stopping due to lack of improvement in validation loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.best_loss} and a validation loss of {self.best_score}')
-				self.finished_training
+				final = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
+				final['finished_training'] = True
+				torch.save(final, f'models/autoencoder_pretraining_{VERSION}.pt')
 				return True
 		# elif val_loss > (1.5 * train_loss):
 		# 	self.training_counter += 1
@@ -893,17 +895,6 @@ class Early_Stopping():
 							'best_epoch':self.best_epoch,
 							'finished_training':False},
 							f'models/autoencoder_{VERSION}.pt')
-
-	def finished_training(self):
-
-		if self.pretraining:
-			final = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
-			final['finished_training'] = True
-			torch.save(final, f'models/autoencoder_pretraining_{VERSION}.pt')
-		else:
-			final = torch.load(f'models/autoencoder_{VERSION}.pt')
-			final['finished_training'] = True
-			torch.save(final, f'models/autoencoder_{VERSION}.pt')
 
 
 def resume_training(model, optimizer, pretraining=False):
@@ -977,14 +968,12 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		else:
 			finished_training = False
 			current_epoch = 0
-			optimizer = None
 	else:
 		if os.path.exists(f'models/autoencoder_{VERSION}.pt'):
 			model, optimizer, current_epoch, finished_training = resume_training(model=model, optimizer=optimizer, pretraining=pretraining)
 		else:
 			finished_training = False
 			current_epoch = 0
-			optimizer = None
 
 	if not finished_training:
 
@@ -993,12 +982,37 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		# moving the model to the available device
 		model.to(DEVICE)
 
-		# defining the loss function and the optimizer
-		if pretraining:
-			criterion = nn.MSELoss()
-			# criterion = nn.L1Loss() 		# this calculates the mean absolute error losses
-		else:
-			criterion = VGGPerceptualLoss()
+		# # defining the loss function and the optimizer
+		# if pretraining:
+		mse = nn.MSELoss()
+		kl_loss = nn.KLDivLoss(reduction='batchmean', log_target=True)
+
+		def criterion(y_hat, y):
+			mse_loss = mse(y_hat, y)
+
+			scale_min = min(y.min(), y_hat.min())
+			scale_max = max(y.max(), y_hat.max())
+
+			div_y = minmax_scaling(y, scale_min, scale_max)
+			div_y_hat = minmax_scaling(y_hat, scale_min, scale_max)
+
+			div_y = torch.histc(div_y, bins=100, min=0, max=1)
+			div_y_hat = torch.histc(div_y_hat, bins=100, min=0, max=1)
+
+			# changing zeros to very small value
+			div_y_non_zero_min = div_y[div_y != 0].min()
+			div_y_hat_non_zero_min = div_y_hat[div_y_hat != 0].min()
+
+			div_y[div_y == 0] = 0.5*div_y_non_zero_min
+			div_y_hat[div_y_hat == 0] = 0.5*div_y_hat_non_zero_min
+
+			div_loss = kl_loss(div_y_hat.log(), div_y.log())
+			loss = mse_loss + div_loss
+			return loss
+
+		# 	# criterion = nn.L1Loss() 		# this calculates the mean absolute error losses
+		# else:
+		# 	criterion = VGGPerceptualLoss()
 
 		# criterion = nn.MSELoss()
 
@@ -1046,10 +1060,10 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 					y = y.to(DEVICE, dtype=torch.float)
 					X = X.unsqueeze(1)
 					# forward pass
-					with torch.cuda.amp.autocast():
-						output = model(X)
+					# with torch.cuda.amp.autocast():
+					output = model(X)
 
-						loss = criterion(output, y)
+					loss = criterion(output, y)
 						# loss.requires_grad = True
 
 					# backward pass
@@ -1066,10 +1080,10 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 					train_data = train_data.to(DEVICE, dtype=torch.float)
 					train_data = train_data.unsqueeze(1)
 					# forward pass
-					with torch.cuda.amp.autocast():
-						output = model(train_data)
+					# with torch.cuda.amp.autocast():
+					output = model(train_data)
 
-						loss = criterion(output, train_data)
+					loss = criterion(output, train_data)
 						# loss.requires_grad = True
 
 					# backward pass
@@ -1115,7 +1129,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			val_loss_list.append(val_loss)
 
 			# checking for early stopping
-			if early_stopping(train_loss=loss, val_loss=val_loss, model=model, epoch=current_epoch):
+			if early_stopping(train_loss=loss, val_loss=val_loss, model=model, optimizer=optimizer, epoch=current_epoch):
 				break
 
 			# getting the time for the epoch
@@ -1318,8 +1332,14 @@ def comparing_distributions(predictions, test):
 	# plotting the histograms
 	fig = plt.figure(figsize=(10, 10))
 	ax1 = fig.add_subplot(111)
-	ax1.hist(predictions.flatten(), bins=100, alpha=0.5, label='Predictions')
-	ax1.hist(test.flatten(), bins=100, alpha=0.5, label='Test')
+	scaling_min = min([predictions.min(), test.min()])
+	scaling_max = max([predictions.max(), test.max()])
+
+	scaled_preds = minmax_scaling(predictions, scaling_min, scaling_max)
+	scaled_test = minmax_scaling(test, scaling_min, scaling_max)
+
+	ax1.hist(scaled_preds.flatten(), bins=100, alpha=0.5, label='Predictions', density=True)
+	ax1.hist(scaled_test.flatten(), bins=100, alpha=0.5, label='Test', density=True)
 	ax1.legend()
 	plt.show()
 
@@ -1402,7 +1422,7 @@ def main():
 
 	# comparing the distributions of the predictions and the test data
 	print('Comparing the distributions of the predictions and the test data....')
-	comparing_distributions(predictions[0,:,:], test[0,:,:])
+	comparing_distributions(predictions, test)
 
 	print(f'Loss: {testing_loss}')
 
