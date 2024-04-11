@@ -852,6 +852,7 @@ class Early_Stopping():
 		elif val_loss > self.best_score:
 			self.loss_counter += 1
 			if self.loss_counter >= self.decreasing_loss_patience:
+				gc.collect()
 				print(f'Engaging Early Stopping due to lack of improvement in validation loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.best_loss} and a validation loss of {self.best_score}')
 				final = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
 				final['finished_training'] = True
@@ -987,24 +988,43 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		mse = nn.MSELoss()
 		kl_loss = nn.KLDivLoss(reduction='batchmean', log_target=True)
 
+		def softmax(x):
+			return torch.exp(x) / torch.exp(x).sum()
+
 		def criterion(y_hat, y):
 			mse_loss = mse(y_hat, y)
+
+			# div_y = minmax_scaling(y, scale_min, scale_max)
+			# div_y_hat = minmax_scaling(y_hat, scale_min, scale_max)
 
 			scale_min = min(y.min(), y_hat.min())
 			scale_max = max(y.max(), y_hat.max())
 
-			div_y = minmax_scaling(y, scale_min, scale_max)
-			div_y_hat = minmax_scaling(y_hat, scale_min, scale_max)
+			div_y = torch.histc(y, bins=100, min=scale_min.item(), max=scale_max.item())
+			div_y_hat = torch.histc(y_hat, bins=100, min=scale_min.item(), max=scale_max.item())
 
-			div_y = torch.histc(div_y, bins=100, min=0, max=1)
-			div_y_hat = torch.histc(div_y_hat, bins=100, min=0, max=1)
+			scale_min = min(div_y.min(), div_y_hat.min())
+			scale_max = max(div_y.max(), div_y_hat.max())
 
-			# changing zeros to very small value
+			div_y = minmax_scaling(div_y, scale_min, scale_max)
+			div_y_hat = minmax_scaling(div_y_hat, scale_min, scale_max)
+
+			# div_y = softmax(div_y)
+			# div_y_hat = softmax(div_y_hat)
+
+			# quickly plotting the histograms
+
+			# # changing zeros to very small value
 			div_y_non_zero_min = div_y[div_y != 0].min()
 			div_y_hat_non_zero_min = div_y_hat[div_y_hat != 0].min()
 
-			div_y[div_y == 0] = 0.5*div_y_non_zero_min
-			div_y_hat[div_y_hat == 0] = 0.5*div_y_hat_non_zero_min
+			div_y[div_y == 0] = 0.1*div_y_non_zero_min
+			div_y_hat[div_y_hat == 0] = 0.1*div_y_hat_non_zero_min
+
+			# plt.plot(div_y.cpu().detach().numpy(), label='test')
+			# plt.plot(div_y_hat.cpu().detach().numpy(), label='pred')
+			# plt.legend()
+			# plt.show()
 
 			div_loss = kl_loss(div_y_hat.log(), div_y.log())
 			loss = mse_loss + div_loss
