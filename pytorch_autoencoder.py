@@ -57,7 +57,7 @@ logging.basicConfig(level=logging.INFO, format='')
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-38'
+VERSION = 'pytorch_perceptual_v1-39'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -570,62 +570,38 @@ class Autoencoder(nn.Module):
 		'''
 		super(Autoencoder, self).__init__()
 		self.encoder = nn.Sequential(
+
 			nn.Conv2d(in_channels=1, out_channels=64, kernel_size=2, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding='same'),
+
+			nn.Conv2d(in_channels=64, out_channels=128, kernel_size=2, stride=2, padding=0),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.MaxPool2d(kernel_size=2, stride=2),
-			# nn.Conv2d(in_channels=128, out_channels=128, kernel_size=2, stride=1, padding='same'),
-			# nn.ReLU(),
-			# nn.Dropout(0.2),
+
 			nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding='same'),
 			nn.ReLU(),
 			nn.Dropout(0.2),
-			# nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding='same'),
-			# nn.ReLU(),
-			# nn.Dropout(0.2),
-			# nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, stride=1, padding='same'),
-			# nn.ReLU(),
-			# nn.Dropout(0.2),
-			# nn.Conv2d(in_channels=512, out_channels=512, kernel_size=5, stride=1, padding='same'),
-			# nn.ReLU(),
-			# nn.Dropout(0.2),
-			# nn.Conv2d(in_channels=512, out_channels=512, kernel_size=5, stride=1, padding='same'),
-			# nn.ReLU(),
-			# nn.Dropout(0.2),
+
 			nn.Flatten(),
 			nn.Linear(256*45*30, 420),
 		)
 		self.decoder = nn.Sequential(
+
 			nn.Linear(420, 256*45*30),
 			nn.Unflatten(1, (256, 45, 30)),
-			# nn.ConvTranspose2d(in_channels=512, out_channels=512, kernel_size=5, stride=1, padding=3),
-			# # nn.ReLU(),
-			# nn.Dropout(0.2),
-			# nn.ConvTranspose2d(in_channels=512, out_channels=512, kernel_size=5, stride=1, padding=1),
-			# # nn.ReLU(),
-			# nn.Dropout(0.2),
-			# nn.ConvTranspose2d(in_channels=512, out_channels=256, kernel_size=3, stride=1, padding=0),
-			# # nn.ReLU(),
-			# nn.Dropout(0.2),
-			# nn.ConvTranspose2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1),
-			# # nn.ReLU(),
-			# nn.Dropout(0.2),
+
 			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
-			# nn.ReLU(),
 			nn.Dropout(0.2),
-			nn.Upsample(scale_factor=2),
-			# nn.ConvTranspose2d(in_channels=128, out_channels=128, kernel_size=2, stride=1, padding=2),
-			# # nn.ReLU(),
-			# nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
-			# nn.ReLU(),
+
+			nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=2, stride=2, padding=0),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=2, stride=1, padding=0),
+
+			nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=2, stride=1, padding=1),
 			nn.Dropout(0.2),
-			nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=2, stride=1, padding=1),
+
+			nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=2, stride=1, padding=0),
+			nn.Relu()
 		)
 
 	def forward(self, x, get_latent=False):
@@ -854,9 +830,6 @@ class Early_Stopping():
 			if self.loss_counter >= self.decreasing_loss_patience:
 				gc.collect()
 				print(f'Engaging Early Stopping due to lack of improvement in validation loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.best_loss} and a validation loss of {self.best_score}')
-				final = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
-				final['finished_training'] = True
-				torch.save(final, f'models/autoencoder_pretraining_{VERSION}.pt')
 				return True
 		# elif val_loss > (1.5 * train_loss):
 		# 	self.training_counter += 1
@@ -991,44 +964,45 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		def softmax(x):
 			return torch.exp(x) / torch.exp(x).sum()
 
-		def criterion(y_hat, y):
-			mse_loss = mse(y_hat, y)
+		# def criterion(y_hat, y):
+		# 	mse_loss = mse(y_hat, y)
 
-			# div_y = minmax_scaling(y, scale_min, scale_max)
-			# div_y_hat = minmax_scaling(y_hat, scale_min, scale_max)
+		# 	# div_y = minmax_scaling(y, scale_min, scale_max)
+		# 	# div_y_hat = minmax_scaling(y_hat, scale_min, scale_max)
 
-			scale_min = min(y.min(), y_hat.min())
-			scale_max = max(y.max(), y_hat.max())
+		# 	scale_min = min(y.min(), y_hat.min())
+		# 	scale_max = max(y.max(), y_hat.max())
 
-			div_y = torch.histc(y, bins=100, min=scale_min.item(), max=scale_max.item())
-			div_y_hat = torch.histc(y_hat, bins=100, min=scale_min.item(), max=scale_max.item())
+		# 	div_y = torch.histc(y, bins=100, min=scale_min.item(), max=scale_max.item())
+		# 	div_y_hat = torch.histc(y_hat, bins=100, min=scale_min.item(), max=scale_max.item())
 
-			scale_min = min(div_y.min(), div_y_hat.min())
-			scale_max = max(div_y.max(), div_y_hat.max())
+		# 	scale_min = min(div_y.min(), div_y_hat.min())
+		# 	scale_max = max(div_y.max(), div_y_hat.max())
 
-			div_y = minmax_scaling(div_y, scale_min, scale_max)
-			div_y_hat = minmax_scaling(div_y_hat, scale_min, scale_max)
+		# 	div_y = minmax_scaling(div_y, scale_min, scale_max)
+		# 	div_y_hat = minmax_scaling(div_y_hat, scale_min, scale_max)
 
-			# div_y = softmax(div_y)
-			# div_y_hat = softmax(div_y_hat)
+		# 	# div_y = softmax(div_y)
+		# 	# div_y_hat = softmax(div_y_hat)
 
-			# quickly plotting the histograms
+		# 	# quickly plotting the histograms
 
-			# # changing zeros to very small value
-			div_y_non_zero_min = div_y[div_y != 0].min()
-			div_y_hat_non_zero_min = div_y_hat[div_y_hat != 0].min()
+		# 	# # changing zeros to very small value
+		# 	div_y_non_zero_min = div_y[div_y != 0].min()
+		# 	div_y_hat_non_zero_min = div_y_hat[div_y_hat != 0].min()
 
-			div_y[div_y == 0] = 0.1*div_y_non_zero_min
-			div_y_hat[div_y_hat == 0] = 0.1*div_y_hat_non_zero_min
+		# 	div_y[div_y == 0] = 0.1*div_y_non_zero_min
+		# 	div_y_hat[div_y_hat == 0] = 0.1*div_y_hat_non_zero_min
 
-			# plt.plot(div_y.cpu().detach().numpy(), label='test')
-			# plt.plot(div_y_hat.cpu().detach().numpy(), label='pred')
-			# plt.legend()
-			# plt.show()
+		# 	# plt.plot(div_y.cpu().detach().numpy(), label='test')
+		# 	# plt.plot(div_y_hat.cpu().detach().numpy(), label='pred')
+		# 	# plt.legend()
+		# 	# plt.show()
 
-			div_loss = kl_loss(div_y_hat.log(), div_y.log())
-			loss = mse_loss + div_loss
-			return loss
+		# 	div_loss = kl_loss(div_y_hat.log(), div_y.log())
+		# 	loss = mse_loss + div_loss
+		# 	return loss
+
 
 		# 	# criterion = nn.L1Loss() 		# this calculates the mean absolute error losses
 		# else:
@@ -1036,7 +1010,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 		# criterion = nn.MSELoss()
 
-		scaler = torch.cuda.amp.GradScaler()
+		# scaler = torch.cuda.amp.GradScaler()
 
 		# initalizing the early stopping class
 		early_stopping = Early_Stopping(decreasing_loss_patience=val_loss_patience, training_diff_patience=overfit_patience, pretraining=pretraining)
@@ -1088,10 +1062,11 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 					# backward pass
 					optimizer.zero_grad()
-					scaler.scale(loss).backward()
-					scaler.step(optimizer)
-					scaler.update()
+					loss.backward()
+					optimizer.step()
 
+					X = X.to('cpu')
+					y = y.to('cpu')
 					# adding the loss to the running loss
 					running_training_loss += loss.to('cpu').item()
 
@@ -1108,9 +1083,10 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 					# backward pass
 					optimizer.zero_grad()
-					scaler.scale(loss).backward()
-					scaler.step(optimizer)
-					scaler.update()
+					loss.backward()
+					optimizer.step()
+
+					train_data = train_data.to('cpu')
 
 					# adding the loss to the running loss
 					running_training_loss += loss.to('cpu').item()
@@ -1127,6 +1103,9 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 					with torch.no_grad():
 						output = model(X)
 						val_loss = criterion(output, y)
+
+						X = X.to('cpu')
+						y = y.to('cpu')
 						running_val_loss += val_loss.to('cpu').item()
 			else:
 				with torch.no_grad():
@@ -1136,6 +1115,8 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 						output = model(val_data)
 
 						val_loss = criterion(output, val_data)
+
+						val_data = val_data.to('cpu')
 
 						# adding the loss to the running loss
 						running_val_loss += val_loss.to('cpu').item()
@@ -1149,7 +1130,10 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			val_loss_list.append(val_loss)
 
 			# checking for early stopping
-			if early_stopping(train_loss=loss, val_loss=val_loss, model=model, optimizer=optimizer, epoch=current_epoch):
+			if (early_stopping(train_loss=loss, val_loss=val_loss, model=model, optimizer=optimizer, epoch=current_epoch)) or (current_epoch == num_epochs-1):
+				final = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
+				final['finished_training'] = True
+				torch.save(final, f'models/autoencoder_pretraining_{VERSION}.pt')
 				break
 
 			# getting the time for the epoch
@@ -1164,6 +1148,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			# updating the epoch
 			current_epoch += 1
 
+		gc.collect()
 		# getting the best params saved in the Early Stopping class
 		if pretraining:
 			model.load_state_dict(torch.load(f'models/autoencoder_pretraining_{VERSION}.pt'))
@@ -1352,14 +1337,9 @@ def comparing_distributions(predictions, test):
 	# plotting the histograms
 	fig = plt.figure(figsize=(10, 10))
 	ax1 = fig.add_subplot(111)
-	scaling_min = min([predictions.min(), test.min()])
-	scaling_max = max([predictions.max(), test.max()])
 
-	scaled_preds = minmax_scaling(predictions, scaling_min, scaling_max)
-	scaled_test = minmax_scaling(test, scaling_min, scaling_max)
-
-	ax1.hist(scaled_preds.flatten(), bins=100, alpha=0.5, label='Predictions', density=True)
-	ax1.hist(scaled_test.flatten(), bins=100, alpha=0.5, label='Test', density=True)
+	ax1.hist(predictions.flatten(), bins=100, alpha=0.5, label='Predictions', density=True)
+	ax1.hist(test.flatten(), bins=100, alpha=0.5, label='Test', density=True)
 	ax1.legend()
 	plt.show()
 
