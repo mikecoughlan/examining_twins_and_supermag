@@ -292,27 +292,28 @@ def creating_fake_twins_data(train, scaling_mean, scaling_std):
 
 	mean, std = -0.9, 0.2141
 
-	X_train = train_data + torch.tensor(np.random.normal(loc=mean, scale=std, size=train_data.shape))
-	X_val = val_data + torch.tensor(np.random.normal(loc=mean, scale=std, size=val_data.shape))
-	X_test = test_data + torch.tensor(np.random.normal(loc=mean, scale=std, size=test_data.shape))
+	# X_train = train_data + torch.tensor(np.random.normal(loc=mean, scale=std, size=train_data.shape))
+	# X_val = val_data + torch.tensor(np.random.normal(loc=mean, scale=std, size=val_data.shape))
+	# X_test = test_data + torch.tensor(np.random.normal(loc=mean, scale=std, size=test_data.shape))
 
 	# scaling the data
 	train_data = standard_scaling(train_data, scaling_mean, scaling_std)
 	val_data = standard_scaling(val_data, scaling_mean, scaling_std)
 	test_data = standard_scaling(test_data, scaling_mean, scaling_std)
 
-	X_train = standard_scaling(X_train, scaling_mean, scaling_std)
-	X_val = standard_scaling(X_val, scaling_mean, scaling_std)
-	X_test = standard_scaling(X_test, scaling_mean, scaling_std)
+	# X_train = standard_scaling(X_train, scaling_mean, scaling_std)
+	# X_val = standard_scaling(X_val, scaling_mean, scaling_std)
+	# X_test = standard_scaling(X_test, scaling_mean, scaling_std)
 
-	# plotting some examples of the data
-	fig, axes = plt.subplots(3, 3, figsize=(10, 10))
-	for i, ax in enumerate(axes.flatten()):
-		ax.imshow(X_train[i, :, :])
-		ax.set_title(f'Example {i+1}')
-	plt.show()
+	# # plotting some examples of the data
+	# fig, axes = plt.subplots(3, 3, figsize=(10, 10))
+	# for i, ax in enumerate(axes.flatten()):
+	# 	ax.imshow(X_train[i, :, :])
+	# 	ax.set_title(f'Example {i+1}')
+	# plt.show()
 
-	return X_train, X_val, X_test, train_data, val_data, test_data
+	# return X_train, X_val, X_test, train_data, val_data, test_data
+	return train_data, val_data, test_data
 
 
 def standard_scaling(x, scaling_mean, scaling_std):
@@ -601,7 +602,7 @@ class Autoencoder(nn.Module):
 			nn.Dropout(0.2),
 
 			nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=2, stride=1, padding=0),
-			nn.Relu()
+			nn.ReLU()
 		)
 
 	def forward(self, x, get_latent=False):
@@ -1363,16 +1364,22 @@ def main():
 	# 																			num_samples=100000)
 
 	# getting the pretraining data
-	X_pretrain_train, X_pretrain_val, X_pretrain_test, y_pretrain_train, y_pretrain_val, y_pretrain_test = creating_fake_twins_data(train, scaling_mean, scaling_std)
+	# X_pretrain_train, X_pretrain_val, X_pretrain_test, y_pretrain_train, y_pretrain_val, y_pretrain_test = creating_fake_twins_data(train, scaling_mean, scaling_std)
+
+	pretrain_train, pretrain_val, pretrain_test = creating_fake_twins_data(train, scaling_mean, scaling_std)
 
 	# creating the dataloaders
 	train = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True)
 	val = DataLoader(val, batch_size=BATCH_SIZE, shuffle=True)
 	test = DataLoader(test, batch_size=BATCH_SIZE, shuffle=False)
 
-	pretrain_train = DataLoader(list(zip(X_pretrain_train, y_pretrain_train)), batch_size=BATCH_SIZE, shuffle=True)
-	pretrain_val = DataLoader(list(zip(X_pretrain_val, y_pretrain_val)), batch_size=BATCH_SIZE, shuffle=True)
-	pretrain_test = DataLoader(list(zip(X_pretrain_test, y_pretrain_test)), batch_size=BATCH_SIZE, shuffle=False)
+	# pretrain_train = DataLoader(list(zip(X_pretrain_train, y_pretrain_train)), batch_size=BATCH_SIZE, shuffle=True)
+	# pretrain_val = DataLoader(list(zip(X_pretrain_val, y_pretrain_val)), batch_size=BATCH_SIZE, shuffle=True)
+	# pretrain_test = DataLoader(list(zip(X_pretrain_test, y_pretrain_test)), batch_size=BATCH_SIZE, shuffle=False)
+
+	pretrain_train = DataLoader(pretrain_train, batch_size=BATCH_SIZE, shuffle=True)
+	pretrain_val = DataLoader(pretrain_val, batch_size=BATCH_SIZE, shuffle=True)
+	pretrain_test = DataLoader(pretrain_test, batch_size=BATCH_SIZE, shuffle=False)
 
 	# creating the model
 	print('Initalizing model....')
