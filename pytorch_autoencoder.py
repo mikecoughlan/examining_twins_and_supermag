@@ -1009,7 +1009,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		# else:
 		# 	criterion = VGGPerceptualLoss()
 
-		# criterion = nn.MSELoss()
+		criterion = nn.MSELoss()
 
 		# scaler = torch.cuda.amp.GradScaler()
 
