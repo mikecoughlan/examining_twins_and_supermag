@@ -351,6 +351,10 @@ def getting_prepared_data(get_features=False):
 
 	maps = utils.loading_twins_maps()
 
+	# changing all negative values in maps to 0
+	for key in maps.keys():
+		maps[key]['map'][maps[key]['map'] < 0] = 0
+
 	temp_version = 'pytorch_test'
 
 	with open(working_dir+f'twins_method_storm_extraction_map_keys_version_{temp_version}.pkl', 'rb') as f:
@@ -426,10 +430,46 @@ def getting_prepared_data(get_features=False):
 	twins_scaling_array = twins_scaling_array[twins_scaling_array > 0]
 	scaling_mean = twins_scaling_array.mean()
 	scaling_std = twins_scaling_array.std()
+	scaling_min = twins_scaling_array.min()
+	scaling_max = twins_scaling_array.max()
 
 	twins_train = [standard_scaling(x, scaling_mean, scaling_std) for x in twins_train]
 	twins_val = [standard_scaling(x, scaling_mean, scaling_std) for x in twins_val]
 	twins_test = [standard_scaling(x, scaling_mean, scaling_std) for x in twins_test]
+
+	# finding the min values of the training data
+	min_standard_scaling_training_value = np.min([np.min(x) for x in twins_train])
+
+	# using the min value to shift the data to positive x if it is negative
+	if min_standard_scaling_training_value < 0:
+		twins_train = [x - min_standard_scaling_training_value for x in twins_train]
+		twins_val = [x - min_standard_scaling_training_value for x in twins_val]
+		twins_test = [x - min_standard_scaling_training_value for x in twins_test]
+
+	# minmax_scaling_train = [minmax_scaling(x, scaling_min, scaling_max) for x in twins_train]
+	# minmax_scaling_val = [minmax_scaling(x, scaling_min, scaling_max) for x in twins_val]
+	# minmax_scaling_test = [minmax_scaling(x, scaling_min, scaling_max) for x in twins_test]
+
+	# # plotting distributions of the data
+	# fig, axes = plt.subplots(3, 1, figsize=(10, 10))
+	# axes[0].hist(np.array(twins_train).flatten(), bins=100, label='origonal', alpha=0.5, log=True)
+	# # axes[0].hist(np.array(standard_twins_train).flatten(), bins=100, label='standard', alpha=0.5, log=True)
+	# axes[0].hist(np.array(minmax_scaling_train).flatten(), bins=100, label='minmax', alpha=0.5, log=True)
+	# axes[0].set_title('Distribution of Training data')
+	# axes[0].legend()
+
+	# axes[1].hist(np.array(twins_val).flatten(), bins=100, label='origonal', alpha=0.5, log=True)
+	# # axes[1].hist(np.array(standard_twins_val).flatten(), bins=100, label='standard', alpha=0.5, log=True)
+	# axes[1].hist(np.array(minmax_scaling_val).flatten(), bins=100, label='minmax', alpha=0.5, log=True)
+	# axes[1].set_title('Distribution of Val data')
+	# axes[1].legend()
+
+	# axes[2].hist(np.array(twins_test).flatten(), bins=100, label='origonal', alpha=0.5, log=True)
+	# # axes[2].hist(np.array(standard_twins_val).flatten(), bins=100, label='standard', alpha=0.5, log=True)
+	# axes[2].hist(np.array(minmax_scaling_test).flatten(), bins=100, label='minmax', alpha=0.5, log=True)
+	# axes[2].set_title('Distribution of Test data')
+	# axes[2].legend()
+	# plt.show()
 
 	if not get_features:
 		return torch.tensor(twins_train), torch.tensor(twins_val), torch.tensor(twins_test), date_dict, scaling_mean, scaling_std
@@ -602,7 +642,7 @@ class Autoencoder(nn.Module):
 			nn.Dropout(0.2),
 
 			nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=2, stride=1, padding=0),
-			nn.ReLU()
+			# nn.ReLU()
 		)
 
 	def forward(self, x, get_latent=False):

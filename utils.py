@@ -85,7 +85,6 @@ def loading_twins_maps(full_map=False):
 					continue
 			check = pd.to_datetime(date.strftime(format='%Y-%m-%d %H:%M:%S'), format='%Y-%m-%d %H:%M:%S')
 			if check in times.values:
-				twins_map['Ion_Temperature'][i][twins_map['Ion_Temperature'][i] < 0] = 0
 				maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')] = {}
 				if full_map:
 					maps[check.round('T').strftime(format='%Y-%m-%d %H:%M:%S')]['map'] = twins_map['Ion_Temperature'][i]
