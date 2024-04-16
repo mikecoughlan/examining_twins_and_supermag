@@ -46,6 +46,8 @@ from spacepy import pycdf
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from torchsummary import summary
 from torchvision import models
+from torchvision.models.feature_extraction import (create_feature_extractor,
+                                                   get_graph_node_names)
 from torchvision.transforms.functional import rotate
 
 import utils
@@ -57,7 +59,7 @@ logging.basicConfig(level=logging.INFO, format='')
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-39'
+VERSION = 'pytorch_perceptual_v1-35'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -204,14 +206,14 @@ def creating_pretraining_data(tensor_shape, train_max, train_min, scaling_mean, 
 	for i, ax in enumerate(axes.flatten()):
 		ax.imshow(train_data[i, :, :])
 		ax.set_title(f'Example {i+1}')
-	plt.show()
+	# plt.show()
 
 	# plotting 9 random examples of validation data
 	fig, axes = plt.subplots(3, 3, figsize=(10, 10))
 	for i, ax in enumerate(axes.flatten()):
 		ax.imshow(val_data[i, :, :])
 		ax.set_title(f'Example {i+1}')
-	plt.show()
+	# plt.show()
 
 	# scaling the data
 	train_data = standard_scaling(train_data, scaling_mean, scaling_std)
@@ -226,7 +228,7 @@ def creating_pretraining_data(tensor_shape, train_max, train_min, scaling_mean, 
 	ax2 = fig.add_subplot(122)
 	ax2.imshow(val_data[10, :, :])
 	ax2.set_title('Validation Example')
-	plt.show()
+	# plt.show()
 
 	# converting the data to tensors
 	train_data = torch.tensor(train_data, dtype=torch.float)
@@ -300,6 +302,13 @@ def creating_fake_twins_data(train, scaling_mean, scaling_std):
 	train_data = standard_scaling(train_data, scaling_mean, scaling_std)
 	val_data = standard_scaling(val_data, scaling_mean, scaling_std)
 	test_data = standard_scaling(test_data, scaling_mean, scaling_std)
+
+	train_data_min = train_data.min()
+
+	if train_data_min < 0:
+		train_data = train_data - train_data_min
+		val_data = val_data - train_data_min
+		test_data = test_data - train_data_min
 
 	# X_train = standard_scaling(X_train, scaling_mean, scaling_std)
 	# X_val = standard_scaling(X_val, scaling_mean, scaling_std)
@@ -659,11 +668,11 @@ class Autoencoder(nn.Module):
 
 		# x = x.unsqueeze(1)
 		latent = self.encoder(x)
-		if get_latent:
-			return latent
-		else:
-			x = self.decoder(latent)
-			return x
+		# if get_latent:
+		# 	return latent
+		# else:
+		x = self.decoder(latent)
+		return x
 
 
 class BaseModel(nn.Module):
@@ -1172,6 +1181,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 			# checking for early stopping
 			if (early_stopping(train_loss=loss, val_loss=val_loss, model=model, optimizer=optimizer, epoch=current_epoch)) or (current_epoch == num_epochs-1):
+				gc.collect()
 				final = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
 				final['finished_training'] = True
 				torch.save(final, f'models/autoencoder_pretraining_{VERSION}.pt')
@@ -1218,7 +1228,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 	return model
 
 
-def evaluation(model, test):
+def evaluation(model, test, get_layer_outputs=False):
 	'''
 	Function using the trained models to make predictions with the testing data.
 
@@ -1242,6 +1252,18 @@ def evaluation(model, test):
 	# making sure the model is on the correct device
 	model.to(DEVICE, dtype=torch.float)
 
+	layers = {"encoder.1":"conv1",
+			"encoder.4":"conv2",
+			"encoder.7":"conv3",
+			"encoder.10":"fc1",
+			"decoder.0":"fc2",
+			"decoder.2":"deconv1",
+			"decoder.4":"deconv2",
+			"decoder.6":"deconv3",
+			"decoder.8":"deconv4"}
+
+	output_lists = {layer:[] for layer in layers.values()}
+
 	with torch.no_grad():
 		if isinstance(next(iter(test)), list):
 			for X, y in test:
@@ -1249,6 +1271,13 @@ def evaluation(model, test):
 				y = y.to(DEVICE, dtype=torch.float)
 				X = X.unsqueeze(1)
 				predicted = model(X)
+
+				if get_layer_outputs:
+					model_layers = create_feature_extractor(model, return_nodes=layers)
+					intermediate_layers = model_layers(X)
+					for layer in layers.values():
+						output_lists[layer].append(intermediate_layers[layer].to('cpu').numpy())
+
 				loss = F.mse_loss(predicted, y)
 				running_loss += loss.item()
 
@@ -1263,13 +1292,22 @@ def evaluation(model, test):
 				y = torch.squeeze(y, dim=1).numpy()
 				predicted_list.append(predicted)
 				test_list.append(y)
+
 		else:
 			for test_data in test:
 				test_data = test_data.to(DEVICE, dtype=torch.float)
+
 				test_data = test_data.unsqueeze(1)
 				predicted = model(test_data)
 				loss = F.mse_loss(predicted, test_data)
 				running_loss += loss.item()
+
+
+				if get_layer_outputs:
+					model_layers = create_feature_extractor(model, return_nodes=layers)
+					intermediate_layers = model_layers(test_data)
+					for layer in layers.values():
+						output_lists[layer].append(intermediate_layers[layer].to('cpu').numpy())
 
 				# making sure the predicted value is on the cpu
 				if predicted.get_device() != -1:
@@ -1283,7 +1321,13 @@ def evaluation(model, test):
 				predicted_list.append(predicted)
 				test_list.append(test_data)
 
-	return np.concatenate(predicted_list, axis=0), np.concatenate(test_list, axis=0), running_loss/len(test)
+
+	if get_layer_outputs:
+		for layer in output_lists.keys():
+			output_lists[layer] = np.concatenate(output_lists[layer], axis=0)
+		return np.concatenate(predicted_list, axis=0), np.concatenate(test_list, axis=0), running_loss/len(test), output_lists, layers
+	else:
+		return np.concatenate(predicted_list, axis=0), np.concatenate(test_list, axis=0), running_loss/len(test)
 
 
 def plotting_some_examples(predictions, test, pretraining=False):
@@ -1379,10 +1423,20 @@ def comparing_distributions(predictions, test):
 	fig = plt.figure(figsize=(10, 10))
 	ax1 = fig.add_subplot(111)
 
-	ax1.hist(predictions.flatten(), bins=100, alpha=0.5, label='Predictions', density=True)
-	ax1.hist(test.flatten(), bins=100, alpha=0.5, label='Test', density=True)
+	ax1.hist(predictions.flatten(), bins=100, alpha=0.5, label='Predictions', log=True)
+	ax1.hist(test.flatten(), bins=100, alpha=0.5, label='Test', log=True)
+	# plt.xlim(-4, 10)
 	ax1.legend()
-	plt.show()
+	plt.savefig(f'plots/agu_presentation_plots/{VERSION}_distributions.png')
+
+def plotting_histograms_for_each_layer_output(outputs, labels):
+
+	fig, axes = plt.subplots(len(outputs.keys()), 1, figsize=(20, 20))
+	for ax, label, output in zip(axes, labels.keys(), outputs.values()):
+		ax.hist(output.flatten(), bins=100, alpha=0.5, log=True)
+		ax.set_title(f'Layer {label}')
+
+	plt.savefig(f'plots/{VERSION}_layer_outputs.png')
 
 def main():
 	'''
@@ -1453,11 +1507,13 @@ def main():
 
 	# evaluating the model
 	print('Evaluating model....')
-	predictions, test, testing_loss = evaluation(autoencoder, test)
+	predictions, test, testing_loss, output_layers, layers = evaluation(autoencoder, test, get_layer_outputs=True)
+
+	plotting_histograms_for_each_layer_output(output_layers, layers)
 
 	# unscaling the predictions and test data
-	predictions = (predictions * scaling_std) + scaling_mean
-	test = (test * scaling_std) + scaling_mean
+	# predictions = (predictions * scaling_std) + scaling_mean
+	# test = (test * scaling_std) + scaling_mean
 
 	# plotting some examples
 	print('Plotting some examples....')
