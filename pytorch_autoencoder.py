@@ -59,7 +59,7 @@ logging.basicConfig(level=logging.INFO, format='')
 
 TARGET = 'rsd'
 REGION = 163
-VERSION = 'pytorch_perceptual_v1-35'
+VERSION = 'pytorch_perceptual_v1-40'
 
 CONFIG = {'time_history':30, 'random_seed':7}
 
@@ -965,6 +965,47 @@ def resume_training(model, optimizer, pretraining=False):
 	return model, optimizer, epoch, finished_training
 
 
+class JSDivLoss(nn.Module):
+
+	def __init__(self):
+		super(JSDivLoss, self).__init__()
+		self.kl = nn.KLDivLoss(reduction='batchmean', log_target=True)
+
+	def matching_scales(self, y_hat, y):
+
+		scale_min = min(y.min(), y_hat.min())
+		scale_max = max(y.max(), y_hat.max())
+
+		div_y = minmax_scaling(y, scale_min, scale_max)
+		div_y_hat = minmax_scaling(y_hat, scale_min, scale_max)
+
+		div_y = torch.histc(y, bins=100, min=scale_min.item(), max=scale_max.item())
+		div_y_hat = torch.histc(y_hat, bins=100, min=scale_min.item(), max=scale_max.item())
+
+		div_y = div_y/sum(div_y)
+		div_y_hat = div_y_hat/sum(div_y_hat)
+
+		return div_y_hat, div_y
+
+
+	def forward(self, y_hat, y):
+		'''
+		Function to calculate the Jensen-Shannon Divergence between the predicted and real images.
+
+		Args:
+			y_hat (torch.tensor): the predicted image
+			y (torch.tensor): the real image
+
+		Returns:
+			float: the loss between the two images
+		'''
+		y_hat, y = self.matching_scales(y_hat, y)
+		y_hat, y = y_hat.view(-1, y_hat.size(-1)), y.view(-1, y.size(-1))
+		m = (0.5*(y_hat + y)).log()
+
+		return 0.5*(self.kl(m, y.log()) + self.kl(m, y_hat.log()))
+
+
 def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500, pretraining=False):
 
 	'''
@@ -1014,53 +1055,8 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		def softmax(x):
 			return torch.exp(x) / torch.exp(x).sum()
 
-		# def criterion(y_hat, y):
-		# 	mse_loss = mse(y_hat, y)
-
-		# 	# div_y = minmax_scaling(y, scale_min, scale_max)
-		# 	# div_y_hat = minmax_scaling(y_hat, scale_min, scale_max)
-
-		# 	scale_min = min(y.min(), y_hat.min())
-		# 	scale_max = max(y.max(), y_hat.max())
-
-		# 	div_y = torch.histc(y, bins=100, min=scale_min.item(), max=scale_max.item())
-		# 	div_y_hat = torch.histc(y_hat, bins=100, min=scale_min.item(), max=scale_max.item())
-
-		# 	scale_min = min(div_y.min(), div_y_hat.min())
-		# 	scale_max = max(div_y.max(), div_y_hat.max())
-
-		# 	div_y = minmax_scaling(div_y, scale_min, scale_max)
-		# 	div_y_hat = minmax_scaling(div_y_hat, scale_min, scale_max)
-
-		# 	# div_y = softmax(div_y)
-		# 	# div_y_hat = softmax(div_y_hat)
-
-		# 	# quickly plotting the histograms
-
-		# 	# # changing zeros to very small value
-		# 	div_y_non_zero_min = div_y[div_y != 0].min()
-		# 	div_y_hat_non_zero_min = div_y_hat[div_y_hat != 0].min()
-
-		# 	div_y[div_y == 0] = 0.1*div_y_non_zero_min
-		# 	div_y_hat[div_y_hat == 0] = 0.1*div_y_hat_non_zero_min
-
-		# 	# plt.plot(div_y.cpu().detach().numpy(), label='test')
-		# 	# plt.plot(div_y_hat.cpu().detach().numpy(), label='pred')
-		# 	# plt.legend()
-		# 	# plt.show()
-
-		# 	div_loss = kl_loss(div_y_hat.log(), div_y.log())
-		# 	loss = mse_loss + div_loss
-		# 	return loss
-
-
-		# 	# criterion = nn.L1Loss() 		# this calculates the mean absolute error losses
-		# else:
-		# 	criterion = VGGPerceptualLoss()
-
-		criterion = nn.MSELoss()
-
-		# scaler = torch.cuda.amp.GradScaler()
+		# criterion = nn.MSELoss()
+		criterion = JSDivLoss()
 
 		# initalizing the early stopping class
 		early_stopping = Early_Stopping(decreasing_loss_patience=val_loss_patience, training_diff_patience=overfit_patience, pretraining=pretraining)
