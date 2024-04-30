@@ -677,11 +677,11 @@ class Early_Stopping():
 		Returns:
 			bool: whether the model should stop training or not
 		'''
-
 		val_loss = abs(val_loss)
 		self.model = model
 		self.optimizer = optimizer
 		if self.best_score is None:
+			self.best_train_loss = train_loss
 			self.best_score = val_loss
 			self.best_loss = val_loss
 			self.save_checkpoint(val_loss)
@@ -690,7 +690,7 @@ class Early_Stopping():
 			self.loss_counter += 1
 			if self.loss_counter >= self.decreasing_loss_patience:
 				gc.collect()
-				print(f'Engaging Early Stopping due to lack of improvement in validation loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.best_loss} and a validation loss of {self.best_score}')
+				print(f'Engaging Early Stopping due to lack of improvement in validation loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.train_loss} and a validation loss of {self.best_score}')
 				return True
 		# elif val_loss > (1.5 * train_loss):
 		# 	self.training_counter += 1
@@ -699,6 +699,7 @@ class Early_Stopping():
 		# 		return True
 
 		else:
+			self.best_train_loss = train_loss
 			self.best_score = val_loss
 			self.best_epoch = epoch
 			self.save_checkpoint(val_loss)
@@ -790,7 +791,7 @@ class JSD(nn.Module):
 		For more information on the Jensen-Shannon Divergence see: https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
 
 	Args:
-		nn (nn): the base class for all neural network 
+		nn.Module: the base class for all neural network 
 					modules. Inherits the backpropagation functionality
 	'''
 
@@ -876,8 +877,11 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		model (object): the model to be trained
 		train (torch.utils.data.DataLoader): the training data
 		val (torch.utils.data.DataLoader): the validation data
-		val_loss_patience (int): the number of epochs to wait before stopping the model if the validation loss does not decrease
-		overfit_patience (int): the number of epochs to wait before stopping the model if the training loss is significantly lower than the validation loss
+		val_loss_patience (int): the number of epochs to wait before stopping the model 
+									if the validation loss does not decrease
+		overfit_patience (int): the number of epochs to wait before stopping the model 
+									if the training loss is significantly lower than the 
+									validation loss
 		num_epochs (int): the number of epochs to train the model
 		pretraining (bool): whether the model is being pre-trained
 
@@ -1043,9 +1047,14 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			# checking for early stopping
 			if (early_stopping(train_loss=loss, val_loss=val_loss, model=model, optimizer=optimizer, epoch=current_epoch)) or (current_epoch == num_epochs-1):
 				gc.collect()
-				final = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
-				final['finished_training'] = True
-				torch.save(final, f'models/autoencoder_pretraining_{VERSION}.pt')
+				if pretraining:
+					final = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
+					final['finished_training'] = True
+					torch.save(final, f'models/autoencoder_pretraining_{VERSION}.pt')
+				else:
+					final = torch.load(f'models/autoencoder_{VERSION}.pt')
+					final['finished_training'] = True
+					torch.save(final, f'models/autoencoder_{VERSION}.pt')
 				break
 
 			# getting the time for the epoch
