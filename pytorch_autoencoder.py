@@ -1361,7 +1361,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 					running_training_loss += loss.to('cpu').item()
 			# print(f'the number of nans: {nans}')
 			# print(f'len of train: {len(train)}')
-			print(f'the running training loss: {running_training_loss}')
+			# print(f'the running training loss: {running_training_loss}')
 			# setting the model to evaluation mode
 			model.eval()
 
@@ -1394,8 +1394,8 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 						# y_hat, target, m = result_processing(output, val_data)
 						val_loss = criterion(output, val_data)
-						print(f'the val loss: {val_loss}')
-						raise ValueError
+						# print(f'the val loss: {val_loss}')
+						# raise ValueError
 
 						val_data = val_data.to('cpu')
 
