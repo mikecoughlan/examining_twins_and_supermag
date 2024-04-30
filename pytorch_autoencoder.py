@@ -137,44 +137,6 @@ def loading_data(target_var, region):
 	return merged_df, mean_lat, maps
 
 
-def generate_gaussian_2d(num_sample, shape, max_value, peak_location=None, peak_std=None):
-	"""
-	Generate a 2D NumPy array representing a Gaussian distribution with a specified maximum value and optional random peak location.
-
-	Args:
-		shape (tuple): Shape of the array (height, width).
-		max_value (float): Maximum value of the Gaussian distribution.
-		peak_location (tuple): Peak location coordinates (row, column). If None, a random location is chosen.
-		peak_std (float): Standard deviation of the Gaussian peak.
-
-	Returns:
-		numpy.ndarray: 2D array representing the Gaussian distribution.
-	"""
-
-	# initalizing the np.array to store the gaussian distributions
-	gaussian_array = np.zeros((num_sample, shape[0], shape[1]))
-
-	for i in range(num_sample):
-		# Generate random peak location and standard deviation if not specified
-		if peak_location is None:
-			peak_location = (np.random.randint(0, shape[0]), np.random.randint(0, shape[1]))
-		if peak_std is None:
-			peak_std = np.random.uniform(0.01, 0.9) * shape[0]
-
-		# Generate 2D Gaussian distribution
-		x, y = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
-		x0, y0 = peak_location
-		gaussian = max_value * np.exp(-((x - x0) ** 2 + (y - y0) ** 2) / (2 * peak_std ** 2))
-
-		gaussian_array[i, :, :] = gaussian
-
-		# resetting the peak location and peak std
-		peak_location = None
-		peak_std = None
-
-	return gaussian_array
-
-
 def creating_pretraining_data(tensor_shape, train_max, train_min, scaling_mean, scaling_std, num_samples=10000):
 	'''
 	Function to create the data to pretrain the autoencoder. This data is used to train the autoencoder
@@ -677,160 +639,6 @@ class Autoencoder(nn.Module):
 		return x
 
 
-class BaseModel(nn.Module):
-	'''
-	_summary_: Base class for all models.
-
-	Args:
-		nn (nn): the base class for all neural network modules
-	'''
-	def __init__(self):
-		super(BaseModel, self).__init__()
-		self.logger = logging.getLogger(self.__class__.__name__)
-
-	def forward(self):
-		raise NotImplementedError
-
-	def summary(self):
-		model_parameters = filter(lambda p: p.requires_grad, self.parameters())
-		nbr_params = sum([np.prod(p.size()) for p in model_parameters])
-		self.logger.info(f'Nbr of trainable parameters: {nbr_params}')
-
-	def __str__(self):
-		model_parameters = filter(lambda p: p.requires_grad, self.parameters())
-		nbr_params = sum([np.prod(p.size()) for p in model_parameters])
-		return super(BaseModel, self).__str__() + f'\nNbr of trainable parameters: {nbr_params}'
-
-
-class SegNet(BaseModel):
-	def __init__(self, latent_dims=120, in_channels=1, pretrained=True, freeze_bn=False, **_):
-		super(SegNet, self).__init__()
-		vgg_bn = models.vgg16_bn(pretrained= pretrained)
-		encoder = list(vgg_bn.features.children())
-		self.latent_dims = latent_dims
-
-		encoder[0] = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1)
-
-		# Encoder, VGG without any maxpooling
-		self.stage1_encoder = nn.Sequential(*encoder[:6])
-		self.stage2_encoder = nn.Sequential(*encoder[7:13])
-		self.stage3_encoder = nn.Sequential(*encoder[14:23])
-		self.stage4_encoder = nn.Sequential(*encoder[24:33])
-		self.stage5_encoder = nn.Sequential(*encoder[34:-1])
-		self.pool = nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)
-
-		self.flatten = nn.Flatten()
-
-		# Decoder, same as the encoder but reversed, maxpool will not be used
-		decoder = encoder
-		decoder = [i for i in list(reversed(decoder)) if not isinstance(i, nn.MaxPool2d)]
-		# Replace the last conv layer
-		decoder[-1] = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
-		# When reversing, we also reversed conv->batchN->relu, correct it
-		decoder = [item for i in range(0, len(decoder), 3) for item in decoder[i:i+3][::-1]]
-		# Replace some conv layers & batchN after them
-		for i, module in enumerate(decoder):
-			if isinstance(module, nn.Conv2d):
-				if module.in_channels != module.out_channels:
-					decoder[i+1] = nn.BatchNorm2d(module.in_channels)
-					decoder[i] = nn.Conv2d(module.out_channels, module.in_channels, kernel_size=3, stride=1, padding=1)
-
-		self.stage1_decoder = nn.Sequential(*decoder[0:9])
-		self.stage2_decoder = nn.Sequential(*decoder[9:18])
-		self.stage3_decoder = nn.Sequential(*decoder[18:27])
-		self.stage4_decoder = nn.Sequential(*decoder[27:33])
-		self.stage5_decoder = nn.Sequential(*decoder[33:],
-				nn.Conv2d(64, 1, kernel_size=3, stride=1, padding=1)
-		)
-		self.unpool = nn.MaxUnpool2d(kernel_size=2, stride=2)
-
-		self._initialize_weights(self.stage1_decoder, self.stage2_decoder, self.stage3_decoder,
-									self.stage4_decoder, self.stage5_decoder)
-		if freeze_bn: self.freeze_bn()
-
-	def linear(self, in_channels, out_channels):
-		return nn.Sequential(nn.Linear(in_channels, out_channels)).to(DEVICE)
-
-
-	def _initialize_weights(self, *stages):
-		for modules in stages:
-			for module in modules.modules():
-				if isinstance(module, nn.Conv2d):
-					nn.init.kaiming_normal_(module.weight)
-					if module.bias is not None:
-						module.bias.data.zero_()
-				elif isinstance(module, nn.BatchNorm2d):
-					module.weight.data.fill_(1)
-					module.bias.data.zero_()
-
-	def forward(self, x, get_latent=False):
-
-		# x = x.repeat(1, 3, 1, 1)
-
-		# Encoder
-		x = self.stage1_encoder(x)
-		x1_size = x.size()
-		x, indices1 = self.pool(x)
-
-		x = self.stage2_encoder(x)
-		x2_size = x.size()
-		x, indices2 = self.pool(x)
-
-		x = self.stage3_encoder(x)
-		x3_size = x.size()
-		x, indices3 = self.pool(x)
-
-		x = self.stage4_encoder(x)
-		x4_size = x.size()
-		x, indices4 = self.pool(x)
-
-		x = self.stage5_encoder(x)
-		x5_size = x.size()
-		x, indices5 = self.pool(x)
-
-		last_pool_size = x.size()
-		# last_pool_size.to(DEVICE)
-
-		# Latent space
-		x = self.flatten(x)
-
-		latent = self.linear(last_pool_size[1]*last_pool_size[2]*last_pool_size[3], self.latent_dims)(x)
-
-		# Decoder
-		x = self.linear(self.latent_dims, last_pool_size[1]*last_pool_size[2]*last_pool_size[3])(latent)
-		x = x.view(last_pool_size)
-
-		x = self.unpool(x, indices=indices5, output_size=x5_size)
-		x = self.stage1_decoder(x)
-
-		x = self.unpool(x, indices=indices4, output_size=x4_size)
-		x = self.stage2_decoder(x)
-
-		x = self.unpool(x, indices=indices3, output_size=x3_size)
-		x = self.stage3_decoder(x)
-
-		x = self.unpool(x, indices=indices2, output_size=x2_size)
-		x = self.stage4_decoder(x)
-
-		x = self.unpool(x, indices=indices1, output_size=x1_size)
-		x = self.stage5_decoder(x)
-
-		if get_latent:
-			return latent
-		else:
-			return x
-
-	def get_backbone_params(self):
-		return []
-
-	def get_decoder_params(self):
-		return self.parameters()
-
-	def freeze_bn(self):
-		for module in self.modules():
-			if isinstance(module, nn.BatchNorm2d): module.eval()
-
-
 class Early_Stopping():
 	'''
 	Class to create an early stopping condition for the model.
@@ -968,226 +776,96 @@ def resume_training(model, optimizer, pretraining=False):
 	return model, optimizer, epoch, finished_training
 
 
-class _Loss(nn.Module):
-	reduction: str
-
-	def __init__(self, size_average=None, reduce=None, reduction: str = 'mean') -> None:
-		super().__init__()
-		if size_average is not None or reduce is not None:
-			self.reduction: str = _Reduction.legacy_get_string(size_average, reduce)
-		else:
-			self.reduction = reduction
-
-
-# class ProcessingForJSDivLoss(_Loss):
-
-# 	def __init__(self):
-# 		super(ProcessingForJSDivLoss, self).__init__()
-
-
-	# def minmax_scaling(self, x):
-	# 	# scaling the data to be between 0 and 1
-	# 	return torch.div((torch.sub(x, self.scale_min)), (torch.sub(self.scale_max, self.scale_min)))
-
-
-	# def matching_scales(self, y_hat, y):
-
-	# 	self.scale_min = torch.min(torch.min(y), torch.min(y_hat))
-	# 	self.scale_max = torch.max(torch.max(y), torch.max(y_hat))
-
-	# 	bins = torch.torch.linspace(self.scale_min, self.scale_max, 100).to(DEVICE)
-
-	# 	div_y = self.minmax_scaling(y)
-	# 	div_y_hat = self.minmax_scaling(y_hat)
-
-	# 	# div_y = torch.histc(y, bins=100, min=self.scale_min.item(), max=self.scale_max.item())
-	# 	# div_y_hat = torch.histc(y_hat, bins=100, min=self.scale_min.item(), max=self.scale_max.item())
-
-	# 	div_y = ke.histogram(div_y, bins=bins, bandwidth=torch.tensor(0.1))
-	# 	div_y_hat = ke.histogram(div_y_hat, bins=bins, bandwidth=torch.tensor(0.1))
-
-	# 	div_y = torch.div(div_y, torch.sum(div_y))
-	# 	div_y_hat = torch.div(div_y_hat, torch.sum(div_y_hat))
-
-	# 	return div_y_hat, div_y
-
-	# def cleaning_up(self, y_hat, y):
-
-	# 	y_hat, y = self.matching_scales(y_hat, y)
-
-	# 	m = torch.mul(torch.add(y_hat, y), torch.tensor(0.5))
-	# 	# y = torch.log(y)
-	# 	# y_hat = torch.log(y_hat)
-	# 	m = torch.log(m)
-
-	# 	# replacing -inf with 0
-	# 	# y = torch.where(y==-float('inf'), torch.tensor(0.0), y)
-	# 	# y_hat = torch.where(y_hat==-float('inf'), torch.tensor(0.0), y_hat)
-	# 	# m = torch.where(m==-float('inf'), torch.tensor(0.0), m)
-
-	# 	return y_hat, y, m
-
-	# def forward(self, y_hat, y):
-	# 	return self.cleaning_up(y_hat, y)
-
-
-# class JSDivLoss(_Loss):
-
-# 	__constants__ = ['reduction']
-
-# 	def __init__(self, size_average=None, reduce=None, reduction: str = 'batchmean', log_target: bool = False) -> None:
-# 		super(JSDivLoss, self).__init__()
-# 		self.log_target = log_target
-
-
-# 	def minmax_scaling(self, x):
-# 		# scaling the data to be between 0 and 1
-# 		return torch.div((torch.sub(x, self.scale_min)), (torch.sub(self.scale_max, self.scale_min)))
-
-
-# 	def matching_scales(self, y_hat, y):
-
-# 		self.scale_min = torch.min(torch.min(y), torch.min(y_hat))
-# 		self.scale_max = torch.max(torch.max(y), torch.max(y_hat))
-
-# 		bins = torch.torch.linspace(self.scale_min, self.scale_max, 100).to(DEVICE)
-
-# 		div_y = self.minmax_scaling(y)
-# 		div_y_hat = self.minmax_scaling(y_hat)
-
-# 		div_y = ke.histogram(div_y, bins=bins, bandwidth=torch.tensor(0.1))
-# 		div_y_hat = ke.histogram(div_y_hat, bins=bins, bandwidth=torch.tensor(0.1))
-
-# 		# div_y = torch.div(div_y, torch.sum(div_y))
-# 		# div_y_hat = torch.div(div_y_hat, torch.sum(div_y_hat))
-
-# 		return div_y_hat, div_y
-
-# 	def cleaning_up(self, y_hat, y):
-
-# 		y_hat, y = self.matching_scales(y_hat, y)
-
-# 		m = torch.mul(torch.add(y_hat, y), torch.tensor(0.5))
-# 		m = F.log_softmax(m, dim=1)
-# 		# y = torch.log(y)
-# 		# y_hat = torch.log(y_hat)
-# 		# m = torch.nan_to_num(torch.log(m), nan=0.0, neginf=0.0)
-# 		# y = torch.nan_to_num(torch.log(y), nan=0.0, neginf=0.0)
-# 		# y_hat = torch.nan_to_num(torch.log(y_hat), nan=0.0, neginf=0.0)
-
-# 		# replacing -inf with 0
-# 		# y = torch.where(y==-float('inf'), torch.tensor(0.0), y)
-# 		# y_hat = torch.where(y_hat==-float('inf'), torch.tensor(0.0), y_hat)
-# 		# m = torch.where(m==-float('inf'), torch.tensor(0.0), m)
-
-# 		return y_hat, y, m
-
-# 	def functional_kl_div(self, input: torch.tensor, target: torch.tensor, size_average: Optional[bool] = None, reduce: Optional[bool] = None,
-# 				reduction: str = "mean", log_target: bool = False,) -> torch.tensor:
-
-# 		# if torch.overrides.has_torch_function_variadic(input, target):
-# 		# 	return torch.overrides.handle_torch_function(functional_kl_div,(input, target),input,target,size_average=size_average,reduce=reduce,
-# 		# 									reduction=reduction, log_target=log_target,)
-
-# 		if size_average is not None or reduce is not None:
-# 			reduction_enum = _Reduction.legacy_get_enum(size_average, reduce)
-
-# 		else:
-# 			# special case for batchmean
-# 			if reduction == "batchmean":
-# 				reduction_enum = _Reduction.get_enum("sum")
-# 			else:
-# 				reduction_enum = _Reduction.get_enum(reduction)
-
-# 		reduced = torch.kl_div(input, target, reduction_enum, log_target=log_target)
-
-# 		if reduction == "batchmean" and input.dim() != 0:
-# 			reduced = reduced / input.size()[0]
-
-# 		return reduced
-
-
-# 	def forward(self, input: torch.tensor, target: torch.tensor) -> torch.tensor:
-# 		input, target, m = self.cleaning_up(input, target)
-
-# 		return torch.mul(torch.add(self.functional_kl_div(m, input, reduction=self.reduction, log_target=self.log_target),
-# 										self.functional_kl_div(m, target, reduction=self.reduction, log_target=self.log_target)), torch.tensor(0.5))
-
-
 class JSD(nn.Module):
+	'''
+	Class to calculate the Jensen-Shannon Divergence between two images. First
+		the maximum and minimum of the inputs is found. Then the images are binned
+		into histograms using the same bins defined by the max and min values to keep 
+		the bins consistent between the y and y_hat arrays. The histograms use a smoothing
+		function to normalize the values for each bin to probabilities that sum up to 1 which
+		is prefered for the calculation of the divergence. The values are cpilled to a 
+		minimum of 1e-45 to avoid -inf values when taking the log. The m parameter is then calculated
+		and used as the "input" for the KLDivLoss function. The "target" is the y (P(x)) 
+		and y_hat (Q(x)) for the two kl_divergence calculations. The final loss is the average of the two.
+		For more information on the Jensen-Shannon Divergence see: https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
+
+	Args:
+		nn (nn): the base class for all neural network 
+					modules. Inherits the backpropagation functionality
+	'''
+
+
 	def __init__(self):
+		'''
+		Initializing the JSD class.
+
+		'''
+
+		# using super to inherit the functionality of the nn.Module class
 		super(JSD, self).__init__()
+
+		# defining the KLDivLoss function to be used to calculate the loss
 		self.kl = nn.KLDivLoss(reduction='batchmean', log_target=True)
 
 
-	def minmax_scaling(self, x):
-		# scaling the data to be between 0 and 1
-		return torch.div((torch.sub(x, self.scale_min)), (torch.sub(self.scale_max, self.scale_min)))
+	def matching_scales(self, y_hat: torch.tensor, y: torch.tensor):
+		'''
+		Function to match the scales of the y and y_hat arrays and bin them into histograms.
 
+		Args:
+			y_hat (torch.tensor): the predicted image
+			y (torch.tensor): the real image
+		
+		Returns:
+			torch.tensor: the binned histogram of the predicted image
+			torch.tensor: the binned histogram of the real image
+		'''
 
-	def matching_scales(self, y_hat, y):
-
+		# finding the min and max values of the data
 		self.scale_min = torch.min(torch.min(y), torch.min(y_hat))
 		self.scale_max = torch.max(torch.max(y), torch.max(y_hat))
 
+		# creating the bins for the histogram such that they are the same values for each array
 		bins = torch.torch.linspace(self.scale_min, self.scale_max, 100).to(DEVICE)
-
-		# div_y = self.minmax_scaling(y)
-		# div_y_hat = self.minmax_scaling(y_hat)
 
 		# reshaping the data to be 1D
 		y = torch.reshape(y, (1,y.size(0)))
 		y_hat = torch.reshape(y_hat, (1,y_hat.size(0)))
 
+		# binning into probability normalized histograms
 		div_y = ke.histogram(y, bins=bins, bandwidth=torch.tensor(0.1))
 		div_y_hat = ke.histogram(y_hat, bins=bins, bandwidth=torch.tensor(0.1))
-
-		# div_y = torch.div(div_y, torch.sum(div_y))
-		# div_y_hat = torch.div(div_y_hat, torch.sum(div_y_hat))
 
 		return div_y_hat, div_y
 
 
 	def forward(self, q: torch.tensor, p: torch.tensor):
+		'''
+		Function to calculate the Jensen-Shannon Divergence between the predicted and real images.
+
+		Args:
+			q (torch.tensor): the predicted image
+			p (torch.tensor): the real image
+		
+		Returns:
+			float: the JSDiv loss between the two images
+		'''
+
+		# matching the scales and binning the data
 		q, p = self.matching_scales(q, p)
+
+		# calculating the m parameter
 		m = (0.5 * (p + q))
+
+		# clipping to avoid -inf in the log
 		q, p, m = torch.clamp(q, min=1e-45), torch.clamp(p, min=1e-45), torch.clamp(m, min=1e-45)
+
+		# taking the log of the data
 		p, q, m = torch.log(p), torch.log(q), torch.log(m)
+
+		# calculating and returning the loss
 		return 0.5 * (self.kl(m, p) + self.kl(m, q))
 
-# class JSDivLoss(nn.Module):
-
-# 	def __init__(self):
-# 		super(JSDivLoss, self).__init__()
-
-# 		self.kl = nn.KLDivLoss(reduction='batchmean', log_target=True)
-
-
-# 	def forward(self, y_hat, y, m):
-# 		'''
-# 		Function to calculate the Jensen-Shannon Divergence between the predicted and real images.
-
-# 		Args:
-# 			y_hat (torch.tensor): the predicted image
-# 			y (torch.tensor): the real image
-
-# 		Returns:
-# 			float: the loss between the two images
-# 		# '''
-# 		# m = (torch.mul(torch.tensor(0.5),torch.add(y, y_hat)))
-# 		# print(f'the first m: {m}')
-# 		# m = torch.where(torch.log(m)==-float('inf'), torch.tensor(0.0), torch.log(m))
-# 		# print(f'the second m: {m}')
-# 		# y = torch.where(torch.log(y)==-float('inf'), torch.tensor(0.0), torch.log(y))
-# 		# print(f'the inside y: {y}')
-# 		# y_hat = torch.where(torch.log(y_hat)==-float('inf'), torch.tensor(0.0), torch.log(y_hat))
-# 		# print(f'the inside y_hat: {y_hat}')
-# 		# #replacing nans with 0
-# 		# y = torch.where(torch.isnan(y), torch.tensor(0.0), y)
-# 		# y_hat = torch.where(torch.isnan(y_hat), torch.tensor(0.0), y_hat)
-# 		# m = torch.where(torch.isnan(m), torch.tensor(0.0), m)
-
-# 		return torch.abs(torch.mul(torch.add(self.kl(y, m), self.kl(y_hat, m)), torch.tensor(0.5)))
 
 def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500, pretraining=False):
 
@@ -1250,27 +928,6 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			# starting the clock for the epoch
 			stime = time.time()
 
-			# if not pretraining, freezing all but the last layer for the first 10 epochs
-			# if not pretraining:
-			# 	if epoch < 10:
-
-			# 		# freezing all layers of encoder
-			# 		for param in model.encoder.parameters():
-			# 			param.requires_grad = False
-			# 		# freezing all layers of decoder except the last layer
-			# 		for param in model.decoder.parameters():
-			# 			param.requires_grad = False
-			# 		for param in model.decoder[-1].parameters():
-			# 			param.requires_grad = True
-
-			# 	else:
-			# 		# unfreezing all layers of encoder
-			# 		for param in model.encoder.parameters():
-			# 			param.requires_grad = True
-			# 		# unfreezing all layers of decoder
-			# 		for param in model.decoder.parameters():
-			# 			param.requires_grad = True
-
 			# setting the model to training mode
 			model.train()
 
@@ -1290,10 +947,8 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 					# output, y = output.view(-1, output.size(-1)), y.view(-1, y.size(-1))
 					output, y = torch.flatten(output), torch.flatten(y)
 
-					# y_hat, target, m = result_processing(output, y)
-
 					loss = criterion(output, y)
-						# loss.requires_grad = True
+					# loss.requires_grad = True
 
 					# backward pass
 					optimizer.zero_grad()
@@ -1302,6 +957,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 					X = X.to('cpu')
 					y = y.to('cpu')
+
 					# adding the loss to the running loss
 					running_training_loss += loss.to('cpu').item()
 
@@ -1323,45 +979,24 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 					loss = criterion(output, train_data)
 					if torch.isnan(loss):
 						nans += 1
-						# print(f'the loss: {loss}')
-						# print(f'the y_hat: {y_hat}')
-						# print(f'the target: {target}')
-						# print(f'the m: {m}')
 						raise ValueError
 					else:
 						non_nans += 1
 
-					# checking for nans in input and output
-					# print(f'Nans in the training data: {torch.isnan(train_data).sum()}')
-					# print(f'Nans in the output: {torch.isnan(output).sum()}')
-					# # print(f'Nans in the y_hat: {torch.isnan(y_hat).sum()}')
-					# # print(f'Nans in the target: {torch.isnan(target).sum()}')
-					# # print(f'Nans in the m: {torch.isnan(m).sum()}')
-					# # printing some model weights
-					# print(f'the model weights before: {model.encoder[0].weight[0]}')
-
 					torch.autograd.set_detect_anomaly(True)
 					# loss.requires_grad = True
+
 					# backward pass
 					optimizer.zero_grad()
-					# printing some model weights
-					# print(f'the model weights after zero grad: {model.encoder[0].weight[0]}')
 					loss.backward()
-					# printing some model weights
-					# print(f'the model weights after backprop: {model.encoder[0].weight[0]}')
 					optimizer.step()
 
 					torch.autograd.set_detect_anomaly(True)
-					# printing some model weights
-					# print(f'the model weights at the end: {model.encoder[0].weight[0]}')
-
 					train_data = train_data.to('cpu')
 
 					# adding the loss to the running loss
 					running_training_loss += loss.to('cpu').item()
-			# print(f'the number of nans: {nans}')
-			# print(f'len of train: {len(train)}')
-			# print(f'the running training loss: {running_training_loss}')
+
 			# setting the model to evaluation mode
 			model.eval()
 
@@ -1376,9 +1011,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 						output, y = output.view(-1, output.size(-1)), y.view(-1, y.size(-1))
 
-						# y_hat, target, m = result_processing(output, y)
 						val_loss = criterion(output, y)
-
 
 						X = X.to('cpu')
 						y = y.to('cpu')
@@ -1392,10 +1025,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 						output, val_data = output.view(-1, output.size(-1)), val_data.view(-1, val_data.size(-1))
 						output, val_data = torch.flatten(output), torch.flatten(val_data)
 
-						# y_hat, target, m = result_processing(output, val_data)
 						val_loss = criterion(output, val_data)
-						# print(f'the val loss: {val_loss}')
-						# raise ValueError
 
 						val_data = val_data.to('cpu')
 
