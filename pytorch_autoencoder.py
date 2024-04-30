@@ -21,7 +21,9 @@ import os
 import pickle
 import subprocess
 import time
+from typing import Optional
 
+import kornia.enhance as ke
 # import keras
 import matplotlib
 import matplotlib.animation as animation
@@ -32,6 +34,7 @@ import pandas as pd
 # import shapely
 import torch
 import torch.nn as nn
+import torch.nn._reduction as _Reduction
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
@@ -486,7 +489,6 @@ def getting_prepared_data(get_features=False):
 		return torch.tensor(twins_train), torch.tensor(twins_val), torch.tensor(twins_test), date_dict, scaling_mean, scaling_std, features
 
 
-
 class PerceptualLoss(nn.Module):
 	'''loss function using the residuals of a pretrained model to calculate the
 			loss between of the feature maps between the predicted and real images'''
@@ -868,6 +870,7 @@ class Early_Stopping():
 			bool: whether the model should stop training or not
 		'''
 
+		val_loss = abs(val_loss)
 		self.model = model
 		self.optimizer = optimizer
 		if self.best_score is None:
@@ -965,46 +968,226 @@ def resume_training(model, optimizer, pretraining=False):
 	return model, optimizer, epoch, finished_training
 
 
-class JSDivLoss(nn.Module):
+class _Loss(nn.Module):
+	reduction: str
 
+	def __init__(self, size_average=None, reduce=None, reduction: str = 'mean') -> None:
+		super().__init__()
+		if size_average is not None or reduce is not None:
+			self.reduction: str = _Reduction.legacy_get_string(size_average, reduce)
+		else:
+			self.reduction = reduction
+
+
+# class ProcessingForJSDivLoss(_Loss):
+
+# 	def __init__(self):
+# 		super(ProcessingForJSDivLoss, self).__init__()
+
+
+	# def minmax_scaling(self, x):
+	# 	# scaling the data to be between 0 and 1
+	# 	return torch.div((torch.sub(x, self.scale_min)), (torch.sub(self.scale_max, self.scale_min)))
+
+
+	# def matching_scales(self, y_hat, y):
+
+	# 	self.scale_min = torch.min(torch.min(y), torch.min(y_hat))
+	# 	self.scale_max = torch.max(torch.max(y), torch.max(y_hat))
+
+	# 	bins = torch.torch.linspace(self.scale_min, self.scale_max, 100).to(DEVICE)
+
+	# 	div_y = self.minmax_scaling(y)
+	# 	div_y_hat = self.minmax_scaling(y_hat)
+
+	# 	# div_y = torch.histc(y, bins=100, min=self.scale_min.item(), max=self.scale_max.item())
+	# 	# div_y_hat = torch.histc(y_hat, bins=100, min=self.scale_min.item(), max=self.scale_max.item())
+
+	# 	div_y = ke.histogram(div_y, bins=bins, bandwidth=torch.tensor(0.1))
+	# 	div_y_hat = ke.histogram(div_y_hat, bins=bins, bandwidth=torch.tensor(0.1))
+
+	# 	div_y = torch.div(div_y, torch.sum(div_y))
+	# 	div_y_hat = torch.div(div_y_hat, torch.sum(div_y_hat))
+
+	# 	return div_y_hat, div_y
+
+	# def cleaning_up(self, y_hat, y):
+
+	# 	y_hat, y = self.matching_scales(y_hat, y)
+
+	# 	m = torch.mul(torch.add(y_hat, y), torch.tensor(0.5))
+	# 	# y = torch.log(y)
+	# 	# y_hat = torch.log(y_hat)
+	# 	m = torch.log(m)
+
+	# 	# replacing -inf with 0
+	# 	# y = torch.where(y==-float('inf'), torch.tensor(0.0), y)
+	# 	# y_hat = torch.where(y_hat==-float('inf'), torch.tensor(0.0), y_hat)
+	# 	# m = torch.where(m==-float('inf'), torch.tensor(0.0), m)
+
+	# 	return y_hat, y, m
+
+	# def forward(self, y_hat, y):
+	# 	return self.cleaning_up(y_hat, y)
+
+
+# class JSDivLoss(_Loss):
+
+# 	__constants__ = ['reduction']
+
+# 	def __init__(self, size_average=None, reduce=None, reduction: str = 'batchmean', log_target: bool = False) -> None:
+# 		super(JSDivLoss, self).__init__()
+# 		self.log_target = log_target
+
+
+# 	def minmax_scaling(self, x):
+# 		# scaling the data to be between 0 and 1
+# 		return torch.div((torch.sub(x, self.scale_min)), (torch.sub(self.scale_max, self.scale_min)))
+
+
+# 	def matching_scales(self, y_hat, y):
+
+# 		self.scale_min = torch.min(torch.min(y), torch.min(y_hat))
+# 		self.scale_max = torch.max(torch.max(y), torch.max(y_hat))
+
+# 		bins = torch.torch.linspace(self.scale_min, self.scale_max, 100).to(DEVICE)
+
+# 		div_y = self.minmax_scaling(y)
+# 		div_y_hat = self.minmax_scaling(y_hat)
+
+# 		div_y = ke.histogram(div_y, bins=bins, bandwidth=torch.tensor(0.1))
+# 		div_y_hat = ke.histogram(div_y_hat, bins=bins, bandwidth=torch.tensor(0.1))
+
+# 		# div_y = torch.div(div_y, torch.sum(div_y))
+# 		# div_y_hat = torch.div(div_y_hat, torch.sum(div_y_hat))
+
+# 		return div_y_hat, div_y
+
+# 	def cleaning_up(self, y_hat, y):
+
+# 		y_hat, y = self.matching_scales(y_hat, y)
+
+# 		m = torch.mul(torch.add(y_hat, y), torch.tensor(0.5))
+# 		m = F.log_softmax(m, dim=1)
+# 		# y = torch.log(y)
+# 		# y_hat = torch.log(y_hat)
+# 		# m = torch.nan_to_num(torch.log(m), nan=0.0, neginf=0.0)
+# 		# y = torch.nan_to_num(torch.log(y), nan=0.0, neginf=0.0)
+# 		# y_hat = torch.nan_to_num(torch.log(y_hat), nan=0.0, neginf=0.0)
+
+# 		# replacing -inf with 0
+# 		# y = torch.where(y==-float('inf'), torch.tensor(0.0), y)
+# 		# y_hat = torch.where(y_hat==-float('inf'), torch.tensor(0.0), y_hat)
+# 		# m = torch.where(m==-float('inf'), torch.tensor(0.0), m)
+
+# 		return y_hat, y, m
+
+# 	def functional_kl_div(self, input: torch.tensor, target: torch.tensor, size_average: Optional[bool] = None, reduce: Optional[bool] = None,
+# 				reduction: str = "mean", log_target: bool = False,) -> torch.tensor:
+
+# 		# if torch.overrides.has_torch_function_variadic(input, target):
+# 		# 	return torch.overrides.handle_torch_function(functional_kl_div,(input, target),input,target,size_average=size_average,reduce=reduce,
+# 		# 									reduction=reduction, log_target=log_target,)
+
+# 		if size_average is not None or reduce is not None:
+# 			reduction_enum = _Reduction.legacy_get_enum(size_average, reduce)
+
+# 		else:
+# 			# special case for batchmean
+# 			if reduction == "batchmean":
+# 				reduction_enum = _Reduction.get_enum("sum")
+# 			else:
+# 				reduction_enum = _Reduction.get_enum(reduction)
+
+# 		reduced = torch.kl_div(input, target, reduction_enum, log_target=log_target)
+
+# 		if reduction == "batchmean" and input.dim() != 0:
+# 			reduced = reduced / input.size()[0]
+
+# 		return reduced
+
+
+# 	def forward(self, input: torch.tensor, target: torch.tensor) -> torch.tensor:
+# 		input, target, m = self.cleaning_up(input, target)
+
+# 		return torch.mul(torch.add(self.functional_kl_div(m, input, reduction=self.reduction, log_target=self.log_target),
+# 										self.functional_kl_div(m, target, reduction=self.reduction, log_target=self.log_target)), torch.tensor(0.5))
+
+
+class JSD(nn.Module):
 	def __init__(self):
-		super(JSDivLoss, self).__init__()
+		super(JSD, self).__init__()
 		self.kl = nn.KLDivLoss(reduction='batchmean', log_target=True)
+
+
+	def minmax_scaling(self, x):
+		# scaling the data to be between 0 and 1
+		return torch.div((torch.sub(x, self.scale_min)), (torch.sub(self.scale_max, self.scale_min)))
+
 
 	def matching_scales(self, y_hat, y):
 
-		scale_min = min(y.min(), y_hat.min())
-		scale_max = max(y.max(), y_hat.max())
+		self.scale_min = torch.min(torch.min(y), torch.min(y_hat))
+		self.scale_max = torch.max(torch.max(y), torch.max(y_hat))
 
-		div_y = minmax_scaling(y, scale_min, scale_max)
-		div_y_hat = minmax_scaling(y_hat, scale_min, scale_max)
+		bins = torch.torch.linspace(self.scale_min, self.scale_max, 100).to(DEVICE)
 
-		div_y = torch.histc(y, bins=100, min=scale_min.item(), max=scale_max.item())
-		div_y_hat = torch.histc(y_hat, bins=100, min=scale_min.item(), max=scale_max.item())
+		# div_y = self.minmax_scaling(y)
+		# div_y_hat = self.minmax_scaling(y_hat)
 
-		div_y = div_y/sum(div_y)
-		div_y_hat = div_y_hat/sum(div_y_hat)
+		# reshaping the data to be 1D
+		y = torch.reshape(y, (1,y.size(0)))
+		y_hat = torch.reshape(y_hat, (1,y_hat.size(0)))
+
+		div_y = ke.histogram(y, bins=bins, bandwidth=torch.tensor(0.1))
+		div_y_hat = ke.histogram(y_hat, bins=bins, bandwidth=torch.tensor(0.1))
+
+		# div_y = torch.div(div_y, torch.sum(div_y))
+		# div_y_hat = torch.div(div_y_hat, torch.sum(div_y_hat))
 
 		return div_y_hat, div_y
 
 
-	def forward(self, y_hat, y):
-		'''
-		Function to calculate the Jensen-Shannon Divergence between the predicted and real images.
+	def forward(self, q: torch.tensor, p: torch.tensor):
+		q, p = self.matching_scales(q, p)
+		m = (0.5 * (p + q))
+		q, p, m = torch.clamp(q, min=1e-45), torch.clamp(p, min=1e-45), torch.clamp(m, min=1e-45)
+		p, q, m = torch.log(p), torch.log(q), torch.log(m)
+		return 0.5 * (self.kl(m, p) + self.kl(m, q))
 
-		Args:
-			y_hat (torch.tensor): the predicted image
-			y (torch.tensor): the real image
+# class JSDivLoss(nn.Module):
 
-		Returns:
-			float: the loss between the two images
-		'''
-		y_hat, y = self.matching_scales(y_hat, y)
-		y_hat, y = y_hat.view(-1, y_hat.size(-1)), y.view(-1, y.size(-1))
-		m = (0.5*(y_hat + y)).log()
+# 	def __init__(self):
+# 		super(JSDivLoss, self).__init__()
 
-		return 0.5*(self.kl(m, y.log()) + self.kl(m, y_hat.log()))
+# 		self.kl = nn.KLDivLoss(reduction='batchmean', log_target=True)
 
+
+# 	def forward(self, y_hat, y, m):
+# 		'''
+# 		Function to calculate the Jensen-Shannon Divergence between the predicted and real images.
+
+# 		Args:
+# 			y_hat (torch.tensor): the predicted image
+# 			y (torch.tensor): the real image
+
+# 		Returns:
+# 			float: the loss between the two images
+# 		# '''
+# 		# m = (torch.mul(torch.tensor(0.5),torch.add(y, y_hat)))
+# 		# print(f'the first m: {m}')
+# 		# m = torch.where(torch.log(m)==-float('inf'), torch.tensor(0.0), torch.log(m))
+# 		# print(f'the second m: {m}')
+# 		# y = torch.where(torch.log(y)==-float('inf'), torch.tensor(0.0), torch.log(y))
+# 		# print(f'the inside y: {y}')
+# 		# y_hat = torch.where(torch.log(y_hat)==-float('inf'), torch.tensor(0.0), torch.log(y_hat))
+# 		# print(f'the inside y_hat: {y_hat}')
+# 		# #replacing nans with 0
+# 		# y = torch.where(torch.isnan(y), torch.tensor(0.0), y)
+# 		# y_hat = torch.where(torch.isnan(y_hat), torch.tensor(0.0), y_hat)
+# 		# m = torch.where(torch.isnan(m), torch.tensor(0.0), m)
+
+# 		return torch.abs(torch.mul(torch.add(self.kl(y, m), self.kl(y_hat, m)), torch.tensor(0.5)))
 
 def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500, pretraining=False):
 
@@ -1024,7 +1207,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		object: the trained model
 	'''
 
-	optimizer = optim.Adam(model.parameters(), lr=1e-6)
+	optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
 	# checking if the model has already been trained
 	if pretraining:
@@ -1056,7 +1239,8 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			return torch.exp(x) / torch.exp(x).sum()
 
 		# criterion = nn.MSELoss()
-		criterion = JSDivLoss()
+		criterion = JSD()
+		# result_processing = ProcessingForJSDivLoss()
 
 		# initalizing the early stopping class
 		early_stopping = Early_Stopping(decreasing_loss_patience=val_loss_patience, training_diff_patience=overfit_patience, pretraining=pretraining)
@@ -1103,6 +1287,11 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 					# with torch.cuda.amp.autocast():
 					output = model(X)
 
+					# output, y = output.view(-1, output.size(-1)), y.view(-1, y.size(-1))
+					output, y = torch.flatten(output), torch.flatten(y)
+
+					# y_hat, target, m = result_processing(output, y)
+
 					loss = criterion(output, y)
 						# loss.requires_grad = True
 
@@ -1117,26 +1306,62 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 					running_training_loss += loss.to('cpu').item()
 
 			else:
+				weights = None
+				nans = 0
+				non_nans = 0
 				for train_data in train:
 					train_data = train_data.to(DEVICE, dtype=torch.float)
 					train_data = train_data.unsqueeze(1)
 					# forward pass
 					# with torch.cuda.amp.autocast():
 					output = model(train_data)
+					output, train_data = output.view(-1, output.size(-1)), train_data.view(-1, train_data.size(-1))
+					output, train_data = torch.flatten(output), torch.flatten(train_data)
+
+					# y_hat, target, m = result_processing(output, train_data)
 
 					loss = criterion(output, train_data)
-						# loss.requires_grad = True
+					if torch.isnan(loss):
+						nans += 1
+						# print(f'the loss: {loss}')
+						# print(f'the y_hat: {y_hat}')
+						# print(f'the target: {target}')
+						# print(f'the m: {m}')
+						raise ValueError
+					else:
+						non_nans += 1
 
+					# checking for nans in input and output
+					# print(f'Nans in the training data: {torch.isnan(train_data).sum()}')
+					# print(f'Nans in the output: {torch.isnan(output).sum()}')
+					# # print(f'Nans in the y_hat: {torch.isnan(y_hat).sum()}')
+					# # print(f'Nans in the target: {torch.isnan(target).sum()}')
+					# # print(f'Nans in the m: {torch.isnan(m).sum()}')
+					# # printing some model weights
+					# print(f'the model weights before: {model.encoder[0].weight[0]}')
+
+					torch.autograd.set_detect_anomaly(True)
+					# loss.requires_grad = True
 					# backward pass
 					optimizer.zero_grad()
+					# printing some model weights
+					# print(f'the model weights after zero grad: {model.encoder[0].weight[0]}')
 					loss.backward()
+					# printing some model weights
+					# print(f'the model weights after backprop: {model.encoder[0].weight[0]}')
 					optimizer.step()
+
+					torch.autograd.set_detect_anomaly(True)
+					# printing some model weights
+					# print(f'the model weights at the end: {model.encoder[0].weight[0]}')
 
 					train_data = train_data.to('cpu')
 
 					# adding the loss to the running loss
 					running_training_loss += loss.to('cpu').item()
-
+			# print(f'the number of nans: {nans}')
+			# print(f'len of train: {len(train)}')
+			print(f'the running training loss: {running_training_loss}')
 			# setting the model to evaluation mode
 			model.eval()
 
@@ -1148,7 +1373,12 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 					X = X.unsqueeze(1)
 					with torch.no_grad():
 						output = model(X)
+
+						output, y = output.view(-1, output.size(-1)), y.view(-1, y.size(-1))
+
+						# y_hat, target, m = result_processing(output, y)
 						val_loss = criterion(output, y)
+
 
 						X = X.to('cpu')
 						y = y.to('cpu')
@@ -1159,8 +1389,13 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 						val_data = val_data.to(DEVICE, dtype=torch.float)
 						val_data = val_data.unsqueeze(1)
 						output = model(val_data)
+						output, val_data = output.view(-1, output.size(-1)), val_data.view(-1, val_data.size(-1))
+						output, val_data = torch.flatten(output), torch.flatten(val_data)
 
+						# y_hat, target, m = result_processing(output, val_data)
 						val_loss = criterion(output, val_data)
+						print(f'the val loss: {val_loss}')
+						raise ValueError
 
 						val_data = val_data.to('cpu')
 
@@ -1188,6 +1423,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 			# if epoch % 5 == 0:
 			print(f'Epoch [{current_epoch}/{num_epochs}], Loss: {loss:.4f} Validation Loss: {val_loss:.4f}' + f' Epoch Time: {epoch_time:.2f} seconds')
+			print(f'Model encoder weights example for Epoch {current_epoch}: {model.encoder[0].weight[0]}')
 
 			# emptying the cuda cache
 			torch.cuda.empty_cache()
