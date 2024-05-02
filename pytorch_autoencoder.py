@@ -55,161 +55,43 @@ from torchvision.transforms.functional import rotate
 
 import utils
 
-# from data_generator import Generator
-# from data_prep import DataPrep
+# defining the version for saving the models
+VERSION = 'pytorch_perceptual_v1-41'
 
-logging.basicConfig(level=logging.INFO, format='')
-
-TARGET = 'rsd'
-REGION = 163
-VERSION = 'pytorch_perceptual_v1-40'
-
-CONFIG = {'time_history':30, 'random_seed':7}
-
+# setting the seed for reproducibility, setting the CDF lib path
+# and working dir path, and setting the device.
 
 os.environ["CDF_LIB"] = "~/CDF/lib"
-
 working_dir = '../../../../data/mike_working_dir/'
-region_path = working_dir+'identifying_regions_data/adjusted_regions.pkl'
-region_number = '163'
-solarwind_path = '../data/SW/omniData.feather'
-supermag_dir_path = '../data/supermag/'
-twins_times_path = 'outputs/regular_twins_map_dates.feather'
-rsd_path = working_dir+'identifying_regions_data/twins_era_stats_dict_radius_regions_min_2.pkl'
 RANDOM_SEED = 7
 BATCH_SIZE = 16
-
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'Device: {DEVICE}')
 
 
-class Logger:
-	def __init__(self):
-		self.entries = {}
-
-	def add_entry(self, entry):
-		self.entries[len(self.entries) + 1] = entry
-
-	def __str__(self):
-		return json.dumps(self.entries, sort_keys=True, indent=4)
-
-
-def loading_data(target_var, region):
-	'''
-	Function to load the data for the model.
-
-	Args:
-		target_var (str): the target variable to be used in the model
-		region (int): the region to be used in the model
-
-	Returns:
-		pd.DataFrame: the merged dataframe
-		float: the mean latitude of the region
-		dict: the TWINS maps
-
-	'''
-
-	# loading all the datasets and dictonaries
-
-	regions, stats = utils.loading_dicts()
-	solarwind = utils.loading_solarwind(omni=True, limit_to_twins=True)
-
-	# converting the solarwind data to log10
-	solarwind['logT'] = np.log10(solarwind['T'])
-	solarwind.drop(columns=['T'], inplace=True)
-
-	# reduce the regions dict to be only the ones that have keys in the region_numbers list
-	regions = regions[f'region_{region}']
-	stats = stats[f'region_{region}']
-
-	# getting dbdt and rsd data for the region
-	supermag_df = utils.combining_stations_into_regions(regions['station'], stats, features=['dbht', 'MAGNITUDE', \
-		'theta', 'N', 'E', 'sin_theta', 'cos_theta'], mean=True, std=True, maximum=True, median=True)
-
-	# getting the mean latitude for the region and attaching it to the regions dictionary
-	mean_lat = utils.getting_mean_lat(regions['station'])
-
-	merged_df = pd.merge(supermag_df, solarwind, left_index=True, right_index=True, how='inner')
-
-	print('Loading TWINS maps....')
-	maps = utils.loading_twins_maps()
-
-	return merged_df, mean_lat, maps
-
-
-def creating_pretraining_data(tensor_shape, train_max, train_min, scaling_mean, scaling_std, num_samples=10000):
-	'''
-	Function to create the data to pretrain the autoencoder. This data is used to train the autoencoder
-	to reduce the dimensionality of the TWINS maps.
-
-	Args:
-		tensor_shape (tuple): the shape of the tensor to be created
-		train_max (float): the maximum value of the training data
-		train_min (float): the minimum value of the training data
-		scaling_mean (float): the mean of the training data
-		scaling_std (float): the standard deviation of the training data
-		num_samples (int): the number of samples to be created
-		distribution (str): the distribution of the data to be created
-
-	Returns:
-		torch.tensor: the training data for the autoencoder
-		torch.tensor: the validation data for the autoencoder
-		torch.tensor: the testing data for the autoencoder
-
-	'''
-
-	# train_data = np.random.normal(low=train_min, high=train_max, size=(int(num_samples*0.7), tensor_shape[0], tensor_shape[1]))
-	# val_data = np.random.normal(low=train_min, high=train_max, size=(int(num_samples*0.2), tensor_shape[0], tensor_shape[1]))
-	# test_data = np.random.normal(low=train_min, high=train_max, size=(int(num_samples*0.1), tensor_shape[0], tensor_shape[1]))
-
-	train_data = generate_gaussian_2d(int(num_samples*0.7), tensor_shape, train_max)
-	val_data = generate_gaussian_2d(int(num_samples*0.2), tensor_shape, train_max)
-	test_data = generate_gaussian_2d(int(num_samples*0.1), tensor_shape, train_max)
-
-	# plotting 9 random examples of training data
-	fig, axes = plt.subplots(3, 3, figsize=(10, 10))
-	for i, ax in enumerate(axes.flatten()):
-		ax.imshow(train_data[i, :, :])
-		ax.set_title(f'Example {i+1}')
-	# plt.show()
-
-	# plotting 9 random examples of validation data
-	fig, axes = plt.subplots(3, 3, figsize=(10, 10))
-	for i, ax in enumerate(axes.flatten()):
-		ax.imshow(val_data[i, :, :])
-		ax.set_title(f'Example {i+1}')
-	# plt.show()
-
-	# scaling the data
-	train_data = standard_scaling(train_data, scaling_mean, scaling_std)
-	val_data = standard_scaling(val_data, scaling_mean, scaling_std)
-	test_data = standard_scaling(test_data, scaling_mean, scaling_std)
-
-	# making figures of examples of the data
-	fig = plt.figure(figsize=(10, 10))
-	ax1 = fig.add_subplot(121)
-	ax1.imshow(train_data[10, :, :])
-	ax1.set_title('Training Example')
-	ax2 = fig.add_subplot(122)
-	ax2.imshow(val_data[10, :, :])
-	ax2.set_title('Validation Example')
-	# plt.show()
-
-	# converting the data to tensors
-	train_data = torch.tensor(train_data, dtype=torch.float)
-	val_data = torch.tensor(val_data, dtype=torch.float)
-	test_data = torch.tensor(test_data, dtype=torch.float)
-
-	return train_data, val_data, test_data
-
-
 def creating_fake_twins_data(train, scaling_mean, scaling_std):
+	'''
+	Function to create fake TWINS data for pretraining the model. Includes real
+	TWINS data that has been rotated, mirrored, and duplicated within the same image.
+
+	Args:
+		train (torch.tensor): the training data for the model
+		scaling_mean (float): the mean of the training data used for scaling
+		scaling_std (float): the standard deviation of the training data used for scaling
+
+	Returns:
+		torch.tensor: the scaled training data for the model
+		torch.tensor: the scaled validation data for the model
+		torch.tensor: the scaled testing data for the model
+	'''
 
 	# splitting the training data into train val and test
 	train_data, test_data = train_test_split(train, test_size=0.1, random_state=RANDOM_SEED)
 	train_data, val_data = train_test_split(train_data, test_size=0.125, random_state=RANDOM_SEED)
 
-	# rotating the data 90 degrees with expansion then cutting them to the 90,60 size
+
+	'''rotating the data 90 degrees with expansion then cutting them to
+		the 90,60 size. Results will have "duplicated" parts of the maps.'''
 	train_rotated_90 = rotate(train_data, angle=90, expand=True)
 	val_rotated_90 = rotate(val_data, angle=90, expand=True)
 	test_rotated_90 = rotate(test_data, angle=90, expand=True)
@@ -218,17 +100,19 @@ def creating_fake_twins_data(train, scaling_mean, scaling_std):
 	val_rotated_90 = val_rotated_90[:, 0:90, 0:60]
 	test_rotated_90 = test_rotated_90[:, 0:90, 0:60]
 
-	# adding a 30, 60 slice to the data at the 1 dimension
+	# adding a 30, 60 slice to the data at the 1 dimension to make it a 90, 60 image
 	train_rotated_90 = torch.cat([train_rotated_90, train_rotated_90[:, 0:30, 0:60]], dim=1)
 	val_rotated_90 = torch.cat([val_rotated_90, val_rotated_90[:, 0:30, 0:60]], dim=1)
 	test_rotated_90 = torch.cat([test_rotated_90, test_rotated_90[:, 0:30, 0:60]], dim=1)
 
-	# rotating the data 180 degrees
+
+	# rotating the data 180 degrees (much simpler process)
 	train_rotated_180 = rotate(train_data, angle=180, expand=False)
 	val_rotated_180 = rotate(val_data, angle=180, expand=False)
 	test_rotated_180 = rotate(test_data, angle=180, expand=False)
 
-	# rotating the data 270 with an expansion and then cutting it down to the 90, 60 size
+
+	# same procedure as the 90 degree rotation for a 270 rotation
 	train_rotated_270 = rotate(train_data, angle=270, expand=True)
 	val_rotated_270 = rotate(val_data, angle=270, expand=True)
 	test_rotated_270 = rotate(test_data, angle=270, expand=True)
@@ -242,51 +126,27 @@ def creating_fake_twins_data(train, scaling_mean, scaling_std):
 	val_rotated_270 = torch.cat([val_rotated_270, val_rotated_270[:, 0:30, 0:60]], dim=1)
 	test_rotated_270 = torch.cat([test_rotated_270, test_rotated_270[:, 0:30, 0:60]], dim=1)
 
-	# flipping the data
+
+	# flipping the data along the 1 axis
 	flipped_train_data = torch.flip(train_data, [1])
 	flipped_val_data = torch.flip(val_data, [1])
 	flipped_test_data = torch.flip(test_data, [1])
 
-	# flipping the data
+	# flipping the data along the 2 axis
 	flipped_train_data_2 = torch.flip(train_data, [2])
 	flipped_val_data_2 = torch.flip(val_data, [2])
 	flipped_test_data_2 = torch.flip(test_data, [2])
+
 
 	# concatenating the data without the origonal data
 	train_data = torch.cat([train_rotated_90, train_rotated_180, train_rotated_270, flipped_train_data, flipped_train_data_2], dim=0)
 	val_data = torch.cat([val_rotated_90, val_rotated_180, val_rotated_270, flipped_val_data, flipped_val_data_2], dim=0)
 	test_data = torch.cat([test_rotated_90, test_rotated_180, test_rotated_270, flipped_test_data, flipped_test_data_2], dim=0)
 
-	mean, std = -0.9, 0.2141
+	print(f'Train max: {train_data.max()}, Train min: {train_data.min()}')
+	print(f'Val max: {val_data.max()}, Val min: {val_data.min()}')
+	print(f'Test max: {test_data.max()}, Test min: {test_data.min()}')
 
-	# X_train = train_data + torch.tensor(np.random.normal(loc=mean, scale=std, size=train_data.shape))
-	# X_val = val_data + torch.tensor(np.random.normal(loc=mean, scale=std, size=val_data.shape))
-	# X_test = test_data + torch.tensor(np.random.normal(loc=mean, scale=std, size=test_data.shape))
-
-	# scaling the data
-	train_data = standard_scaling(train_data, scaling_mean, scaling_std)
-	val_data = standard_scaling(val_data, scaling_mean, scaling_std)
-	test_data = standard_scaling(test_data, scaling_mean, scaling_std)
-
-	train_data_min = train_data.min()
-
-	if train_data_min < 0:
-		train_data = train_data - train_data_min
-		val_data = val_data - train_data_min
-		test_data = test_data - train_data_min
-
-	# X_train = standard_scaling(X_train, scaling_mean, scaling_std)
-	# X_val = standard_scaling(X_val, scaling_mean, scaling_std)
-	# X_test = standard_scaling(X_test, scaling_mean, scaling_std)
-
-	# # plotting some examples of the data
-	# fig, axes = plt.subplots(3, 3, figsize=(10, 10))
-	# for i, ax in enumerate(axes.flatten()):
-	# 	ax.imshow(X_train[i, :, :])
-	# 	ax.set_title(f'Example {i+1}')
-	# plt.show()
-
-	# return X_train, X_val, X_test, train_data, val_data, test_data
 	return train_data, val_data, test_data
 
 
@@ -295,17 +155,7 @@ def standard_scaling(x, scaling_mean, scaling_std):
 	return (x - scaling_mean) / scaling_std
 
 
-def minmax_scaling(x, scaling_min, scaling_max):
-	# scaling the data to be between 0 and 1
-	return (x - scaling_min) / (scaling_max - scaling_min)
-
-
-def keV_to_eV(x):
-	# changing positive values in the array to eV
-	return x *1000
-
-
-def getting_prepared_data(get_features=False):
+def getting_prepared_data():
 	'''
 	Function to get the prepared data for the model.
 
@@ -319,41 +169,43 @@ def getting_prepared_data(get_features=False):
 		date_dict (dict): the dates of the data
 		scaling_mean (float): the mean of the training data
 		scaling_std (float): the standard deviation of the training data
-		features (list): the features of the data
 
 	'''
 
+	# loading the TWINS maps
 	maps = utils.loading_twins_maps()
 
 	# changing all negative values in maps to 0
 	for key in maps.keys():
 		maps[key]['map'][maps[key]['map'] < 0] = 0
 
-	temp_version = 'pytorch_test'
-
-	with open(working_dir+f'twins_method_storm_extraction_map_keys_version_{temp_version}.pkl', 'rb') as f:
+	# loading pre-prepared data
+	with open(working_dir+f'twins_method_storm_extraction_map_keys_version_pytorch_test.pkl', 'rb') as f:
 		storms_extracted_dict = pickle.load(f)
+
+	# getting the storm labels from teh saved data
 	storms = storms_extracted_dict['storms']
-	target = storms_extracted_dict['target']
-	features = storms[0].columns
 
 	# splitting the data on a day to day basis to reduce data leakage
 	day_df = pd.date_range(start=pd.to_datetime('2009-07-01'), end=pd.to_datetime('2017-12-01'), freq='D')
+
+	# making sure a specific test day is in the test set then dropping it from the list to be split
 	specific_test_days = pd.date_range(start=pd.to_datetime('2012-03-07'), end=pd.to_datetime('2012-03-13'), freq='D')
 	day_df = day_df.drop(specific_test_days)
 
+	# splitting the data into training, validation, and testing sets
 	train_days, test_days = train_test_split(day_df, test_size=0.1, shuffle=True, random_state=RANDOM_SEED)
 	train_days, val_days = train_test_split(train_days, test_size=0.125, shuffle=True, random_state=RANDOM_SEED)
 
+	# adding the test days of interest to the test set
 	test_days = test_days.tolist()
-	# adding the two dateimte values of interest to the test days df
 	test_days = pd.to_datetime(test_days)
 	test_days.append(specific_test_days)
 
+	# creating dataframes to hold the dates
 	train_dates_df, val_dates_df, test_dates_df = pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]}), pd.DataFrame({'dates':[]})
-	x_train, x_val, x_test, y_train, y_val, y_test, twins_train, twins_val, twins_test = [], [], [], [], [], [], [], [], []
 
-	# using the days to split the data
+	# getting the minute resolution dates for the days to get all maps with those timestamps in those time frames
 	for day in train_days:
 		train_dates_df = pd.concat([train_dates_df, pd.DataFrame({'dates':pd.date_range(start=day, end=day+pd.DateOffset(days=1), freq='min')})], axis=0)
 
@@ -363,92 +215,70 @@ def getting_prepared_data(get_features=False):
 	for day in test_days:
 		test_dates_df = pd.concat([test_dates_df, pd.DataFrame({'dates':pd.date_range(start=day, end=day+pd.DateOffset(days=1), freq='min')})], axis=0)
 
+	# resetting the index of the dataframes
 	train_dates_df.set_index('dates', inplace=True)
 	val_dates_df.set_index('dates', inplace=True)
 	test_dates_df.set_index('dates', inplace=True)
 
+	# setting the index to the datetimes from the date dfs
 	train_dates_df.index = pd.to_datetime(train_dates_df.index)
 	val_dates_df.index = pd.to_datetime(val_dates_df.index)
 	test_dates_df.index = pd.to_datetime(test_dates_df.index)
 
+	# initalizing the dfs to hold the twins data
 	date_dict = {'train':pd.DataFrame(), 'val':pd.DataFrame(), 'test':pd.DataFrame()}
 
+	# just printing the size of the data to make sure they're the same
 	print(f'Size of the training storms: {len(storms)}')
-	print(f'Size of the training target: {len(target)}')
 	print(f'Size of the twins maps: {len(maps)}')
 
-	# getting the data corresponding to the dates
-	for storm, y, twins_map in zip(storms, target, maps):
+	# initalizing the lists to hold the twins data
+	twins_train, twins_val, twins_test = [], [], []
 
+	# getting the data corresponding to the dates
+	for storm, twins_map in zip(storms, maps):
+
+		# creating a copy of the storm data
 		copied_storm = storm.copy()
 		copied_storm = copied_storm.reset_index(inplace=False, drop=False).rename(columns={'index':'Date_UTC'})
 
+		# getting the twins map that corresponds to the storm
 		if storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in train_dates_df.index:
-			x_train.append(storm)
-			y_train.append(y)
 			twins_train.append(maps[twins_map]['map'])
 			date_dict['train'] = pd.concat([date_dict['train'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in val_dates_df.index:
-			x_val.append(storm)
-			y_val.append(y)
 			twins_val.append(maps[twins_map]['map'])
 			date_dict['val'] = pd.concat([date_dict['val'], copied_storm['Date_UTC'][-10:]], axis=0)
 		elif storm.index[0].strftime('%Y-%m-%d %H:%M:%S') in test_dates_df.index:
-			x_test.append(storm)
-			y_test.append(y)
 			twins_test.append(maps[twins_map]['map'])
 			date_dict['test'] = pd.concat([date_dict['test'], copied_storm['Date_UTC'][-10:]], axis=0)
 
+	# getting the scaling values for the data
 	twins_scaling_array = np.vstack(twins_train).flatten()
 
-	twins_scaling_array = twins_scaling_array[twins_scaling_array > 0]
+	# print(f'Train max: {np.max(twins_scaling_array)}, Train min: {np.min(twins_scaling_array)}')
+
+
+	# # removing any negative values from the data
+	# twins_scaling_array = twins_scaling_array[twins_scaling_array > 0]
+
+	# getting the mean and standard deviation of the data for scaling
 	scaling_mean = twins_scaling_array.mean()
 	scaling_std = twins_scaling_array.std()
-	scaling_min = twins_scaling_array.min()
-	scaling_max = twins_scaling_array.max()
 
+	print(f'Train max: {np.max(twins_scaling_array)}, Train min: {np.min(twins_scaling_array)}')
+
+	# scaling the data
 	twins_train = [standard_scaling(x, scaling_mean, scaling_std) for x in twins_train]
 	twins_val = [standard_scaling(x, scaling_mean, scaling_std) for x in twins_val]
 	twins_test = [standard_scaling(x, scaling_mean, scaling_std) for x in twins_test]
 
-	# finding the min values of the training data
-	min_standard_scaling_training_value = np.min([np.min(x) for x in twins_train])
+	print('After scaling')
+	print(f'Train max: {np.max(twins_train)}, Train min: {np.min(twins_train)}')
+	print(f'Val max: {np.max(twins_val)}, Val min: {np.min(twins_val)}')
+	print(f'Test max: {np.max(twins_test)}, Test min: {np.min(twins_test)}')
 
-	# using the min value to shift the data to positive x if it is negative
-	if min_standard_scaling_training_value < 0:
-		twins_train = [x - min_standard_scaling_training_value for x in twins_train]
-		twins_val = [x - min_standard_scaling_training_value for x in twins_val]
-		twins_test = [x - min_standard_scaling_training_value for x in twins_test]
-
-	# minmax_scaling_train = [minmax_scaling(x, scaling_min, scaling_max) for x in twins_train]
-	# minmax_scaling_val = [minmax_scaling(x, scaling_min, scaling_max) for x in twins_val]
-	# minmax_scaling_test = [minmax_scaling(x, scaling_min, scaling_max) for x in twins_test]
-
-	# # plotting distributions of the data
-	# fig, axes = plt.subplots(3, 1, figsize=(10, 10))
-	# axes[0].hist(np.array(twins_train).flatten(), bins=100, label='origonal', alpha=0.5, log=True)
-	# # axes[0].hist(np.array(standard_twins_train).flatten(), bins=100, label='standard', alpha=0.5, log=True)
-	# axes[0].hist(np.array(minmax_scaling_train).flatten(), bins=100, label='minmax', alpha=0.5, log=True)
-	# axes[0].set_title('Distribution of Training data')
-	# axes[0].legend()
-
-	# axes[1].hist(np.array(twins_val).flatten(), bins=100, label='origonal', alpha=0.5, log=True)
-	# # axes[1].hist(np.array(standard_twins_val).flatten(), bins=100, label='standard', alpha=0.5, log=True)
-	# axes[1].hist(np.array(minmax_scaling_val).flatten(), bins=100, label='minmax', alpha=0.5, log=True)
-	# axes[1].set_title('Distribution of Val data')
-	# axes[1].legend()
-
-	# axes[2].hist(np.array(twins_test).flatten(), bins=100, label='origonal', alpha=0.5, log=True)
-	# # axes[2].hist(np.array(standard_twins_val).flatten(), bins=100, label='standard', alpha=0.5, log=True)
-	# axes[2].hist(np.array(minmax_scaling_test).flatten(), bins=100, label='minmax', alpha=0.5, log=True)
-	# axes[2].set_title('Distribution of Test data')
-	# axes[2].legend()
-	# plt.show()
-
-	if not get_features:
-		return torch.tensor(twins_train), torch.tensor(twins_val), torch.tensor(twins_test), date_dict, scaling_mean, scaling_std
-	else:
-		return torch.tensor(twins_train), torch.tensor(twins_val), torch.tensor(twins_test), date_dict, scaling_mean, scaling_std, features
+	return torch.tensor(twins_train), torch.tensor(twins_val), torch.tensor(twins_test), date_dict, scaling_mean, scaling_std
 
 
 class PerceptualLoss(nn.Module):
@@ -457,26 +287,36 @@ class PerceptualLoss(nn.Module):
 
 	def __init__(self, conv_index: str = '22'):
 		'''
-		Initializing the PerceptualLoss class.
+		Initializing the PerceptualLoss class which uses the VGG19 pretrained model. This loss
+		function compares the feature maps of the predicted and real images and computes the
+		MSE between those instead of the more traditional MSE on the final arrays.
 
 		Args:
 			conv_index (str): the index of the convolutional layer to be used to calculate the loss
 
 		'''
-
+		# inheriting the functionality of the nn.Module class
 		super(PerceptualLoss, self).__init__()
+
 		self.conv_index = conv_index
+
+		# getting the VGG19 model
 		vgg_features = torchvision.models.vgg19(pretrained=True).features
+
+		# getting the modules of the VGG model
 		modules = [m for m in vgg_features]
 
+		# getting the specific layers to be used for the loss
 		if self.conv_index == '22':
 			self.vgg = nn.Sequential(*modules[:8]).to(DEVICE)
 		elif self.conv_index == '54':
 			self.vgg = nn.Sequential(*modules[:35]).to(DEVICE)
 
+		# setting the mean and standard deviation of the data
 		self.register_buffer("mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
 		self.register_buffer("std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
 
+		# setting the model to not require gradients
 		self.vgg.requires_grad = False
 
 
@@ -508,23 +348,26 @@ class PerceptualLoss(nn.Module):
 		output_features = self.vgg(output)
 		target_features = self.vgg(target)
 
-		# calculating the loss
+		# calculating the MSE using the functional version of the loss
 		loss = F.mse_loss(output_features, target_features)
 
 		return loss
 
 
-class VGGPerceptualLoss(torch.nn.Module):
+class VGGPerceptualLoss(nn.Module):
 	def __init__(self, resize=True):
 		'''
-		Initializing the VGGPerceptualLoss class.
+		Initializing the VGGPerceptualLoss class. This version uses the VGG16 model.
 
 		Args:
 			resize (bool): whether to resize the images to 224x224
 
 		'''
 
+		# inheriting the functionality of the nn.Module class
 		super(VGGPerceptualLoss, self).__init__()
+
+		# getting the VGG16 model and setting the blocks to not require gradients
 		blocks = []
 		blocks.append(torchvision.models.vgg16(pretrained=True).features[:4].eval())
 		blocks.append(torchvision.models.vgg16(pretrained=True).features[4:9].eval())
@@ -533,11 +376,14 @@ class VGGPerceptualLoss(torch.nn.Module):
 		for bl in blocks:
 			for p in bl.parameters():
 				p.requires_grad = False
+
+		# initalizing the variables and getting the mean and standard deviation of the data
 		self.blocks = torch.nn.ModuleList(blocks)
 		self.transform = torch.nn.functional.interpolate
 		self.resize = resize
 		self.register_buffer("mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
 		self.register_buffer("std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+
 
 	def forward(self, output, target, feature_layers=[0, 1, 2, 3], style_layers=[]):
 		'''
@@ -552,37 +398,52 @@ class VGGPerceptualLoss(torch.nn.Module):
 			float: the loss between the two images
 		'''
 
+		# sending the data to the device
 		self.mean = self.mean.to(DEVICE)
 		self.std = self.std.to(DEVICE)
 		output = output.to(DEVICE)
 		target = target.to(DEVICE)
 
+		# copying the output and ytest such that they go from 1 channel to 3 channels if they are not already
 		if output.shape[1] != 3:
 			output = output.repeat(1, 3, 1, 1)
 			target = target.repeat(1, 3, 1, 1)
 
+		# normalizing the data
 		output = (output-self.mean) / self.std
 		target = (target-self.mean) / self.std
+
+		# resizing the data if needed
 		if self.resize:
 			output = self.transform(output, mode='bilinear', size=(224, 224), align_corners=False)
 			target = self.transform(target, mode='bilinear', size=(224, 224), align_corners=False)
+
+		# initalizing the loss
 		loss = 0.0
+
+		# getting the feature maps from the VGG model
 		for i, block in enumerate(self.blocks):
 			block.to(DEVICE)
 			output = block(output)
 			target = block(target)
+
+			# calculating the MSE for the feature maps using the functional form of the loss
 			if i in feature_layers:
 				loss += F.mse_loss(output, target)
+
 		return loss
 
 
 class Autoencoder(nn.Module):
 	def __init__(self):
 		'''
-		Initializing the autoencoder model.
+		Initializing the autoencoder model. Defining the layers of the encoder and decoder.
 
 		'''
+		# inheriting the functionality of the nn.Module class
 		super(Autoencoder, self).__init__()
+
+		# defining the layers of the encoder
 		self.encoder = nn.Sequential(
 
 			nn.Conv2d(in_channels=1, out_channels=64, kernel_size=2, stride=1, padding='same'),
@@ -597,12 +458,18 @@ class Autoencoder(nn.Module):
 			nn.ReLU(),
 			nn.Dropout(0.2),
 
+
+			# flattening the outputs of the last conv layer to go through a linear latent space
 			nn.Flatten(),
 			nn.Linear(256*45*30, 420),
 		)
+
+		# defining the layers of the decoder. Found using linear activation worked best here
 		self.decoder = nn.Sequential(
 
 			nn.Linear(420, 256*45*30),
+
+			# reshaping the data to go through the transposed conv layers
 			nn.Unflatten(1, (256, 45, 30)),
 
 			nn.ConvTranspose2d(in_channels=256, out_channels=128, kernel_size=3, stride=1, padding=1),
@@ -615,7 +482,6 @@ class Autoencoder(nn.Module):
 			nn.Dropout(0.2),
 
 			nn.ConvTranspose2d(in_channels=32, out_channels=1, kernel_size=2, stride=1, padding=0),
-			# nn.ReLU()
 		)
 
 	def forward(self, x, get_latent=False):
@@ -630,12 +496,17 @@ class Autoencoder(nn.Module):
 			torch.tensor: the output of the model
 		'''
 
-		# x = x.unsqueeze(1)
+		# passing the data through the encoder
 		latent = self.encoder(x)
-		# if get_latent:
-		# 	return latent
-		# else:
-		x = self.decoder(latent)
+
+		# if the latent space is requested, return it
+		if get_latent:
+			return latent
+
+		# passing the latent space through the decoder
+		else:
+			x = self.decoder(latent)
+
 		return x
 
 
@@ -645,24 +516,25 @@ class Early_Stopping():
 
 	'''
 
-	def __init__(self, decreasing_loss_patience=25, training_diff_patience=3, pretraining=False):
+	def __init__(self, decreasing_loss_patience=25, pretraining=False):
 		'''
 		Initializing the class.
 
 		Args:
 			decreasing_loss_patience (int): the number of epochs to wait before stopping the model if the validation loss does not decrease
-			training_diff_patience (int): the number of epochs to wait before stopping the model if the training loss is significantly lower than the validation loss
 			pretraining (bool): whether the model is being pre-trained. Just used for saving model names.
 
 		'''
+
+		# initializing the variables
 		self.decreasing_loss_patience = decreasing_loss_patience
-		self.training_diff_patience = training_diff_patience
 		self.loss_counter = 0
 		self.training_counter = 0
 		self.best_score = None
 		self.early_stop = False
 		self.best_epoch = None
 		self.pretraining = pretraining
+
 
 	def __call__(self, train_loss, val_loss, model, optimizer, epoch, pretraining=False):
 		'''
@@ -677,7 +549,11 @@ class Early_Stopping():
 		Returns:
 			bool: whether the model should stop training or not
 		'''
+
+		# using the absolute value of the loss for negatively orientied loss functions
 		val_loss = abs(val_loss)
+
+		# initializing the best score if it is not already
 		self.model = model
 		self.optimizer = optimizer
 		if self.best_score is None:
@@ -686,22 +562,24 @@ class Early_Stopping():
 			self.best_loss = val_loss
 			self.save_checkpoint(val_loss)
 			self.best_epoch = epoch
+
+		# if the validation loss greater than the best score add one to the loss counter
 		elif val_loss > self.best_score:
 			self.loss_counter += 1
+
+			# if the loss counter is greater than the patience, stop the model training
 			if self.loss_counter >= self.decreasing_loss_patience:
 				gc.collect()
-				print(f'Engaging Early Stopping due to lack of improvement in validation loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.train_loss} and a validation loss of {self.best_score}')
+				print(f'Engaging Early Stopping due to lack of improvement in validation loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.best_train_loss} and a validation loss of {self.best_score}')
 				return True
-		# elif val_loss > (1.5 * train_loss):
-		# 	self.training_counter += 1
-		# 	if self.training_counter >= self.training_diff_patience:
-		# 		print(f'Engaging Early Stopping due to large seperation between train and val loss. Best model saved at epoch {self.best_epoch} with a training loss of {self.best_loss} and a validation loss of {self.best_score}')
-		# 		return True
 
+		# if the validation loss is less than the best score, reset the loss counter and use the new validation loss as the best score
 		else:
 			self.best_train_loss = train_loss
 			self.best_score = val_loss
 			self.best_epoch = epoch
+
+			# saving the best model as a checkpoint
 			self.save_checkpoint(val_loss)
 			self.loss_counter = 0
 			self.training_counter = 0
@@ -716,9 +594,12 @@ class Early_Stopping():
 			val_loss (float): the validation loss for the model
 		'''
 
+		# saving the model if the validation loss is less than the best loss
 		if self.best_loss > val_loss:
 			self.best_loss = val_loss
 			print('Saving checkpoint!')
+
+			# saving the model dictonary
 			if self.pretraining:
 				torch.save({'model':self.model.state_dict(),
 							'optimizer': self.optimizer.state_dict(),
@@ -735,7 +616,7 @@ class Early_Stopping():
 
 def resume_training(model, optimizer, pretraining=False):
 	'''
-	Function to resume training of a model.
+	Function to resume training of a model if it was interupted without completeing.
 
 	Args:
 		model (object): the model to be trained
@@ -749,12 +630,15 @@ def resume_training(model, optimizer, pretraining=False):
 	'''
 
 	if pretraining:
+		# try-except block to load the model and optimizer depending on how it was saved
 		try:
 			checkpoint = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
 			model.load_state_dict(checkpoint['model'])
 			optimizer.load_state_dict(checkpoint['optimizer'])
 			epoch = checkpoint['best_epoch']
 			finished_training = checkpoint['finished_training']
+
+		# will produce a key error if the model is an earlier version
 		except KeyError:
 			model.load_state_dict(torch.load(f'models/autoencoder_pretraining_{VERSION}.pt'))
 			optimizer=None
@@ -781,17 +665,17 @@ class JSD(nn.Module):
 	'''
 	Class to calculate the Jensen-Shannon Divergence between two images. First
 		the maximum and minimum of the inputs is found. Then the images are binned
-		into histograms using the same bins defined by the max and min values to keep 
+		into histograms using the same bins defined by the max and min values to keep
 		the bins consistent between the y and y_hat arrays. The histograms use a smoothing
 		function to normalize the values for each bin to probabilities that sum up to 1 which
-		is prefered for the calculation of the divergence. The values are cpilled to a 
+		is prefered for the calculation of the divergence. The values are cpilled to a
 		minimum of 1e-45 to avoid -inf values when taking the log. The m parameter is then calculated
-		and used as the "input" for the KLDivLoss function. The "target" is the y (P(x)) 
+		and used as the "input" for the KLDivLoss function. The "target" is the y (P(x))
 		and y_hat (Q(x)) for the two kl_divergence calculations. The final loss is the average of the two.
 		For more information on the Jensen-Shannon Divergence see: https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
 
 	Args:
-		nn.Module: the base class for all neural network 
+		nn.Module: the base class for all neural network
 					modules. Inherits the backpropagation functionality
 	'''
 
@@ -816,7 +700,7 @@ class JSD(nn.Module):
 		Args:
 			y_hat (torch.tensor): the predicted image
 			y (torch.tensor): the real image
-		
+
 		Returns:
 			torch.tensor: the binned histogram of the predicted image
 			torch.tensor: the binned histogram of the real image
@@ -847,10 +731,13 @@ class JSD(nn.Module):
 		Args:
 			q (torch.tensor): the predicted image
 			p (torch.tensor): the real image
-		
+
 		Returns:
 			float: the JSDiv loss between the two images
 		'''
+
+		# calculating the mean squared error between the two images for later use
+		mse = F.mse_loss(q, p)
 
 		# matching the scales and binning the data
 		q, p = self.matching_scales(q, p)
@@ -865,8 +752,13 @@ class JSD(nn.Module):
 		p, q, m = torch.log(p), torch.log(q), torch.log(m)
 
 		# calculating and returning the loss
-		return 0.5 * (self.kl(m, p) + self.kl(m, q))
+		return torch.mul(mse, torch.add(1, (0.5 * (self.kl(m, p) + self.kl(m, q)))))
 
+
+def fitting_the_model(model, data, train_or_val=None):
+
+	''' will include this function to simplify the training process
+	'''
 
 def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5, num_epochs=500, pretraining=False):
 
@@ -877,10 +769,10 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		model (object): the model to be trained
 		train (torch.utils.data.DataLoader): the training data
 		val (torch.utils.data.DataLoader): the validation data
-		val_loss_patience (int): the number of epochs to wait before stopping the model 
+		val_loss_patience (int): the number of epochs to wait before stopping the model
 									if the validation loss does not decrease
-		overfit_patience (int): the number of epochs to wait before stopping the model 
-									if the training loss is significantly lower than the 
+		overfit_patience (int): the number of epochs to wait before stopping the model
+									if the training loss is significantly lower than the
 									validation loss
 		num_epochs (int): the number of epochs to train the model
 		pretraining (bool): whether the model is being pre-trained
@@ -889,9 +781,10 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 		object: the trained model
 	'''
 
+	# initializing the Adam optimizer using the model params and setting the initial learning rate
 	optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-	# checking if the model has already been trained
+	# checking if the model has already been trained, loading it if it exists
 	if pretraining:
 		if os.path.exists(f'models/autoencoder_pretraining_{VERSION}.pt'):
 			model, optimizer, current_epoch, finished_training = resume_training(model=model, optimizer=optimizer, pretraining=pretraining)
@@ -905,28 +798,26 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			finished_training = False
 			current_epoch = 0
 
+	# checking to see if the model was already trained or was interupted during training
 	if not finished_training:
 
+		# initializing the lists to hold the training and validation loss which will be used to plot the losses as a function of epoch
 		train_loss_list, val_loss_list = [], []
 
 		# moving the model to the available device
 		model.to(DEVICE)
 
-		# # defining the loss function and the optimizer
-		# if pretraining:
-		mse = nn.MSELoss()
-		kl_loss = nn.KLDivLoss(reduction='batchmean', log_target=True)
-
+		# creating a function to calculate the softmax of the data
 		def softmax(x):
 			return torch.exp(x) / torch.exp(x).sum()
 
-		# criterion = nn.MSELoss()
+		# defining the loss function
 		criterion = JSD()
-		# result_processing = ProcessingForJSDivLoss()
 
 		# initalizing the early stopping class
-		early_stopping = Early_Stopping(decreasing_loss_patience=val_loss_patience, training_diff_patience=overfit_patience, pretraining=pretraining)
+		early_stopping = Early_Stopping(decreasing_loss_patience=val_loss_patience, pretraining=pretraining)
 
+		# looping through the epochs
 		while current_epoch < num_epochs:
 
 			# starting the clock for the epoch
@@ -938,99 +829,134 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			# initializing the running loss
 			running_training_loss, running_val_loss = 0.0, 0.0
 
-			# shuffling data and creating batches
+			# checking to see if there is a different X and y for the training data. Was used when gaussian noise was added to inputs
 			if isinstance(next(iter(train)), list):
 				for X, y in train:
+
+					# moving the data to the available device
 					X = X.to(DEVICE, dtype=torch.float)
 					y = y.to(DEVICE, dtype=torch.float)
+
+					# adding a channel dimension to the data
 					X = X.unsqueeze(1)
+
 					# forward pass
-					# with torch.cuda.amp.autocast():
 					output = model(X)
 
-					# output, y = output.view(-1, output.size(-1)), y.view(-1, y.size(-1))
+					# reshaping the data to be 1D
+					output, y = output.view(-1, output.size(-1)), y.view(-1, y.size(-1))
 					output, y = torch.flatten(output), torch.flatten(y)
 
+					# calculating the loss
 					loss = criterion(output, y)
-					# loss.requires_grad = True
 
 					# backward pass
 					optimizer.zero_grad()
 					loss.backward()
 					optimizer.step()
 
+					# emptying the cuda cache
 					X = X.to('cpu')
 					y = y.to('cpu')
 
-					# adding the loss to the running loss
+					# adding the loss to the running training loss
 					running_training_loss += loss.to('cpu').item()
 
+			# if X = y for the training data (pure autoencoder)
 			else:
-				weights = None
-				nans = 0
-				non_nans = 0
+				# looping through the batches
 				for train_data in train:
+
+					# moving the data to the available device
 					train_data = train_data.to(DEVICE, dtype=torch.float)
+
+					# adding a channel dimension to the data
 					train_data = train_data.unsqueeze(1)
+
 					# forward pass
-					# with torch.cuda.amp.autocast():
 					output = model(train_data)
+
+					# reshaping the data to be 1D for making the histograms in the loss function
 					output, train_data = output.view(-1, output.size(-1)), train_data.view(-1, train_data.size(-1))
 					output, train_data = torch.flatten(output), torch.flatten(train_data)
 
-					# y_hat, target, m = result_processing(output, train_data)
-
+					# calculating the loss
 					loss = criterion(output, train_data)
-					if torch.isnan(loss):
-						nans += 1
-						raise ValueError
-					else:
-						non_nans += 1
 
+					# checking for nans in the workflow
 					torch.autograd.set_detect_anomaly(True)
-					# loss.requires_grad = True
 
 					# backward pass
 					optimizer.zero_grad()
 					loss.backward()
 					optimizer.step()
 
-					torch.autograd.set_detect_anomaly(True)
+					# emptying the cuda cache
 					train_data = train_data.to('cpu')
 
-					# adding the loss to the running loss
+					# adding the loss to the running training loss
 					running_training_loss += loss.to('cpu').item()
 
-			# setting the model to evaluation mode
+			# setting the model to eval mode so the dropout layers are not used during validation and weights are not updated
 			model.eval()
 
 			# using validation set to check for overfitting
 			if isinstance(next(iter(val)), list):
+
+				# looping through the batches
 				for X, y in val:
+
+					# moving the data to the available device
 					X = X.to(DEVICE, dtype=torch.float)
 					y = y.to(DEVICE, dtype=torch.float)
+
+					# adding a channel dimension to the data
 					X = X.unsqueeze(1)
+
+					# forward pass with no gradient calculation
 					with torch.no_grad():
+
 						output = model(X)
 
+						# reshaping the data to be 1D for making the histograms in the loss function
 						output, y = output.view(-1, output.size(-1)), y.view(-1, y.size(-1))
+						output, y = torch.flatten(output), torch.flatten(y)
 
+						# calculating the loss
 						val_loss = criterion(output, y)
 
+						# emptying the cuda cache
 						X = X.to('cpu')
 						y = y.to('cpu')
+
+						# adding the loss to the running val loss
 						running_val_loss += val_loss.to('cpu').item()
+
+			# if X = y for the validation data (pure autoencoder)
 			else:
-				with torch.no_grad():
-					for val_data in val:
-						val_data = val_data.to(DEVICE, dtype=torch.float)
-						val_data = val_data.unsqueeze(1)
+
+				# looping through the batches
+				for val_data in val:
+
+					# moving the data to the available device
+					val_data = val_data.to(DEVICE, dtype=torch.float)
+
+					# adding a channel dimension to the data
+					val_data = val_data.unsqueeze(1)
+
+					# forward pass with no gradient calculation
+					with torch.no_grad():
+
 						output = model(val_data)
+
+						# reshaping the data to be 1D for making the histograms in the loss function
 						output, val_data = output.view(-1, output.size(-1)), val_data.view(-1, val_data.size(-1))
 						output, val_data = torch.flatten(output), torch.flatten(val_data)
 
+						# calculating the loss
 						val_loss = criterion(output, val_data)
 
+						# emptying the cuda cache
 						val_data = val_data.to('cpu')
 
 						# adding the loss to the running loss
@@ -1044,23 +970,40 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			train_loss_list.append(loss)
 			val_loss_list.append(val_loss)
 
-			# checking for early stopping
+			# checking for early stopping or the end of the training epochs
 			if (early_stopping(train_loss=loss, val_loss=val_loss, model=model, optimizer=optimizer, epoch=current_epoch)) or (current_epoch == num_epochs-1):
+
+				# saving the final model
 				gc.collect()
 				if pretraining:
+
+					# loading the best model version
 					final = torch.load(f'models/autoencoder_pretraining_{VERSION}.pt')
+
+					# setting the finished training flag to True
 					final['finished_training'] = True
+
+					# saving the final model
 					torch.save(final, f'models/autoencoder_pretraining_{VERSION}.pt')
+
 				else:
+
+					# loading the best model version
 					final = torch.load(f'models/autoencoder_{VERSION}.pt')
+
+					# setting the finished training flag to True
 					final['finished_training'] = True
+
+					# saving the final model
 					torch.save(final, f'models/autoencoder_{VERSION}.pt')
+
+				# breaking the loop
 				break
 
 			# getting the time for the epoch
 			epoch_time = time.time() - stime
 
-			# if epoch % 5 == 0:
+			# printing the loss for the epoch
 			print(f'Epoch [{current_epoch}/{num_epochs}], Loss: {loss:.4f} Validation Loss: {val_loss:.4f}' + f' Epoch Time: {epoch_time:.2f} seconds')
 			print(f'Model encoder weights example for Epoch {current_epoch}: {model.encoder[0].weight[0]}')
 
@@ -1070,16 +1013,16 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 			# updating the epoch
 			current_epoch += 1
 
+		# transforming the lists to a dataframe to be saved
+		loss_tracker = pd.DataFrame({'train_loss':train_loss_list, 'val_loss':val_loss_list})
+		loss_tracker.to_feather(f'outputs/autoencoder_{VERSION}_loss_tracker.feather')
+
 		gc.collect()
 		# getting the best params saved in the Early Stopping class
 		if pretraining:
 			model.load_state_dict(torch.load(f'models/autoencoder_pretraining_{VERSION}.pt'))
 		else:
 			model.load_state_dict(torch.load(f'models/autoencoder_{VERSION}.pt'))
-
-		# transforming the lists to a dataframe to be saved
-		loss_tracker = pd.DataFrame({'train_loss':train_loss_list, 'val_loss':val_loss_list})
-		loss_tracker.to_feather(f'outputs/autoencoder_{VERSION}_loss_tracker.feather')
 
 	else:
 		# loading the model if it has already been trained.
@@ -1315,32 +1258,20 @@ def main():
 
 	'''
 
-	# loading all data and indicies
+	# loading all data
 	print('Loading data...')
 	train, val, test, ___, scaling_mean, scaling_std = getting_prepared_data()
 
-	# getting the shape of the tensor
+	# getting the shape of the tensor to show the model summary
 	train_size = list(train.size())
 
-	# # getting the pretraining data
-	# pretrain_train, pretrain_val, pretrain_test = creating_pretraining_data(tensor_shape=(train_size[1], train_size[2]),
-	# 																			train_max=torch.max(train).item(), train_min=torch.min(train).item(),
-	# 																			scaling_mean=scaling_mean, scaling_std=scaling_std,
-	# 																			num_samples=100000)
-
 	# getting the pretraining data
-	# X_pretrain_train, X_pretrain_val, X_pretrain_test, y_pretrain_train, y_pretrain_val, y_pretrain_test = creating_fake_twins_data(train, scaling_mean, scaling_std)
-
 	pretrain_train, pretrain_val, pretrain_test = creating_fake_twins_data(train, scaling_mean, scaling_std)
 
-	# creating the dataloaders
+	# creating the dataloaders which prepares the data in batches for training
 	train = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True)
 	val = DataLoader(val, batch_size=BATCH_SIZE, shuffle=True)
 	test = DataLoader(test, batch_size=BATCH_SIZE, shuffle=False)
-
-	# pretrain_train = DataLoader(list(zip(X_pretrain_train, y_pretrain_train)), batch_size=BATCH_SIZE, shuffle=True)
-	# pretrain_val = DataLoader(list(zip(X_pretrain_val, y_pretrain_val)), batch_size=BATCH_SIZE, shuffle=True)
-	# pretrain_test = DataLoader(list(zip(X_pretrain_test, y_pretrain_test)), batch_size=BATCH_SIZE, shuffle=False)
 
 	pretrain_train = DataLoader(pretrain_train, batch_size=BATCH_SIZE, shuffle=True)
 	pretrain_val = DataLoader(pretrain_val, batch_size=BATCH_SIZE, shuffle=True)
@@ -1364,6 +1295,7 @@ def main():
 	pretrained_predictions = (pretrained_predictions * scaling_std) + scaling_mean
 	pretrained_test = (pretrained_test * scaling_std) + scaling_mean
 
+
 	# creating a directory to save the plots if it doesn't already exist
 	if not os.path.exists('plots'):
 		os.makedirs('plots')
@@ -1371,6 +1303,11 @@ def main():
 	# plotting some examples
 	print('Plotting some examples from pretrained....')
 	plotting_some_examples(pretrained_predictions, pretrained_test, pretraining=True)
+
+	# examining the distributions in parts of the predictions
+	print('Examining the distributions of the predictions....')
+	comparing_distributions(pretrained_predictions, pretrained_test)
+
 
 	# fitting the model
 	print('Fitting model....')
