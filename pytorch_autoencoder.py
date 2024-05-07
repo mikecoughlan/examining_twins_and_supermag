@@ -56,7 +56,7 @@ from torchvision.transforms.functional import rotate
 import utils
 
 # defining the version for saving the models
-VERSION = 'pytorch_perceptual_v1-41'
+VERSION = 'pytorch_perceptual_v1-42'
 
 # setting the seed for reproducibility, setting the CDF lib path
 # and working dir path, and setting the device.
@@ -500,12 +500,12 @@ class Autoencoder(nn.Module):
 		latent = self.encoder(x)
 
 		# if the latent space is requested, return it
-		if get_latent:
-			return latent
+		# if get_latent:
+		# 	return latent
 
 		# passing the latent space through the decoder
-		else:
-			x = self.decoder(latent)
+		# else:
+		x = self.decoder(latent)
 
 		return x
 
@@ -782,7 +782,7 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 	'''
 
 	# initializing the Adam optimizer using the model params and setting the initial learning rate
-	optimizer = optim.Adam(model.parameters(), lr=1e-3)
+	optimizer = optim.Adam(model.parameters(), lr=1e-5)
 
 	# checking if the model has already been trained, loading it if it exists
 	if pretraining:
@@ -975,6 +975,13 @@ def fit_autoencoder(model, train, val, val_loss_patience=25, overfit_patience=5,
 
 				# saving the final model
 				gc.collect()
+
+				# model = Autoencoder()
+
+				# clearing the cuda cache
+				torch.cuda.empty_cache()
+				gc.collect()
+
 				if pretraining:
 
 					# loading the best model version
@@ -1252,6 +1259,59 @@ def plotting_histograms_for_each_layer_output(outputs, labels):
 
 	plt.savefig(f'plots/{VERSION}_layer_outputs.png')
 
+
+def examining_explained_variance_ratio(model, data, n_components=10):
+
+	from sklearn.decomposition import PCA
+
+	# getting the model layers
+	model_layers = create_feature_extractor(model, return_nodes={'encoder.10':'fc1'})
+
+	# getting the latent space
+	latent = model_layers(data)
+
+	# reshaping the latent space
+	latent = latent.view(latent.size(0), -1)
+
+	# initializing the PCA model
+	pca = PCA(n_components=n_components)
+
+	# fitting the PCA model
+	pca.fit(latent)
+
+	# getting the explained variance ratio
+	explained_variance = pca.explained_variance_ratio_
+
+	# plotting the explained variance
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(111)
+	ax1.plot(explained_variance)
+	ax1.set_title('Explained Variance Ratio')
+	plt.savefig(f'plots/{VERSION}_explained_variance_ratio.png')
+
+def examining_extreme_values(predictions, test):
+
+	threshold = test.max()
+
+	# getting the indices of the extreme values
+	indices = np.where(predictions > threshold)
+
+	# getting the values of the extreme values from the predictions
+	values = predictions[indices]
+
+	# getting the values of the extreme values from the test data
+	test_values = test[indices]
+
+	# plotting the values
+	fig = plt.figure(figsize=(10, 10))
+	ax1 = fig.add_subplot(111)
+	ax1.scatter(values, test_values)
+	ax1.set_xlabel('Predictions')
+	ax1.set_ylabel('Test Data')
+	plt.savefig(f'plots/{VERSION}_extreme_values.png')
+
+
+
 def main():
 	'''
 	Pulls all the above functions together. Outputs a saved file with the results.
@@ -1266,16 +1326,16 @@ def main():
 	train_size = list(train.size())
 
 	# getting the pretraining data
-	pretrain_train, pretrain_val, pretrain_test = creating_fake_twins_data(train, scaling_mean, scaling_std)
+	# pretrain_train, pretrain_val, pretrain_test = creating_fake_twins_data(train, scaling_mean, scaling_std)
 
 	# creating the dataloaders which prepares the data in batches for training
 	train = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True)
 	val = DataLoader(val, batch_size=BATCH_SIZE, shuffle=True)
 	test = DataLoader(test, batch_size=BATCH_SIZE, shuffle=False)
 
-	pretrain_train = DataLoader(pretrain_train, batch_size=BATCH_SIZE, shuffle=True)
-	pretrain_val = DataLoader(pretrain_val, batch_size=BATCH_SIZE, shuffle=True)
-	pretrain_test = DataLoader(pretrain_test, batch_size=BATCH_SIZE, shuffle=False)
+	# pretrain_train = DataLoader(pretrain_train, batch_size=BATCH_SIZE, shuffle=True)
+	# pretrain_val = DataLoader(pretrain_val, batch_size=BATCH_SIZE, shuffle=True)
+	# pretrain_test = DataLoader(pretrain_test, batch_size=BATCH_SIZE, shuffle=False)
 
 	# creating the model
 	print('Initalizing model....')
@@ -1285,15 +1345,15 @@ def main():
 
 	# pretraining the model
 	print('Pretraining model....')
-	autoencoder = fit_autoencoder(autoencoder, pretrain_train, pretrain_val, val_loss_patience=50, num_epochs=500, pretraining=True)
+	# autoencoder = fit_autoencoder(autoencoder, pretrain_train, pretrain_val, val_loss_patience=50, num_epochs=500, pretraining=True)
 
 	# testing the pretrained model to make sure it works
 	print('Testing pretrained model....')
-	pretrained_predictions, pretrained_test, testing_loss = evaluation(autoencoder, pretrain_test)
+	# pretrained_predictions, pretrained_test, testing_loss = evaluation(autoencoder, pretrain_test)
 
 	# unscaling the predictions and test data
-	pretrained_predictions = (pretrained_predictions * scaling_std) + scaling_mean
-	pretrained_test = (pretrained_test * scaling_std) + scaling_mean
+	# pretrained_predictions = (pretrained_predictions * scaling_std) + scaling_mean
+	# pretrained_test = (pretrained_test * scaling_std) + scaling_mean
 
 
 	# creating a directory to save the plots if it doesn't already exist
@@ -1302,11 +1362,11 @@ def main():
 
 	# plotting some examples
 	print('Plotting some examples from pretrained....')
-	plotting_some_examples(pretrained_predictions, pretrained_test, pretraining=True)
+	# plotting_some_examples(pretrained_predictions, pretrained_test, pretraining=True)
 
 	# examining the distributions in parts of the predictions
 	print('Examining the distributions of the predictions....')
-	comparing_distributions(pretrained_predictions, pretrained_test)
+	# comparing_distributions(pretrained_predictions, pretrained_test)
 
 
 	# fitting the model
@@ -1320,8 +1380,8 @@ def main():
 	plotting_histograms_for_each_layer_output(output_layers, layers)
 
 	# unscaling the predictions and test data
-	# predictions = (predictions * scaling_std) + scaling_mean
-	# test = (test * scaling_std) + scaling_mean
+	predictions = (predictions * scaling_std) + scaling_mean
+	test = (test * scaling_std) + scaling_mean
 
 	# plotting some examples
 	print('Plotting some examples....')
@@ -1334,6 +1394,14 @@ def main():
 	# comparing the distributions of the predictions and the test data
 	print('Comparing the distributions of the predictions and the test data....')
 	comparing_distributions(predictions, test)
+
+	# examining the explained variance ratio of the latent space
+	print('Examining the explained variance ratio of the latent space....')
+	# examining_explained_variance_ratio(autoencoder, test)
+
+	# examining the extreme values
+	print('Examining the extreme values....')
+	examining_extreme_values(predictions, test)
 
 	print(f'Loss: {testing_loss}')
 

@@ -72,12 +72,56 @@ CONFIG = {'region_numbers': [387, 61, 202, 287, 207, 361, 137, 184, 36, 19, 9, 1
 			'time_history':30,
 			'random_seed':7}
 
-
+clusters = {
+	'canadian_cluster':{
+		'regions':{
+		'CAN-0': {'stations':['NEW', 'T19', 'C10', 'LET', 'T03', 'T43']},
+		'CAN-1': {'stations':['LET', 'T03', 'T43', 'RED', 'C06']},
+		'CAN-2': {'stations':['T43', 'RED', 'C06', 'MEA', 'T36']}
+		}
+	},
+	'greenland_cluster':{
+		'regions':{
+		'GRL-0': {'stations':['GHB', 'SKT', 'STF', 'ATU']},
+		'GRL-1': {'stations':['SKT', 'STF', 'ATU', 'GDH']},
+		'GRL-2': {'stations':['STF', 'ATU', 'GDH', 'UMQ']},
+		'GRL-3': {'stations':['GHB', 'FHB', 'NAQ']},
+		}
+	},
+	'fennoscandinavian_cluster':{
+		'regions':{
+		'FSC-0': {'stations':['RVK', 'LYC', 'DON', 'JCK']},
+		'FSC-1': {'stations':['HAN', 'MEK', 'OUJ', 'NUR']},
+		'FSC-2': {'stations':['MAS', 'NOR', 'IVA', 'KEV', 'KIL', 'MUO', 'SOR', 'TRO', 'ABK', 'KIR']},
+		'FSC-3': {'stations':['MAS', 'AND', 'KIL', 'MUO', 'SOR', 'TRO', 'ABK', 'KIR']},
+		'FSC-4': {'stations':['MAS', 'SOD', 'IVA', 'KEV', 'KIL', 'MUO', 'ABK', 'KIR', 'PEL']},
+		'FSC-5': {'stations':['JCK', 'DON', 'ABK', 'KIR', 'LYC']},
+		'FSC-6': {'stations':['MAS', 'AND', 'KIL', 'MUO', 'JCK', 'TRO', 'ABK', 'KIR', 'PEL']},
+		}
+	},
+	'central_european_cluster':{
+		'regions':{
+		'CEU-0': {'stations':['ZAG', 'LVV', 'BEL', 'VYH']},
+		'CEU-1': {'stations':['BEL', 'HLP', 'SZC', 'KLD']},
+		'CEU-2': {'stations':['THY', 'BDV', 'WIC', 'NCK', 'HRB']},
+		'CEU-3': {'stations':['ROE', 'BFE', 'WNG']},
+		}
+	},
+	'non_cluster_regions':{
+		'regions':{
+		'SVLB': {'stations':['BBG', 'LYR', 'HOR', 'NAL', 'HRN', 'HOP']},
+		'JPN-0': {'stations':['KUJ', 'KNY', 'KAG']},
+		'JPN-1': {'stations':['MMB', 'ASB', 'RIK', 'MSR']},
+		'ALSK': {'stations':['CMO', 'FYU', 'PKR', 'GAK']},
+		'HUD-0': {'stations':['PIN', 'ISL', 'C05']},
+		'HUD-1': {'stations':['FCC', 'EKP', 'RAN', 'BLC']},
+		}
+	}
+}
 
 def loading_data(target_var, region, percentiles=[0.5, 0.75, 0.9, 0.99]):
 
 	# loading all the datasets and dictonaries
-
 	regions, stats = utils.loading_dicts()
 	solarwind = utils.loading_solarwind(omni=True, limit_to_twins=True)
 

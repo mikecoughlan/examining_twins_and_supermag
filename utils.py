@@ -171,61 +171,74 @@ def getting_mean_lat(stations):
 
 	return mean_lat
 
+class RegionPreprocessing():
 
-def combining_stations_into_regions(stations, rsd, features=None, mean=False, std=False, maximum=False, median=False, map_keys=None):
+	def __init__(self, features=None, mean=False, std=False, maximum=False, median=False):
+		self.features = features
+		self.mean = mean
+		self.std = std
+		self.maximum = maximum
+		self.median = median
 
-	start_time = pd.to_datetime('2009-07-20')
-	end_time = pd.to_datetime('2017-12-31')
-	twins_time_period = pd.date_range(start=start_time, end=end_time, freq='min')
 
-	regional_df = pd.DataFrame(index=twins_time_period)
 
-	# creating a dataframe for each feature with the twins time period as the index and storing them in a dict
-	feature_dfs = {}
-	if features is not None:
-		for feature in features:
-			feature_dfs[feature] = pd.DataFrame(index=twins_time_period)
+	def combining_stations_into_regions(self, stations, rsd, map_keys=None):
 
-	for stat in stations:
-		df = loading_supermag(stat)
-		df = df[start_time:end_time]
-		if features is not None:
-			for feature in features:
-				feature_dfs[feature][f'{stat}_{feature}'] = df[feature]
-	if features is not None:
-		for feature in features:
-			if mean:
-				if feature == 'N' or feature == 'E':
-					regional_df[f'{feature}_mean'] = feature_dfs[feature].abs().mean(axis=1)
-				else:
-					regional_df[f'{feature}_mean'] = feature_dfs[feature].mean(axis=1)
-			if std:
-				regional_df[f'{feature}_std'] = feature_dfs[feature].std(axis=1)
-			if maximum:
-				if feature == 'N' or feature == 'E':
-					regional_df[f'{feature}_max'] = feature_dfs[feature].abs().max(axis=1)
-				else:
-					regional_df[f'{feature}_max'] = feature_dfs[feature].max(axis=1)
-			if median:
-				if feature == 'N' or feature == 'E':
-					regional_df[f'{feature}_median'] = feature_dfs[feature].abs().median(axis=1)
-				else:
-					regional_df[f'{feature}_median'] = feature_dfs[feature].median(axis=1)
+		self.stations = stations
+		self.rsd = rsd
 
-	indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=15)
+		start_time = pd.to_datetime('2009-07-20')
+		end_time = pd.to_datetime('2017-12-31')
+		twins_time_period = pd.date_range(start=start_time, end=end_time, freq='min')
 
-	regional_df['rsd'] = rsd['max_rsd']['max_rsd']
-	regional_df['rolling_rsd'] = rsd['max_rsd']['max_rsd'].rolling(indexer, min_periods=1).max()
-	regional_df['MLT'] = rsd['max_rsd']['MLT']
-	regional_df['cosMLT'] = np.cos(regional_df['MLT'] * 2 * np.pi * 15 / 360)
-	regional_df['sinMLT'] = np.sin(regional_df['MLT'] * 2 * np.pi * 15 / 360)
+		regional_df = pd.DataFrame(index=twins_time_period)
 
-	if map_keys is not None:
-		segmented_df = regional_df[regional_df.index.isin(map_keys)]
-		return segmented_df
+		# creating a dataframe for each feature with the twins time period as the index and storing them in a dict
+		feature_dfs = {}
+		if self.features is not None:
+			for feature in self.features:
+				feature_dfs[feature] = pd.DataFrame(index=twins_time_period)
 
-	else:
-		return regional_df
+		for stat in self.stations:
+			df = loading_supermag(stat)
+			df = df[start_time:end_time]
+			if self.features is not None:
+				for feature in self.features:
+					feature_dfs[feature][f'{stat}_{feature}'] = df[feature]
+		if self.features is not None:
+			for feature in self.features:
+				if self.mean:
+					if feature == 'N' or feature == 'E':
+						regional_df[f'{feature}_mean'] = feature_dfs[feature].abs().mean(axis=1)
+					else:
+						regional_df[f'{feature}_mean'] = feature_dfs[feature].mean(axis=1)
+				if self.std:
+					regional_df[f'{feature}_std'] = feature_dfs[feature].std(axis=1)
+				if self.maximum:
+					if feature == 'N' or feature == 'E':
+						regional_df[f'{feature}_max'] = feature_dfs[feature].abs().max(axis=1)
+					else:
+						regional_df[f'{feature}_max'] = feature_dfs[feature].max(axis=1)
+				if self.median:
+					if feature == 'N' or feature == 'E':
+						regional_df[f'{feature}_median'] = feature_dfs[feature].abs().median(axis=1)
+					else:
+						regional_df[f'{feature}_median'] = feature_dfs[feature].median(axis=1)
+
+		indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=15)
+
+		regional_df['rsd'] = rsd['max_rsd']['max_rsd']
+		regional_df['rolling_rsd'] = rsd['max_rsd']['max_rsd'].rolling(indexer, min_periods=1).max()
+		regional_df['MLT'] = rsd['max_rsd']['MLT']
+		regional_df['cosMLT'] = np.cos(regional_df['MLT'] * 2 * np.pi * 15 / 360)
+		regional_df['sinMLT'] = np.sin(regional_df['MLT'] * 2 * np.pi * 15 / 360)
+
+		if map_keys is not None:
+			segmented_df = regional_df[regional_df.index.isin(map_keys)]
+			return segmented_df
+
+		else:
+			return regional_df
 
 
 def calculate_percentiles(df, param, mlt_span, percentile):
