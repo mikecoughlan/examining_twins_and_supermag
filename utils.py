@@ -182,7 +182,7 @@ class RegionPreprocessing():
 
 
 
-def combining_stations_into_regions(stations, rsd, map_keys=None):
+def combining_stations_into_regions(stations, rsd, features=None, map_keys=None, mean=False, std=False, maximum=False, median=False):
 
 
 	start_time = pd.to_datetime('2009-07-20')
@@ -194,7 +194,7 @@ def combining_stations_into_regions(stations, rsd, map_keys=None):
 	# creating a dataframe for each feature with the twins time period as the index and storing them in a dict
 	feature_dfs = {}
 	if features is not None:
-		for feature in self.features:
+		for feature in features:
 			feature_dfs[feature] = pd.DataFrame(index=twins_time_period)
 
 	for stat in stations:

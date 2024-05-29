@@ -390,7 +390,8 @@ def fit_CNN(model, xtrain, xval, ytrain, yval, early_stop, region):
 
 	else:
 		# loading the model if it has already been trained.
-		model = load_model(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5')				# loading the models if already trained
+		model = load_model(f'models/{TARGET}/non_twins_region_{region}_version_{VERSION}.h5', compile=False)				# loading the models if already trained
+		model.compile(optimizer='adam', loss=CRPS)					# compiling the model with custom loss function
 
 	return model
 
@@ -485,8 +486,8 @@ if __name__ == '__main__':
 
 	args=parser.parse_args()
 
-	if not os.path.exists(f'models/{TARGET}/non_twins_region_{args.region}_version_{VERSION}.h5'):
-		main(args.region)
-		print('It ran. God job!')
-	else:
-		print('Already ran this region. Skipping...')
+	# if not os.path.exists(f'models/{TARGET}/non_twins_region_{args.region}_version_{VERSION}.h5'):
+	main(args.region)
+	print('It ran. God job!')
+	# else:
+	# 	print('Already ran this region. Skipping...')
