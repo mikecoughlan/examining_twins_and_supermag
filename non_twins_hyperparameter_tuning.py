@@ -445,6 +445,7 @@ def objective(trial, xtrain, ytrain, xval, yval, xtest, ytest, input_shape):
 	model, early_stop = create_CNN_model(input_shape, trial)
 	print(model.summary())
 	clear_session()
+	gc.collect()
 	try:
 		model.fit(xtrain, ytrain, validation_data=(xval, yval),
 				verbose=1, shuffle=True, epochs=100,
